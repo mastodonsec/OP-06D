@@ -109,12 +109,44 @@ class Intensity(_Frozen):
     destructive: bool = False
 
 
+# Public out-of-band (interactsh) servers: callback data about a client's systems
+# must never go to a third party, so these are refused outright.
+PUBLIC_INTERACTSH_DOMAINS = (
+    "oast.pro", "oast.live", "oast.site", "oast.online", "oast.fun", "oast.me",
+    "interact.sh", "interactsh.com",
+)
+
+
+def _is_public_interactsh(host: str) -> bool:
+    return any(host == d or host.endswith("." + d) for d in PUBLIC_INTERACTSH_DOMAINS)
+
+
 class Engagement(_Frozen):
     engagement: NonEmptyStr
     authorization: Authorization
     scope: Scope
     intensity: Intensity
     objective: NonEmptyStr
+    # Optional self-hosted interactsh server for out-of-band checks. Absent means
+    # out-of-band detection stays OFF (nuclei is run with -no-interactsh).
+    interactsh_server: NonEmptyStr | None = None
+
+    @field_validator("interactsh_server")
+    @classmethod
+    def _check_interactsh(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        host = normalize_target(v)
+        if "/" in host or host.startswith("*") or _is_public_interactsh(host):
+            raise ValueError(
+                "interactsh_server must be a plain self-hosted hostname, never a public "
+                "interactsh server"
+            )
+        try:
+            ipaddress.ip_address(host)
+        except ValueError:
+            return host
+        raise ValueError("interactsh_server must be a hostname, not an IP address")
 
     @model_validator(mode="after")
     def _no_exact_overlap(self) -> Engagement:

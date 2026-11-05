@@ -46,8 +46,10 @@ itself sends using the engagement's ``max_rps``.
 
 from __future__ import annotations
 
+import ipaddress
 import json
 import re
+import subprocess
 from dataclasses import dataclass, field
 from enum import Enum, IntEnum
 from typing import Any, Iterable, Mapping, Protocol
@@ -182,6 +184,64 @@ def redact_parameters(
         key = k if isinstance(k, str) else repr(k)
         out[key] = REDACTED if (key.lower() in sens or _SECRET_KEY_RE.search(key)) else v
     return out
+
+
+# --- helpers shared by concrete tools (nmap, nuclei) --------------------------
+
+_TARGET_CHARS_RE = re.compile(r"[A-Za-z0-9:][A-Za-z0-9.:/_-]*")
+
+
+def clip(value: object, limit: int = 2_000) -> str:
+    text = "" if value is None else str(value)
+    return text if len(text) <= limit else text[:limit] + "...[truncated]"
+
+
+def tool_error(code: str, message: str, raw: object = None) -> ToolOutput:
+    """A structured, non-raising tool failure the loop can read."""
+    return ToolOutput(
+        {"status": "error", "error": {"code": code, "message": clip(message, 500)}},
+        raw=raw,
+        status=code,
+    )
+
+
+def argv_target_problem(target: object) -> str | None:
+    """Defense in depth for tools that put the target in an argv list. The gate
+    has already approved it; this still refuses anything that could be read as
+    an option, a URL, a second host or an octet range (``203.0.113.1-20``)."""
+    if not isinstance(target, str) or not target or len(target) > 253:
+        return "target must be a non-empty string"
+    if not _TARGET_CHARS_RE.fullmatch(target):
+        return "target contains characters that are not allowed"
+    try:
+        ipaddress.ip_network(target, strict=True)
+        return None
+    except ValueError:
+        pass
+    last = target.rsplit(".", 1)[-1]
+    if "/" in target or not re.search(r"[A-Za-z]", last):
+        return "target must be a hostname, an IP address or a CIDR network"
+    return None
+
+
+@dataclass(frozen=True)
+class ProcessResult:
+    returncode: int
+    stdout: bytes
+    stderr: bytes
+
+
+def run_subprocess(argv: list[str], timeout: float) -> ProcessResult:
+    """The only place a process is started: argv list, no shell, no stdin."""
+    proc = subprocess.run(
+        argv,
+        capture_output=True,
+        timeout=timeout,
+        shell=False,
+        stdin=subprocess.DEVNULL,
+        check=False,
+    )
+    return ProcessResult(proc.returncode, proc.stdout or b"", proc.stderr or b"")
 
 
 def _decision(target: object, reason: str, stage: str) -> GateDecision:
@@ -407,10 +467,30 @@ class GatedToolbox:
         return granted
 
 
-def default_tools(engagement: Engagement) -> list[Tool]:
+def default_tools(
+    engagement: Engagement,
+    *,
+    nuclei_template_dir: str | None = None,
+    nuclei_templates_pin: str = "",
+    nuclei_curated_ids: Mapping[str, Risk] | None = None,
+) -> list[Tool]:
     """The tools Red Cell ships with, configured from the engagement (rate
-    limits come from ``intensity.max_rps``). This is the only place concrete
-    tool modules are imported and constructed."""
+    limits come from ``intensity.max_rps``, the out-of-band server from
+    ``interactsh_server``). This is the only place concrete tool modules are
+    imported and constructed. nuclei is registered only when a pinned template
+    directory is supplied."""
     from redcell.nmap_tool import NmapTool
 
-    return [NmapTool.from_engagement(engagement)]
+    tools: list[Tool] = [NmapTool.from_engagement(engagement)]
+    if nuclei_template_dir:
+        from redcell.nuclei_tool import NucleiTool
+
+        tools.append(
+            NucleiTool.from_engagement(
+                engagement,
+                template_dir=nuclei_template_dir,
+                templates_pin=nuclei_templates_pin,
+                curated_ids=nuclei_curated_ids,
+            )
+        )
+    return tools

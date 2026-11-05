@@ -36,16 +36,22 @@ one the gate saw (DNS can change between the check and the scan).
 
 from __future__ import annotations
 
-import ipaddress
 import re
 import shutil
 import subprocess
 import xml.etree.ElementTree as ET
-from dataclasses import dataclass
 from typing import Any, Callable, Mapping
 
 from redcell.engagement import Engagement
-from redcell.tools import Risk, ToolOutput
+from redcell.tools import (
+    ProcessResult,
+    Risk,
+    ToolOutput,
+    argv_target_problem,
+    clip as _clip,
+    run_subprocess,
+    tool_error as _error,
+)
 
 # --- vocabulary -------------------------------------------------------------
 
@@ -76,18 +82,12 @@ MAX_FIELD_CHARS = 2_000
 
 _PORT_PART = r"[0-9]{1,5}(?:-[0-9]{1,5})?"
 _PORTS_RE = re.compile(rf"{_PORT_PART}(?:,{_PORT_PART})*")
-_TARGET_CHARS_RE = re.compile(r"[A-Za-z0-9:][A-Za-z0-9.:/_-]*")
 
 
 # --- parsing ----------------------------------------------------------------
 
 class NmapParseError(Exception):
     pass
-
-
-def _clip(value: object, limit: int = MAX_FIELD_CHARS) -> str:
-    text = "" if value is None else str(value)
-    return text if len(text) <= limit else text[:limit] + "...[truncated]"
 
 
 def _int(value: object, default: int = 0) -> int:
@@ -197,34 +197,6 @@ def parse_nmap_xml(text: str) -> dict[str, Any]:
 
 # --- subprocess -------------------------------------------------------------
 
-@dataclass(frozen=True)
-class ProcessResult:
-    returncode: int
-    stdout: bytes
-    stderr: bytes
-
-
-def run_subprocess(argv: list[str], timeout: float) -> ProcessResult:
-    """The only place a process is started: argv list, no shell, no stdin."""
-    proc = subprocess.run(
-        argv,
-        capture_output=True,
-        timeout=timeout,
-        shell=False,
-        stdin=subprocess.DEVNULL,
-        check=False,
-    )
-    return ProcessResult(proc.returncode, proc.stdout or b"", proc.stderr or b"")
-
-
-def _error(code: str, message: str, raw: object = None) -> ToolOutput:
-    return ToolOutput(
-        {"status": "error", "error": {"code": code, "message": _clip(message, 500)}},
-        raw=raw,
-        status=code,
-    )
-
-
 # --- the tool ---------------------------------------------------------------
 
 class NmapTool:
@@ -318,19 +290,7 @@ class NmapTool:
         """Defense in depth: the gate already approved the target, but the wrapper
         still refuses anything that could be read as an option, a second host,
         or an nmap octet range."""
-        if not isinstance(target, str) or not target or len(target) > 253:
-            return "target must be a non-empty string"
-        if not _TARGET_CHARS_RE.fullmatch(target):
-            return "target contains characters that are not allowed"
-        try:
-            ipaddress.ip_network(target, strict=True)
-            return None
-        except ValueError:
-            pass
-        last = target.rsplit(".", 1)[-1]
-        if "/" in target or not re.search(r"[A-Za-z]", last):
-            return "target must be a hostname, an IP address or a CIDR network"
-        return None
+        return argv_target_problem(target)
 
     def build_argv(self, nmap: str, target: str, parameters: Mapping[str, Any]) -> list[str]:
         profile = parameters.get("profile", DEFAULT_PROFILE)
