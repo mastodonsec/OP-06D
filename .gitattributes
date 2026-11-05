@@ -1,0 +1,5 @@
+# Lab scripts run inside Linux containers: they must keep LF line endings even
+# when checked out on Windows (a CRLF turns "#!/bin/bash" into a failure).
+lab/*.sh text eol=lf
+lab/scanner/** text eol=lf
+lab/docker-compose.yml text eol=lf

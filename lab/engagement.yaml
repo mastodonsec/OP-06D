@@ -1,0 +1,29 @@
+# Red Cell lab engagement (RC-19). Scoped ONLY to the two lab targets.
+# This is a self-owned lab, not a client: the "authorization" below is the
+# operator authorizing testing of their own isolated containers.
+#
+# Targets (see lab/docker-compose.yml):
+#   juice-shop.lab / 172.31.77.10   (HTTP on 3000)
+#   dvwa.lab       / 172.31.77.11   (HTTP on 80)
+# The scanner itself (172.31.77.20) is explicitly OUT of scope.
+#
+# Edit `window` before use: it is deliberately short, and the gate refuses to act
+# outside it. Times are UTC and must include a timezone.
+engagement: rc-lab-2026-11
+authorization:
+  client: "Red Cell lab (self-owned, isolated)"
+  signed_scope_ref: "LAB-INTERNAL-NOT-A-CLIENT"
+  authorized_by: "thomas@mastodonsec.com"
+  window: ["2026-11-05T00:00Z", "2026-11-07T00:00Z"]
+scope:
+  in_scope:
+    - juice-shop.lab
+    - dvwa.lab
+    - 172.31.77.10
+    - 172.31.77.11
+  out_of_scope:
+    - 172.31.77.20
+intensity:
+  max_rps: 50
+  destructive: false
+objective: "Lab validation: external-style recon of the Red Cell lab targets"

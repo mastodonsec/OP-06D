@@ -1,0 +1,98 @@
+# Red Cell lab (RC-19): two intentionally vulnerable targets plus a scanner,
+# all on ONE internal Docker network with no route to the internet.
+#
+#   scanner (172.31.77.20)  --->  juice-shop (172.31.77.10, port 3000)
+#                           --->  dvwa       (172.31.77.11, port 80)
+#
+# ISOLATION
+#   * `labnet` is declared `internal: true`: Docker attaches no gateway and
+#     installs no NAT/masquerade for it, so containers on it have no route out.
+#   * Every service is attached to labnet ONLY (no second network, no
+#     network_mode: host, no `ports:` publishing, no extra_hosts, no custom dns).
+#   * Nothing here is trusted on its own: lab/check_isolation.sh and the host-side
+#     checks in lab/RUNBOOK.md PROVE the property before any scan. Do not scan
+#     until that gate passes.
+#   * Both targets are deliberately vulnerable. Never attach them, or the
+#     scanner, to any other network.
+#
+# BUILD vs RUN: building the scanner image needs internet (apt, GitHub, PyPI).
+# That happens during `docker compose build`, outside labnet. The running
+# containers have no internet.
+#
+# PINNED VERSIONS (nothing uses `latest`)
+#   juice-shop  OWASP Juice Shop 20.3.0   image digest sha256:42843723...
+#   dvwa        vulnerables/web-dvwa      image digest sha256:dae203fe...
+#   scanner     debian:bookworm-slim @ sha256:734a72b3...
+#               nmap 7.93+dfsg1-1, nuclei v3.11.1, nuclei-templates v10.5.1
+#               (see lab/scanner/Dockerfile for the checksums)
+#
+# Usage: see lab/RUNBOOK.md. Run from the repository root:
+#   docker compose -f lab/docker-compose.yml ...
+
+name: rc-lab
+
+services:
+  juice-shop:
+    # OWASP Juice Shop 20.3.0 (image label org.opencontainers.image.version).
+    image: bkimminich/juice-shop@sha256:42843723a7bf4246aa5d63c324978b17ef296ac78434aeddd34c427bfb5853f4
+    restart: "no"
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 1g
+    networks:
+      labnet:
+        ipv4_address: 172.31.77.10
+        aliases:
+          - juice-shop.lab
+    # Juice Shop listens on its default port 3000. No `ports:` on purpose.
+
+  dvwa:
+    # Damn Vulnerable Web Application (Apache + PHP + MariaDB in one container).
+    # Old, unmaintained, and very vulnerable: it must stay on labnet only.
+    image: vulnerables/web-dvwa@sha256:dae203fe11646a86937bf04db0079adef295f426da68a92b40e3b181f337daa7
+    restart: "no"
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 1g
+    networks:
+      labnet:
+        ipv4_address: 172.31.77.11
+        aliases:
+          - dvwa.lab
+    # Serves HTTP on port 80. No `ports:` on purpose.
+
+  scanner:
+    build:
+      context: ./scanner
+      args:
+        NMAP_VERSION: "7.93+dfsg1-1"
+        NUCLEI_VERSION: "3.11.1"
+        NUCLEI_ZIP_SHA256: "ea63d4ae232808cd7c6bc00d0142428e231fab59dae01042246097d195835ab6"
+        TEMPLATES_VERSION: "v10.5.1"
+        TEMPLATES_TARBALL_SHA256: "30fe1cfaced4635f886e4a2673641bba86998dceec28e468274524e789aa56eb"
+    image: redcell-lab-scanner:nmap-7.93-nuclei-3.11.1-templates-10.5.1
+    restart: "no"
+    init: true
+    command: ["sleep", "infinity"]
+    security_opt:
+      - no-new-privileges:true
+    # Default capabilities are kept on purpose: root in the container then has
+    # NET_RAW, so nmap's raw-socket scans can be compared with unprivileged runs
+    # (`exec -u scanner`). Nothing is added (no NET_ADMIN, not privileged).
+    volumes:
+      - ..:/redcell:ro          # the Red Cell code, read-only
+      - .:/lab:ro               # these lab files (scripts, engagement), read-only
+      - ./captures:/captures    # the ONLY writable mount: real tool outputs
+    networks:
+      labnet:
+        ipv4_address: 172.31.77.20
+        aliases:
+          - scanner.lab
+
+networks:
+  labnet:
+    driver: bridge
+    internal: true            # <-- the no-egress guarantee
+    ipam:
+      config:
+        - subnet: 172.31.77.0/24
