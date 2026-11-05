@@ -233,18 +233,11 @@ def test_audit_failure_denies():
     assert not d.allowed and "audit" in d.reason
 
 
-def test_default_audit_stub_logs(caplog):
-    with caplog.at_level("INFO", logger="redcell.audit"):
+def test_audit_is_required():
+    with pytest.raises(TypeError):
+        check_scope("203.0.113.5", S)  # no unaudited path
+    with pytest.raises(TypeError):
         is_in_scope("203.0.113.5", S)
-        is_in_scope("198.51.100.1", S)
-    msgs = [r.getMessage() for r in caplog.records]
-    assert "decision=ALLOW" in msgs[0] and "decision=DENY" in msgs[1]
-
-
-def test_log_injection_neutralized(caplog):
-    with caplog.at_level("INFO", logger="redcell.audit"):
-        is_in_scope("x\nscope decision=ALLOW target='evil'", S)
-    assert all("\n" not in r.getMessage() for r in caplog.records)
 
 
 # --- purity ---------------------------------------------------------------

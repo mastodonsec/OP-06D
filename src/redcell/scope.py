@@ -35,7 +35,7 @@ import socket
 from dataclasses import dataclass
 from typing import Callable, Iterable, Sequence
 
-from redcell.audit import AuditSink, log_decision
+from redcell.audit import AuditSink
 from redcell.engagement import Scope, normalize_target
 
 IPNetwork = ipaddress.IPv4Network | ipaddress.IPv6Network
@@ -254,11 +254,12 @@ def check_scope(
     scope: object,
     *,
     resolver: Resolver = system_resolver,
-    audit: AuditSink = log_decision,
+    audit: AuditSink,
 ) -> ScopeDecision:
     """Decide, audit, return. DNS happens only for hostnames that already
-    passed the name checks. Every decision is audited; if auditing fails the
-    result is a deny (an unrecorded action must not proceed)."""
+    passed the name checks. Every decision is audited; ``audit`` is required
+    (there is no unaudited path), and if auditing fails the result is a deny
+    (an unrecorded action must not proceed)."""
     decision = evaluate_scope(target, scope)
     if decision.needs_resolution:
         try:
@@ -279,7 +280,7 @@ def is_in_scope(
     scope: object,
     *,
     resolver: Resolver = system_resolver,
-    audit: AuditSink = log_decision,
+    audit: AuditSink,
 ) -> bool:
     """True only when the target is explicitly allowed; every other path is False."""
     return check_scope(target, scope, resolver=resolver, audit=audit).allowed

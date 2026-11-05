@@ -119,17 +119,20 @@ Run the tests:
 uv run --extra dev pytest tests/test_scope.py
 ```
 
-## Audit stub and RC-11
+## Audit sink (RC-11)
 
-`redcell.audit.log_decision(target, allowed, reason)` writes each decision to
-the `redcell.audit` logger (INFO for allow, WARNING for deny). Targets are
-logged via `repr()` so newlines in hostile input cannot forge log lines.
+The scope code depends only on `AuditSink = Callable[[str, bool, str], None]`
+and takes it as the **required** keyword argument `audit=` (there is no
+unaudited path). The real implementation is `AuditLog` in
+[`src/redcell/audit.py`](../src/redcell/audit.py):
 
-RC-11 replaces the implementation. The scope code depends only on the
-`AuditSink = Callable[[str, bool, str], None]` signature and receives the sink
-as the `audit=` argument, so swapping it does not touch the scope logic. If the
-sink raises, the decision becomes a **deny**: an action that cannot be recorded
-must not proceed.
+```python
+log = AuditLog.for_engagement(eng, "logs/")
+check_scope(target, eng.scope, audit=log.sink(tool="nmap", parameters={"ports": "1-1024"}))
+```
+
+If the sink raises, the decision becomes a **deny**: an action that cannot be
+recorded must not proceed.
 
 ## Known limits
 
