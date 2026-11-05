@@ -45,6 +45,11 @@ _ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 EVENT_LOG_OPENED = "log_opened"
 EVENT_GATE_DECISION = "gate_decision"
 EVENT_INJECTION_FLAG = "injection_flag"
+EVENT_ITERATION = "iteration"  # RC-7: the planner's proposal for one loop iteration
+EVENT_APPROVAL = "approval"  # RC-8: operator approved/declined a higher-risk action
+EVENT_LOOP_END = "loop_terminated"  # RC-7: why and when the loop stopped
+# Events whose ``allowed`` flag is meaningful (an allow/deny or approve/decline).
+_ALLOWED_EVENTS = frozenset({EVENT_GATE_DECISION, EVENT_APPROVAL})
 EVENT_ACTION_EXECUTED = "action_executed"
 
 
@@ -225,7 +230,7 @@ class AuditLog:
         ``audit=`` argument of the gate; the gate never needs to know about
         tools or parameters.
 
-        ``event`` selects the entry type. For the default gate decisions the
+        ``event`` selects the entry type. For gate decisions and approvals the
         ``allowed`` flag is stored; for any other event (e.g. an injection
         flag, RC-12) there is no allow/deny, so it is stored as null."""
 
@@ -235,7 +240,7 @@ class AuditLog:
                 target=target,
                 tool=tool,
                 parameters=parameters,
-                allowed=allowed if event == EVENT_GATE_DECISION else None,
+                allowed=allowed if event in _ALLOWED_EVENTS else None,
                 reason=reason,
             )
 
