@@ -36,7 +36,7 @@ def test_allow_and_deny_are_both_recorded(log):
     assert ok.allowed and not no.allowed
 
     entries = read_log(log.path)
-    decisions = [e for e in entries if e.event == "scope_decision"]
+    decisions = [e for e in entries if e.event == "gate_decision"]
     assert [e.allowed for e in decisions] == [True, False]
     assert [e.target for e in decisions] == ["'203.0.113.5'", "'198.51.100.1'"]
     assert all(e.tool == "nmap" and e.parameters == params for e in decisions)
@@ -69,7 +69,7 @@ def test_header_entry_carries_authorization_and_scope(log):
 
 
 def test_non_json_parameters_are_stored_safely(log):
-    log.record("scope_decision", target="x", tool="t", parameters={"when": datetime(2026, 1, 1)})
+    log.record("gate_decision", target="x", tool="t", parameters={"when": datetime(2026, 1, 1)})
     assert "2026" in read_log(log.path)[-1].parameters["when"]
 
 
@@ -105,18 +105,18 @@ def test_new_entries_never_overwrite_prior_ones(log):
 
 def test_reopening_resumes_and_appends(tmp_path):
     first = AuditLog.for_engagement(ENG, tmp_path, clock=fixed_clock())
-    first.record("scope_decision", target="a", tool="t", allowed=True, reason="r")
+    first.record("gate_decision", target="a", tool="t", allowed=True, reason="r")
     before = first.path.read_bytes()
 
     second = AuditLog.for_engagement(ENG, tmp_path, clock=fixed_clock())  # new session
-    second.record("scope_decision", target="b", tool="t", allowed=False, reason="r")
+    second.record("gate_decision", target="b", tool="t", allowed=False, reason="r")
 
     after = second.path.read_bytes()
     assert after.startswith(before)
     entries = read_log(second.path)
     assert [e.seq for e in entries] == [1, 2, 3, 4]
     assert [e.event for e in entries] == [
-        "log_opened", "scope_decision", "log_opened", "scope_decision"]
+        "log_opened", "gate_decision", "log_opened", "gate_decision"]
 
 
 def test_file_is_only_ever_opened_for_append(log, monkeypatch):
@@ -128,7 +128,7 @@ def test_file_is_only_ever_opened_for_append(log, monkeypatch):
         return real_open(file, mode, *a, **k)
 
     monkeypatch.setattr("builtins.open", spy)
-    log.record("scope_decision", target="a", tool="t", allowed=True, reason="r")
+    log.record("gate_decision", target="a", tool="t", allowed=True, reason="r")
     assert modes == ["ab"]
 
 
@@ -189,7 +189,7 @@ def test_hostile_target_cannot_forge_entries(log):
 
 
 def test_oversized_target_truncated(log):
-    log.record("scope_decision", target="a" * 5000, tool="t", allowed=False, reason="r")
+    log.record("gate_decision", target="a" * 5000, tool="t", allowed=False, reason="r")
     t = read_log(log.path)[-1].target
     assert len(t) < 1200 and "truncated" in t
 

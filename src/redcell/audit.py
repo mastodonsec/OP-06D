@@ -43,7 +43,7 @@ MAX_TARGET_CHARS = 1024
 _ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 
 EVENT_LOG_OPENED = "log_opened"
-EVENT_SCOPE_DECISION = "scope_decision"
+EVENT_GATE_DECISION = "gate_decision"
 EVENT_ACTION_EXECUTED = "action_executed"
 
 
@@ -220,7 +220,7 @@ class AuditLog:
 
         def write(target: str, allowed: bool, reason: str) -> None:
             self.record(
-                EVENT_SCOPE_DECISION,
+                EVENT_GATE_DECISION,
                 target=target,
                 tool=tool,
                 parameters=parameters,
