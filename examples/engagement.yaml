@@ -1,0 +1,17 @@
+engagement: acme-saas-external-2026-11
+authorization:
+  client: "Acme Corp"
+  signed_scope_ref: "SOW-2026-114"
+  authorized_by: "jane.doe@acme.com"
+  window: ["2026-11-10T02:00Z", "2026-11-10T06:00Z"]
+scope:
+  in_scope:
+    - app.acme.com
+    - 203.0.113.0/28
+  out_of_scope:
+    - "*.stripe.com"
+    - billing.acme.com
+intensity:
+  max_rps: 20
+  destructive: false
+objective: "External attack surface recon"
