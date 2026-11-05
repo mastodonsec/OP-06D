@@ -40,7 +40,7 @@ class EngagementError(Exception):
     """The engagement file could not be read or failed validation."""
 
 
-def _normalize_target(raw: str) -> str:
+def normalize_target(raw: str) -> str:
     """Validate one scope entry; return it normalized (lowercased hosts,
     canonical IP/CIDR form). Accepts hostnames, ``*.`` wildcards, IPs, CIDRs."""
     value = raw.strip().lower()
@@ -101,7 +101,7 @@ class Scope(_Frozen):
     @field_validator("in_scope", "out_of_scope")
     @classmethod
     def _check_targets(cls, v: list[str]) -> list[str]:
-        return [_normalize_target(item) for item in v]
+        return [normalize_target(item) for item in v]
 
 
 class Intensity(_Frozen):
