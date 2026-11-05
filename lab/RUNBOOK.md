@@ -282,9 +282,9 @@ RUNS = [
     ("nmap_dvwa_safe_scripts",  "nmap",   "172.31.77.11", {"profile": "service", "ports": "80", "scripts": ["safe", "default", "discovery", "version"]}, "xml"),
     ("nuclei_dvwa_default",     "nuclei", "dvwa.lab",     {},                                      "jsonl"),
     ("nuclei_dvwa_exposure",    "nuclei", "dvwa.lab",     {"tags": ["exposure", "misconfig", "config", "panel", "tech"]}, "jsonl"),
-    # EXPECTED GAP: the nuclei wrapper takes a host with no port, so it probes 80/443;
-    # Juice Shop listens on 3000. Expect zero findings or an error here.
-    ("nuclei_juice-shop_default", "nuclei", "juice-shop.lab", {},                                  "jsonl"),
+    # RC-14 fix: Juice Shop listens on 3000 (plain HTTP, no TLS), so this needs the
+    # explicit port/scheme parameters - the bare-host default only reaches 80/443.
+    ("nuclei_juice-shop_default", "nuclei", "juice-shop.lab", {"port": 3000, "scheme": "http"},      "jsonl"),
 ]
 for i, (name, tool, target, params, ext) in enumerate(RUNS, 1):
     r = box.execute(ToolAction(tool, target, params), iteration=i)
@@ -300,9 +300,10 @@ print("audit log:", log.path)
 '@ | docker compose -f $LAB exec -T scanner python3 -
 ```
 
-Expected: every row `outcome=executed`; the Juice Shop nuclei row may show
-`status=ok` with no findings, or an error. Anything `denied`/`declined` is also
-informative: send me the printed lines.
+Expected: every row `outcome=executed`. The Juice Shop nuclei row now targets
+`http://juice-shop.lab:3000` explicitly (RC-14 fix), so it should behave like
+the DVWA rows rather than coming back empty. Anything `denied`/`declined` is
+also informative: send me the printed lines.
 
 Outputs land in `lab/captures/` (raw XML/JSONL, parsed `*.findings.json`, and the
 audit log under `lab/captures/audit/`). These are the real fixtures.
@@ -706,9 +707,6 @@ and the ambient-config handling, update the docs and the Jira ticket):
 
 These are my predictions from reading my own code, not observations:
 
-- **nuclei cannot target a non-default port.** The wrapper takes a host only (the
-  gate validates hosts), so nuclei probes 80/443. Juice Shop is on 3000. A `ports`
-  parameter for the nuclei wrapper is likely needed.
 - **Ambient nuclei config and environment are not controlled** (Step 11, B and D).
 - **One or more nuclei flag names may be wrong** for v3.11.1 (Step 7).
 - **Some "active-recon" tags may include templates that send non-GET requests or

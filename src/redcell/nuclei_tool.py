@@ -10,6 +10,15 @@ allow-list whose members cannot carry a host or URL; the rate limit derived from
 selection; secrets redacted before they reach the audit log; errors returned as
 structured results, never raised.
 
+RC-14 follow-up: the gate approves a bare host/IP/CIDR, so by default nuclei is
+pointed at the bare target and probes 80/443, which cannot reach a service on a
+non-default port (e.g. Juice Shop on 3000 in the lab, RC-19). Two optional
+parameters fix this without opening a host-smuggling path: ``port`` (a strict
+int, 1-65535) and ``scheme`` (the fixed enum ``http``/``https``). Neither can
+hold a host string, so the request's host is always exactly the gate-approved
+target - ``_target_url`` builds ``scheme://target[:port]`` from the approved
+target, never from anything the planner supplies.
+
 The three nuclei-specific controls:
 
 1. No arbitrary templates. The planner chooses templates only by curated
@@ -187,12 +196,15 @@ class NucleiTool:
         "Templated web and service checks via nuclei, using a curated, pinned template set. "
         "Select with 'severity' (info, low, medium, high, critical) and 'tags' ("
         + ", ".join(sorted(ACTIVE_TAGS)) + " are low impact; intrusive tags need operator approval). "
+        "Optional 'port' (1-65535) and 'scheme' (http, https) target a non-default port or force "
+        "a scheme; both apply only to the gate-approved target, never a second host. "
         "Default: low-impact detection tags only. Redirects are not followed."
     )
     risk = Risk.ACTIVE_RECON  # baseline; risk_for refines it per invocation
     destructive = False
-    allowed_parameters = frozenset({"severity", "tags", "template_ids"})
+    allowed_parameters = frozenset({"severity", "tags", "template_ids", "port", "scheme"})
     sensitive_parameters: frozenset[str] = frozenset()
+    SCHEMES = ("http", "https")
 
     def __init__(
         self,
@@ -282,6 +294,13 @@ class NucleiTool:
                     or not all(isinstance(i, str) and _ID_RE.fullmatch(i) and i in self._curated
                                for i in ids)):
                 return "template_ids must be a non-empty list of curated template ids"
+        if "port" in parameters:
+            port = parameters["port"]
+            if isinstance(port, bool) or not isinstance(port, int) or not (1 <= port <= 65535):
+                return "port must be an integer between 1 and 65535"
+        if "scheme" in parameters:
+            if parameters["scheme"] not in self.SCHEMES:
+                return f"scheme must be one of {list(self.SCHEMES)}"
         return None
 
     def _effective_tags(self, parameters: Mapping[str, Any]) -> list[str]:
@@ -310,13 +329,27 @@ class NucleiTool:
     def target_problem(target: object) -> str | None:
         return argv_target_problem(target)
 
+    @staticmethod
+    def _target_url(target: str, parameters: Mapping[str, Any]) -> str:
+        """The approved ``target`` only, with an explicit scheme/port when the
+        planner asked for one. ``port``/``scheme`` are validated (int 1-65535;
+        enum) before this runs, so neither can carry a host of its own -
+        the URL's host is always exactly the gate-approved ``target``."""
+        port = parameters.get("port")
+        scheme = parameters.get("scheme")
+        if port is None and scheme is None:
+            return target  # unchanged: nuclei is given the bare target, as before
+        host = f"[{target}]" if ":" in target and not target.startswith("[") else target
+        url = f"{scheme or 'https'}://{host}"
+        return f"{url}:{port}" if port is not None else url
+
     def build_argv(self, nuclei: str, target: str, parameters: Mapping[str, Any]) -> list[str]:
         concurrency = max(1, min(self.max_rps, 10))
         argv = [nuclei]
         if self._config:
             argv += ["-config", self._config]
         argv += [
-            "-u", target,
+            "-u", self._target_url(target, parameters),
             "-t", self._template_dir,  # the operator's pinned set: the only -t
             "-jsonl", "-silent", "-no-color",
             "-disable-update-check",

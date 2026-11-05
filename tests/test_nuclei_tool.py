@@ -174,10 +174,61 @@ def test_legitimate_targets_are_one_argv_element(target):
     assert argv.count(target) == 1 and value_after(argv, "-u") == target
 
 
+# --- port / scheme (RC-14 follow-up: target a non-default port) ------------------
+
+def test_without_port_or_scheme_the_bare_target_is_unchanged():
+    argv = argv_of({})
+    assert value_after(argv, "-u") == HOST  # exact prior behavior: no regression
+
+
+def test_port_builds_an_explicit_url_against_the_approved_target_only():
+    argv = argv_of({"port": 3000})
+    assert value_after(argv, "-u") == f"https://{HOST}:3000"  # scheme defaults to https
+
+
+def test_scheme_alone_builds_a_url_with_no_port():
+    argv = argv_of({"scheme": "http"})
+    assert value_after(argv, "-u") == f"http://{HOST}"
+
+
+def test_port_and_scheme_together():
+    argv = argv_of({"port": 3000, "scheme": "http"})
+    assert value_after(argv, "-u") == f"http://{HOST}:3000"
+
+
+def test_port_brackets_an_ipv6_target():
+    argv = argv_of({"port": 3000, "scheme": "http"}, target="2001:db8::1")
+    assert value_after(argv, "-u") == "http://[2001:db8::1]:3000"
+
+
+@pytest.mark.parametrize("port", [0, -1, 65536, 1.5, "3000", True, False, None, "3000; id", "3000,80"])
+def test_bad_port_values_are_refused_before_nuclei_runs(port):
+    r = Runner()
+    out = tool(runner=r).run(HOST, {"port": port})
+    assert out.status == "invalid_input" and r.calls == []
+
+
+@pytest.mark.parametrize("scheme", ["ftp", "HTTPS", "https://evil.example.net", "", 1, ["http"], None])
+def test_bad_scheme_values_are_refused_before_nuclei_runs(scheme):
+    r = Runner()
+    out = tool(runner=r).run(HOST, {"scheme": scheme})
+    assert out.status == "invalid_input" and r.calls == []
+
+
+def test_port_and_scheme_cannot_smuggle_a_second_host():
+    # port is a strict int and scheme a fixed enum, so neither can carry a host;
+    # the only host that can ever appear in the built URL is the approved target.
+    r = Runner()
+    tool(runner=r).run(HOST, {"port": 3000, "scheme": "http"})
+    argv = r.calls[0][0]
+    assert value_after(argv, "-u") == f"http://{HOST}:3000"
+    assert "evil" not in " ".join(argv)
+
+
 # --- parameter allow-list; no custom templates ---------------------------------
 
 def test_allowed_parameters_cannot_carry_a_host_url_or_path():
-    assert NucleiTool.allowed_parameters == {"severity", "tags", "template_ids"}
+    assert NucleiTool.allowed_parameters == {"severity", "tags", "template_ids", "port", "scheme"}
     forbidden = {"target", "targets", "host", "url", "urls", "u", "list", "l", "t", "templates",
                  "template", "template_path", "template_url", "w", "workflows", "workflow", "header",
                  "headers", "H", "var", "vars", "proxy", "config", "iserver", "interactsh_server",

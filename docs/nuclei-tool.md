@@ -52,13 +52,29 @@ planner: {"type":"action","tool":"nuclei","target":"app.acme.com","parameters":{
 
 ## Parameters
 
-Three, none of which can carry a host, URL or path:
+Five, none of which can carry a host, URL or path:
 
 | Parameter | Values |
 |---|---|
 | `severity` | non-empty list from `info`, `low`, `medium`, `high`, `critical` (default: all) |
 | `tags` | non-empty list from the curated vocabulary below (default: the low-impact detection tags) |
 | `template_ids` | list of ids from the operator's curated manifest; refused unless a manifest is configured |
+| `port` | a strict integer, 1-65535 (default: none - nuclei probes 80/443 against the bare target) |
+| `scheme` | `http` or `https` (default: `https` if `port` is given and `scheme` is not; otherwise the bare target is passed unchanged) |
+
+### `port` / `scheme` (RC-14 follow-up)
+
+The gate approves a bare host, IP or CIDR (never a port), so by default nuclei
+is pointed at the bare target and only reaches 80/443. That misses anything on
+a non-default port - the lab's Juice Shop listens on 3000 (RC-19). `port` and
+`scheme` close that gap without opening a host-smuggling path: `port` is a
+strict `int` (never a string, so it cannot carry `;` or a second host) and
+`scheme` is the fixed two-value enum `http`/`https` (never a URL). The wrapper
+builds the request URL itself, `scheme://target[:port]`, always from the
+gate-approved `target` - neither parameter can ever supply the host part.
+IPv6 targets are bracketed automatically (`https://[2001:db8::1]:3000`).
+Omitting both keeps the prior behavior exactly (the bare target passed to
+`-u`), so existing engagements are unaffected.
 
 Tag vocabulary and risk:
 
