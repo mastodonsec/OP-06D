@@ -1,4 +1,4 @@
-"""The gated tool layer: the only way from the loop to a tool (RC-7, RC-8).
+"""The gated tool layer: the only way from the loop to a tool (RC-7, RC-8, RC-13).
 
 ``GatedToolbox`` owns the tools. It exposes exactly one way to run one:
 ``execute(action)``, which always goes
@@ -9,28 +9,45 @@ There is no accessor that returns a tool, and the tools live in a name-mangled
 private attribute, so code holding a toolbox (the orchestrator loop) cannot
 invoke a tool without passing the gate. Python cannot make this absolute, so
 the property is also asserted by tests (a denied action's tool is never run).
+Concrete tools (e.g. ``redcell.nmap_tool``) are constructed only by
+``default_tools`` below; nothing else imports them.
 
 Sanitization happens here too: ``execute`` returns the raw output (for
-evidence, RC-15/16) alongside the sanitized, wrapped version, and the loop only
-ever puts the sanitized version in the planning context.
+evidence, RC-15/16) alongside the sanitized, wrapped version of the tool's
+findings, and the loop only ever puts the sanitized version in the planning
+context.
 
-Risk and approval (RC-8 hook)
------------------------------
-Every tool declares a ``Risk``. An action whose tool risk is at or above the
-toolbox's ``approval_threshold`` pauses for operator approval *after* the gate
-allows it (so the operator is never asked about something the gate would
-refuse). Declined, timed-out, errored or unrecordable approvals all mean the
-action does not run. The default threshold is ``Risk.INTRUSIVE``; see
-docs/orchestrator.md for why nothing in the recon MVP crosses it.
+Per-invocation risk, destructiveness and redaction
+--------------------------------------------------
+A tool may refine its declared ``risk``/``destructive`` for one concrete
+invocation by implementing ``risk_for(parameters)`` / ``destructive_for(
+parameters)`` (nmap: an intrusive NSE category raises the risk). The toolbox
+uses the invocation's value for the approval threshold and the destructive
+check, and fails closed (EXPLOIT / destructive) if those hooks raise.
 
-Tool wrappers (RC-13/14) must: use argv, never a shell; declare only
-``allowed_parameters`` that cannot carry a second target (the gate checks
-``target`` only); and apply their own request-rate flag from ``max_rps``.
+Parameters are redacted before they reach ANY audit record or approval
+request: keys the tool lists in ``sensitive_parameters`` and any key that looks
+like a secret (password, token, key, ...) are replaced by ``[REDACTED]``. This
+includes actions the toolbox refuses, so a secret in a rejected action cannot
+leak into the client-facing log either.
+
+Approval (RC-8 hook)
+--------------------
+An action whose invocation risk is at or above ``approval_threshold`` pauses for
+operator approval *after* the gate allows it. Declined, timed-out, errored or
+unrecordable approvals all mean the action does not run. Default threshold:
+``Risk.INTRUSIVE``; see docs/orchestrator.md.
+
+Tool wrappers must: use argv, never a shell; declare only ``allowed_parameters``
+that cannot carry a second target (the gate checks ``target`` only); validate
+parameter values in ``validate_parameters``; and bound the traffic the tool
+itself sends using the engagement's ``max_rps``.
 """
 
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass, field
 from enum import Enum, IntEnum
 from typing import Any, Iterable, Mapping, Protocol
@@ -43,13 +60,20 @@ from redcell.audit import (
 )
 from redcell.engagement import Engagement
 from redcell.gate import ALLOWED, DENIED_AUDIT, DENIED_RATE, Gate, GateDecision
-from redcell.sanitize import SanitizedOutput, sanitize_tool_output
+from redcell.sanitize import SanitizedOutput, sanitize_tool_output, sha256_of
 
 STAGE_TOOL = "tool"  # denied before the gate: unknown tool, bad parameters, destructive
 STAGE_APPROVAL = "approval"
 
 MAX_PARAMETERS_CHARS = 4_000
 MAX_TARGET_CHARS = 253
+
+REDACTED = "[REDACTED]"
+# Over-redaction is the safe direction: a harmless key lost from the log is
+# better than a credential in client-facing evidence.
+_SECRET_KEY_RE = re.compile(
+    r"pass|secret|token|key|cred|auth|cookie|session|bearer|signature|otp", re.I
+)
 
 
 class Risk(IntEnum):
@@ -60,13 +84,36 @@ class Risk(IntEnum):
 
 
 class Tool(Protocol):
+    """What a tool must provide. Optional hooks (looked up by name):
+
+    ``sensitive_parameters: frozenset[str]``
+    ``validate_parameters(parameters) -> str | None`` (a problem, or None)
+    ``risk_for(parameters) -> Risk``
+    ``destructive_for(parameters) -> bool``
+    """
+
     name: str
     description: str
-    risk: Risk
+    risk: Risk  # baseline; risk_for may raise it for a specific invocation
     destructive: bool
     allowed_parameters: frozenset[str]
 
     def run(self, target: str, parameters: Mapping[str, Any]) -> object: ...
+
+
+@dataclass(frozen=True)
+class ToolOutput:
+    """A structured tool result.
+
+    ``findings`` is parsed, structured data: it is what is sanitized and shown
+    to the planner (and later normalized by RC-15). ``raw`` is the tool's
+    unmodified output, kept only as evidence. ``status`` is "ok" or an error
+    code; a non-ok status is a tool error the loop handles, not an exception.
+    """
+
+    findings: object
+    raw: object = None
+    status: str = "ok"
 
 
 class ApprovalHook(Protocol):
@@ -96,14 +143,14 @@ class ApprovalRequest:
     iteration: int
     tool: str
     target: str
-    parameters: dict[str, Any]
-    risk: Risk
+    parameters: dict[str, Any]  # redacted
+    risk: Risk  # this invocation's risk
     reason: str
 
 
 class Outcome(str, Enum):
     EXECUTED = "executed"
-    TOOL_ERROR = "tool_error"  # the tool ran and raised
+    TOOL_ERROR = "tool_error"  # the tool ran and failed or raised
     DENIED = "denied"
     RATE_LIMITED = "rate_limited"
     DECLINED = "declined"
@@ -119,6 +166,22 @@ class ExecutionResult:
     sanitized: SanitizedOutput | None = None  # the only form the planner may see
     status: str = ""
     recorded: bool = True  # False if the execution record could not be written
+    findings: object = None  # structured, unsanitized: for RC-15 normalization only
+    risk: Risk | None = None  # the invocation's risk
+
+
+def redact_parameters(
+    parameters: object, sensitive: Iterable[str] = ()
+) -> dict[str, Any]:
+    """A copy of ``parameters`` that is safe to write to the audit log."""
+    if not isinstance(parameters, dict):
+        return {"_invalid_parameters": True}
+    sens = {str(s).lower() for s in sensitive}
+    out: dict[str, Any] = {}
+    for k, v in parameters.items():
+        key = k if isinstance(k, str) else repr(k)
+        out[key] = REDACTED if (key.lower() in sens or _SECRET_KEY_RE.search(key)) else v
+    return out
 
 
 def _decision(target: object, reason: str, stage: str) -> GateDecision:
@@ -170,6 +233,12 @@ class GatedToolbox:
             for t in self.__tools.values()
         ]
 
+    def redact(self, action: ToolAction) -> dict[str, Any]:
+        """The action's parameters as safe to log (used by the loop's records)."""
+        tool = self.__tools.get(action.tool) if isinstance(action.tool, str) else None
+        sensitive = getattr(tool, "sensitive_parameters", ()) if tool else ()
+        return redact_parameters(action.parameters, sensitive)
+
     # -- the only door --------------------------------------------------------
     def execute(self, action: ToolAction, *, iteration: int) -> ExecutionResult:
         """Gate, (approve), run, sanitize, record. Never raises."""
@@ -187,9 +256,29 @@ class GatedToolbox:
         kwargs = {} if event is None else {"event": event}
         return self.__log.sink(
             tool=action.tool,
-            parameters={"iteration": iteration, "params": action.parameters},
+            parameters={"iteration": iteration, "params": self.redact(action)},
             **kwargs,
         )
+
+    def __invocation_risk(self, tool: Tool, params: dict[str, Any]) -> Risk:
+        hook = getattr(tool, "risk_for", None)
+        if hook is None:
+            return Risk(tool.risk)
+        try:
+            return max(Risk(tool.risk), Risk(hook(dict(params))))
+        except Exception:
+            return Risk.EXPLOIT  # cannot classify -> treat as the most dangerous
+
+    def __invocation_destructive(self, tool: Tool, params: dict[str, Any]) -> bool:
+        if tool.destructive:
+            return True
+        hook = getattr(tool, "destructive_for", None)
+        if hook is None:
+            return False
+        try:
+            return bool(hook(dict(params)))
+        except Exception:
+            return True
 
     def __execute(self, action: ToolAction, iteration: int) -> ExecutionResult:
         sink = self.__sink(action, iteration)
@@ -198,48 +287,64 @@ class GatedToolbox:
         if problem:
             return self.__refuse(action, sink, f"deny: {problem}")
         tool = self.__tools[action.tool]
-        if tool.destructive and not self.__destructive_ok:
+        risk = self.__invocation_risk(tool, action.parameters)
+        if (self.__invocation_destructive(tool, action.parameters)
+                and not self.__destructive_ok):
             return self.__refuse(
                 action, sink,
-                "deny: tool is destructive and the engagement does not permit destructive actions",
+                "deny: action is destructive and the engagement does not permit destructive actions",
             )
 
         decision = self.__gate.check(action.target, audit=sink)  # <- the gate
         if not decision.allowed:
             outcome = Outcome.RATE_LIMITED if decision.stage == DENIED_RATE else Outcome.DENIED
-            return ExecutionResult(action, outcome, decision, executed=False)
+            return ExecutionResult(action, outcome, decision, executed=False, risk=risk)
         assert decision.stage == ALLOWED
 
-        if tool.risk >= self.__threshold and not self.__approved(action, tool, iteration):
+        if risk >= self.__threshold and not self.__approved(action, risk, iteration):
             return ExecutionResult(
                 action, Outcome.DECLINED,
                 GateDecision(decision.target, False, "deny: operator approval not granted",
                              STAGE_APPROVAL, decision.resolved_ips),
-                executed=False,
+                executed=False, risk=risk,
             )
 
-        outcome, raw, status = Outcome.EXECUTED, None, "ok"
+        outcome, status = Outcome.EXECUTED, "ok"
+        raw: object
+        findings: object
         try:
-            raw = tool.run(action.target, dict(action.parameters))
+            produced = tool.run(action.target, dict(action.parameters))
         except Exception as exc:
-            outcome, raw, status = Outcome.TOOL_ERROR, f"tool error: {type(exc).__name__}: {exc}", "error"
+            produced = ToolOutput(
+                {"status": "error", "error": {"code": "tool_exception",
+                                              "message": f"{type(exc).__name__}: {exc}"}},
+                raw=f"tool error: {type(exc).__name__}: {exc}", status="error",
+            )
+        if isinstance(produced, ToolOutput):
+            raw, findings, status = produced.raw, produced.findings, produced.status
+            if status != "ok":
+                outcome = Outcome.TOOL_ERROR
+        else:
+            raw = findings = produced
 
         sanitized = sanitize_tool_output(
-            raw, tool=action.tool, target=action.target,
+            findings, tool=action.tool, target=action.target,
             audit=self.__sink(action, iteration, EVENT_INJECTION_FLAG),
         )
         recorded = True
         try:
             self.__log.record_execution(
                 tool=action.tool, target=action.target,
-                parameters={"iteration": iteration, "params": action.parameters},
+                parameters={"iteration": iteration, "params": self.redact(action)},
                 status=status,
-                detail=f"{sanitized.original_length} chars sha256={sanitized.sha256}"
+                detail=f"risk={risk.name} output={sanitized.original_length} chars "
+                       f"sha256={sanitized.sha256} raw_sha256={sha256_of(raw)}"
                        + (" flagged" if sanitized.flagged else ""),
             )
         except AuditError:
             recorded = False
-        return ExecutionResult(action, outcome, decision, True, raw, sanitized, status, recorded)
+        return ExecutionResult(action, outcome, decision, True, raw, sanitized, status,
+                               recorded, findings, risk)
 
     def __refuse(self, action: ToolAction, sink, reason: str) -> ExecutionResult:
         stage = STAGE_TOOL
@@ -263,33 +368,49 @@ class GatedToolbox:
         params = action.parameters
         if not isinstance(params, dict) or not all(isinstance(k, str) for k in params):
             return "parameters must be an object with string keys"
-        extra = set(params) - set(self.__tools[action.tool].allowed_parameters)
+        tool = self.__tools[action.tool]
+        extra = set(params) - set(tool.allowed_parameters)
         if extra:
             return f"parameters not allowed for {action.tool}: {sorted(extra)}"
         if not all(_json_safe(v) for v in params.values()):
             return "parameter values must be strings, numbers, booleans or lists of those"
         if len(json.dumps(params, default=repr)) > MAX_PARAMETERS_CHARS:
             return "parameters too large"
+        check = getattr(tool, "validate_parameters", None)
+        if check is not None:
+            try:
+                why = check(dict(params))
+            except Exception:
+                why = "parameter validation failed"
+            if why:
+                return f"invalid parameters for {action.tool}: {why}"
         return None
 
-    def __approved(self, action: ToolAction, tool: Tool, iteration: int) -> bool:
+    def __approved(self, action: ToolAction, risk: Risk, iteration: int) -> bool:
+        safe = self.redact(action)
         request = ApprovalRequest(
-            iteration, action.tool, action.target, dict(action.parameters),
-            Risk(tool.risk), action.reason,
+            iteration, action.tool, action.target, safe, Risk(risk), action.reason,
         )
         try:
             granted = self.__approver.approve(request) is True
         except Exception:
             granted = False
-        reason = (
-            f"operator {'approved' if granted else 'declined'} {Risk(tool.risk).name} action"
-        )
+        reason = f"operator {'approved' if granted else 'declined'} {Risk(risk).name} action"
         try:  # an approval that cannot be recorded does not count
             self.__log.record(
                 EVENT_APPROVAL, target=action.target, tool=action.tool,
-                parameters={"iteration": iteration, "params": action.parameters},
+                parameters={"iteration": iteration, "params": safe},
                 allowed=granted, reason=reason,
             )
         except AuditError:
             return False
         return granted
+
+
+def default_tools(engagement: Engagement) -> list[Tool]:
+    """The tools Red Cell ships with, configured from the engagement (rate
+    limits come from ``intensity.max_rps``). This is the only place concrete
+    tool modules are imported and constructed."""
+    from redcell.nmap_tool import NmapTool
+
+    return [NmapTool.from_engagement(engagement)]

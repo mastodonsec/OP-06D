@@ -325,9 +325,14 @@ class Orchestrator:
                     return self._end(Termination.OBJECTIVE_MET, steps, n, parsed.summary)
 
                 action = parsed
+                safe_params = self._toolbox.redact(action)  # never log a secret
+                safe_reply = json.dumps(
+                    {"type": "action", "tool": action.tool, "target": action.target,
+                     "parameters": safe_params, "reason": action.reason},
+                    default=repr)[:MAX_STORED_REPLY_CHARS]
                 self._log.record(
                     EVENT_ITERATION, target=action.target, tool=action.tool,
-                    parameters={"iteration": n, "params": action.parameters, "reply": stored},
+                    parameters={"iteration": n, "params": safe_params, "reply": safe_reply},
                     reason=f"planned: {action.reason}" if action.reason else "planned",
                 )
             except AuditError:

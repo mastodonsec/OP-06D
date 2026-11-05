@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE nmaprun>
+<!-- Nmap 7.94 scan initiated Tue Nov 10 02:15:01 2026 as: nmap -oX - -&#45;no-stylesheet -&#45;max-rate 20 -sV -p 22,80,443 -&#45; 203.0.113.5 -->
+<nmaprun scanner="nmap" args="nmap -oX - --no-stylesheet --max-rate 20 -sV -p 22,80,443 -- 203.0.113.5" start="1794276901" startstr="Tue Nov 10 02:15:01 2026" version="7.94" xmloutputversion="1.05">
+<scaninfo type="syn" protocol="tcp" numservices="3" services="22,80,443"/>
+<verbose level="0"/>
+<debugging level="0"/>
+<hosthint><status state="up" reason="unknown-response" reason_ttl="0"/>
+<address addr="203.0.113.5" addrtype="ipv4"/>
+<hostnames>
+</hostnames>
+</hosthint>
+<host starttime="1794276901" endtime="1794276913"><status state="up" reason="echo-reply" reason_ttl="52"/>
+<address addr="203.0.113.5" addrtype="ipv4"/>
+<hostnames>
+<hostname name="app.acme.com" type="PTR"/>
+</hostnames>
+<ports>
+<port protocol="tcp" portid="22"><state state="open" reason="syn-ack" reason_ttl="52"/><service name="ssh" product="OpenSSH" version="8.9p1 Ubuntu 3ubuntu0.4" extrainfo="Ubuntu Linux; protocol 2.0" ostype="Linux" method="probed" conf="10"><cpe>cpe:/a:openbsd:openssh:8.9p1</cpe><cpe>cpe:/o:linux:linux_kernel</cpe></service></port>
+<port protocol="tcp" portid="80"><state state="open" reason="syn-ack" reason_ttl="52"/><service name="http" product="nginx" version="1.18.0" extrainfo="Ubuntu" ostype="Linux" method="probed" conf="10"><cpe>cpe:/a:igor_sysoev:nginx:1.18.0</cpe></service><script id="http-title" output="Acme - Customer Portal"><elem key="title">Acme - Customer Portal</elem></script></port>
+<port protocol="tcp" portid="443"><state state="open" reason="syn-ack" reason_ttl="52"/><service name="http" product="nginx" version="1.18.0" tunnel="ssl" method="probed" conf="10"><cpe>cpe:/a:igor_sysoev:nginx:1.18.0</cpe></service></port>
+</ports>
+<times srtt="21000" rttvar="3000" to="100000"/>
+</host>
+<runstats><finished time="1794276913" timestr="Tue Nov 10 02:15:13 2026" summary="Nmap done at Tue Nov 10 02:15:13 2026; 1 IP address (1 host up) scanned in 12.34 seconds" elapsed="12.34" exit="success"/><hosts up="1" down="0" total="1"/>
+</runstats>
+</nmaprun>

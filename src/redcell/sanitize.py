@@ -167,6 +167,12 @@ def _to_text(raw: object) -> tuple[str, bytes]:
     return text, text.encode("utf-8", errors="replace")
 
 
+def sha256_of(raw: object) -> str:
+    """Digest of a tool's raw output, the same way ``sanitize_tool_output``
+    computes it, so evidence records and flags line up."""
+    return hashlib.sha256(_to_text(raw)[1]).hexdigest()
+
+
 def _detect(text: str) -> list[InjectionFinding]:
     flat = _normalize_for_matching(text)
     lined = _normalize_for_matching(text, keep_newlines=True)

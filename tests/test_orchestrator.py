@@ -285,7 +285,7 @@ def test_no_path_from_the_loop_to_a_tool_except_the_toolbox(tmp_path):
     orch_state = {k: v for k, v in vars(rig.orch).items() if k != "_toolbox"}
     assert not holds(orch_state)  # the loop holds no tool, only the toolbox
     public = {n for n in dir(rig.toolbox) if not n.startswith("_")}
-    assert public == {"describe", "execute"}  # nothing returns or exposes a tool
+    assert public == {"describe", "execute", "redact"}  # nothing returns or exposes a tool
     assert "name" in rig.toolbox.describe()[0] and not callable(rig.toolbox.describe()[0].get("run"))
 
 
