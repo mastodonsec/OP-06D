@@ -44,6 +44,7 @@ _ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 
 EVENT_LOG_OPENED = "log_opened"
 EVENT_GATE_DECISION = "gate_decision"
+EVENT_INJECTION_FLAG = "injection_flag"
 EVENT_ACTION_EXECUTED = "action_executed"
 
 
@@ -213,18 +214,28 @@ class AuditLog:
         }
         return AuditEntry(**fields, hash=_digest(fields))
 
-    def sink(self, *, tool: str, parameters: dict[str, Any] | None = None) -> AuditSink:
+    def sink(
+        self,
+        *,
+        tool: str,
+        parameters: dict[str, Any] | None = None,
+        event: str = EVENT_GATE_DECISION,
+    ) -> AuditSink:
         """An ``AuditSink`` bound to the action being gated. Pass it as the
-        ``audit=`` argument of the scope check; the scope code never needs to
-        know about tools or parameters."""
+        ``audit=`` argument of the gate; the gate never needs to know about
+        tools or parameters.
+
+        ``event`` selects the entry type. For the default gate decisions the
+        ``allowed`` flag is stored; for any other event (e.g. an injection
+        flag, RC-12) there is no allow/deny, so it is stored as null."""
 
         def write(target: str, allowed: bool, reason: str) -> None:
             self.record(
-                EVENT_GATE_DECISION,
+                event,
                 target=target,
                 tool=tool,
                 parameters=parameters,
-                allowed=allowed,
+                allowed=allowed if event == EVENT_GATE_DECISION else None,
                 reason=reason,
             )
 
