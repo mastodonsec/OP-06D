@@ -318,6 +318,17 @@ Outputs land in `lab/captures/` (raw XML/JSONL, parsed `*.findings.json`, and th
 audit log under `lab/captures/audit/`). These are the real fixtures.
 
 ## Step 9. Do the parsers handle real output unchanged?
+**Purpose.** The parsers (`parse_nmap_xml`, `parse_nuclei_jsonl`) were written and
+unit-tested against *hand-written* example files — our best guess at what nmap and
+nuclei produce. Step 8 just captured what the real tools *actually* produce. This
+step proves the parsers handle the real thing, not just our approximation of it.
+
+**Why it is important.** Real tool output often differs from a hand-written sample in
+small ways: extra XML elements (nmap emits a `<hosthint>` block), fields that are
+sometimes present and sometimes absent (nuclei's `matcher-name`), or a field that's
+a list in reality but was a string in the sample (`info.tags`). Any of those can
+make a parser quietly drop data or fail. This step catches that before we trust the
+output — it's the bridge from "passes its tests" to "works on reality."
 
 ```powershell
 @'
