@@ -202,7 +202,10 @@ Scope entries are exact: `acme.com` ≠ its subdomains; `*.acme.com` ≠ the ape
 - **No live client engagement** until: RC-23 (resolve-once DNS) fixed, RC-14 config/method
   follow-ups done, and RC-21 adversarial testing done. (Lab validation is complete.)
 - Cloud targets have provider pentest policies; a client scope doesn't override them.
-- Repo is private; license decision deferred (consultancy vs. product).
+- **License: AGPL-3.0-or-later** (`LICENSE`), copyright Thomas Pavan / Mastodon
+  Security. Contributions via DCO sign-off (`git commit -s`; see `CONTRIBUTING.md`).
+  As sole copyright holder, commercial dual-licensing stays available (see `NOTICE`).
+  New source files carry the SPDX header `AGPL-3.0-or-later`.
 
 ## Deliberately out of the MVP
 Exploitation tier (Metasploit), BAS (CALDERA), cloud posture auditing, authenticated app
