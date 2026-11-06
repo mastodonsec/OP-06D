@@ -1,4 +1,4 @@
-![alt text](RedCell.jpeg)
+![alt text](RedCell2.png)
 # Red Cell
 
 An AI-driven security validation tool. An LLM plans reconnaissance actions and drives
