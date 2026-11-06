@@ -93,6 +93,69 @@ def test_hostname_allowed_with_resolved_ips():
     assert d.allowed and d.resolved_ips == ("198.51.100.7",)
 
 
+# --- RC-23: resolve-once (one DnsPinner per Gate, i.e. per engagement) ------
+
+def test_hostname_is_resolved_once_no_matter_how_many_actions_check_it():
+    calls = []
+
+    def counting(host):
+        calls.append(host)
+        return ["198.51.100.7"]
+
+    gate, _ = make_gate(resolver=counting)
+    for _ in range(5):
+        d, _ = check(gate, "app.acme.com")
+        assert d.allowed and d.resolved_ips == ("198.51.100.7",)
+    assert calls == ["app.acme.com"]  # one real lookup for five checks
+
+
+def engagement_with_out_of_scope_net(net: str) -> Engagement:
+    d = yaml.safe_load(EXAMPLE.read_text(encoding="utf-8"))
+    d["scope"]["out_of_scope"].append(net)
+    return parse_engagement(yaml.safe_dump(d))
+
+
+def test_rebinding_after_the_first_check_never_reaches_the_tool():
+    # The gate approved 198.51.100.7 on the first check. If DNS for the same
+    # hostname were to change afterwards - attacker rebinding, a short-TTL
+    # failover, ordinary drift - the pin must mean the gate (and therefore
+    # every tool it approves a scan for) keeps using the FIRST address, not
+    # whatever a later lookup would return.
+    eng = engagement_with_out_of_scope_net("198.51.100.96/28")  # covers .99
+    answers = iter([["198.51.100.7"], ["198.51.100.99"]])  # second is out of scope
+    gate, _ = make_gate(eng, resolver=lambda h: next(answers))
+    first, _ = check(gate, "app.acme.com")
+    second, _ = check(gate, "app.acme.com")
+    assert first.allowed and first.resolved_ips == ("198.51.100.7",)
+    assert second.allowed and second.resolved_ips == ("198.51.100.7",)  # pin held
+    # proof the pin (not luck) is why: a gate that resolved to 198.51.100.99
+    # from the very first check denies it (it matches an out-of-scope net).
+    fresh_gate, _ = make_gate(eng, resolver=lambda h: ["198.51.100.99"])
+    assert not check(fresh_gate, "app.acme.com")[0].allowed
+
+
+def test_dns_pin_is_audited_once_per_hostname(tmp_path):
+    log = AuditLog.for_engagement(ENG, tmp_path)
+    gate = Gate(ENG, resolver=lambda h: ["198.51.100.7"], audit_pin=log.record_dns_pin,
+                now=lambda: START + timedelta(hours=1))
+    for _ in range(3):
+        gate.check("app.acme.com", audit=log.sink(tool="nmap"))
+    pins = [e for e in read_log(log.path) if e.event == "dns_pinned"]
+    assert len(pins) == 1  # pinned once, not once per check
+    assert pins[0].target == repr("app.acme.com")
+    assert pins[0].parameters["resolved_ips"] == ["198.51.100.7"]
+
+
+def test_dns_pin_audit_failure_denies_the_check(tmp_path):
+    def boom(hostname, ips):
+        raise OSError("disk full")
+
+    gate = Gate(ENG, resolver=lambda h: ["198.51.100.7"], audit_pin=boom,
+                now=lambda: START + timedelta(hours=1))
+    d, sink = check(gate, "app.acme.com")
+    assert not d.allowed and d.stage == DENIED_SCOPE and "resolution failed" in d.reason
+
+
 # --- rate cap ---------------------------------------------------------------
 
 def test_burst_above_max_rps_is_blocked():

@@ -271,11 +271,26 @@ This goes through the **gate and the toolbox** (not the raw tools), so the gate,
 sanitizer and audit log are exercised as well. The scanner has no network beyond
 the lab, and the engagement scopes only the two targets.
 
+**RC-23 (resolve-once):** the two `nuclei` rows target hostnames
+(`dvwa.lab`/`juice-shop.lab`), so this run now also exercises the resolve-once
+fix end to end - this *is* the RC-23 "lab verification" acceptance check. The
+gate resolves each hostname once, pins it (`Gate(..., audit_pin=
+log.record_dns_pin)` below records that as a `dns_pinned` audit entry), and
+the toolbox hands nuclei the pinned IP, never the hostname; nuclei gets
+`-H "Host: <hostname>"` + `-sni <hostname>` so vhost routing still works.
+Expect: the findings to still match the frozen baseline (same
+swagger-api/owasp-juice-shop-detect/fingerprinthub/tech-detect results - IP+Host
+substitution should not change what matches for a docker-DNS vhosted target);
+`nuclei_*.findings.json` to carry a `target_hostname` field; and a `dns_pinned`
+entry per hostname in the audit log (two total: `dvwa.lab`, `juice-shop.lab`).
+The `nmap` rows already target literal IPs, so they are unaffected beyond
+`-n` now always being in the argv.
+
 ```
 @'
 import json, pathlib
 from redcell.engagement import load_engagement
-from redcell.audit import AuditLog, verify_log
+from redcell.audit import AuditLog, read_log, verify_log
 from redcell.gate import Gate
 from redcell.tools import GatedToolbox, ToolAction, default_tools
 
@@ -283,7 +298,7 @@ OUT = pathlib.Path("/captures")
 eng = load_engagement("/lab/engagement.yaml")
 log = AuditLog.for_engagement(eng, OUT / "audit")
 tools = default_tools(eng, nuclei_template_dir="/opt/nuclei-templates", nuclei_templates_pin="v10.5.1")
-box = GatedToolbox(eng, Gate(eng), log, tools)
+box = GatedToolbox(eng, Gate(eng, audit_pin=log.record_dns_pin), log, tools)
 
 RUNS = [
     ("nmap_juice-shop_service", "nmap",   "172.31.77.10", {"profile": "service", "ports": "3000"}, "xml"),
@@ -306,12 +321,17 @@ for i, (name, tool, target, params, ext) in enumerate(RUNS, 1):
     (OUT / f"{name}.findings.json").write_text(json.dumps(r.findings, indent=2, default=repr), encoding="utf-8")
 print("audit entries verified:", verify_log(log.path), flush=True)
 print("audit log:", log.path, flush=True)
+for e in read_log(log.path):
+    if e.event == "dns_pinned":
+        print(f"    dns_pinned: {e.target} -> {e.parameters.get('resolved_ips')}", flush=True)
 '@ | docker compose -f $LAB exec -T scanner python3 -u -
 ```
 
 Expected: every row `outcome=executed`. The Juice Shop nuclei row now targets
 `http://juice-shop.lab:3000` explicitly (RC-14 fix), so it should behave like
-the DVWA rows rather than coming back empty. Anything `denied`/`declined` is
+the DVWA rows rather than coming back empty. Also expect exactly two
+`dns_pinned` lines (`dvwa.lab`, `juice-shop.lab`, each pinned once even
+though each hostname is scanned in more than one row - RC-23). Anything `denied`/`declined` is
 also informative: send me the printed lines.
 
 Outputs land in `lab/captures/` (raw XML/JSONL, parsed `*.findings.json`, and the
@@ -659,7 +679,7 @@ from redcell.orchestrator import Orchestrator
 
 eng = load_engagement("/lab/engagement.yaml")
 log = AuditLog.for_engagement(eng, "/captures/e2e-audit")
-box = GatedToolbox(eng, Gate(eng), log,
+box = GatedToolbox(eng, Gate(eng, audit_pin=log.record_dns_pin), log,
                    default_tools(eng, nuclei_template_dir="/opt/nuclei-templates", nuclei_templates_pin="v10.5.1"))
 
 def act(tool, target, **params):
@@ -697,7 +717,10 @@ Expected: `termination: objective_met`; steps `executed`, `executed`, `denied`
 the raw files are only in the evidence (`result.evidence`), not in the planner's
 context. Confirm in the audit log that the out-of-scope attempt produced a
 `gate_decision` with `allowed=False` and that **no** `action_executed` exists for
-`1.1.1.1`.
+`1.1.1.1`. **RC-23:** confirm exactly one `dns_pinned` entry for `dvwa.lab`
+(the two `nuclei ... dvwa.lab` actions, allowed and declined alike, pin the
+same hostname once - not twice) and that the `1.1.1.1` nmap action produced
+no `dns_pinned` entry at all (it's an IP, nothing to resolve).
 
 Copy `lab/captures/e2e-audit/*.audit.jsonl` somewhere safe: it is a real
 end-to-end evidence trail.

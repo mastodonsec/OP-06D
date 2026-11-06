@@ -49,6 +49,42 @@ GateDecision(target, allowed, reason, stage, resolved_ips, retry_after)
   the sink now records window and rate decisions too.
 - `Gate.check` never raises. Any unexpected error is a deny.
 
+## Resolve-once (RC-23)
+
+**The gap this closes.** The gate used to resolve a hostname to decide scope,
+and the tool (nmap/nuclei) re-resolved the same hostname independently when it
+ran. If DNS changed in between - attacker-controlled rebinding, a short-TTL
+failover, ordinary drift - the tool could scan an address the gate never saw,
+let alone approved: a time-of-check/time-of-use bypass of the scope control.
+
+**The fix.** Each `Gate` owns one `DnsPinner` ([`src/redcell/resolve.py`](../src/redcell/resolve.py))
+for its whole life - one `Gate` per engagement run, so one pinner per
+engagement. The first scope check of a hostname resolves and pins it; every
+later check of that same hostname, no matter how much later or how many other
+actions ran in between, reuses the identical address(es) without touching DNS
+again. `nmap_tool.py`/`nuclei_tool.py` never resolve anything themselves -
+`resolve.py` is the only place in Red Cell DNS happens.
+
+`GateDecision.resolved_ips` carries the pinned address(es); `GatedToolbox`
+(RC-7/RC-13/RC-14) hands the tool that address to scan, not the hostname -
+see [`tools.py`](../src/redcell/tools.py), `__execute`. A multi-address
+hostname where *any* address is out of scope denies the whole action (no
+"scan the in-scope subset" fallback); a resolution failure denies, fail-closed,
+same as any other scope error.
+
+Pass `audit_pin` to record each hostname's first (and only) pin as a
+`dns_pinned` audit entry - `AuditLog.record_dns_pin` matches the shape `Gate`
+expects, so it is normally wired straight through:
+
+```python
+gate = Gate(eng, audit_pin=log.record_dns_pin)
+```
+
+If `audit_pin` raises (e.g. the audit log has already failed), that failure
+propagates out of the resolution as "resolution failed", so an unrecorded pin
+denies the action instead of silently proceeding - the same fail-closed
+guarantee the rest of the gate already gives every other audit write.
+
 ## Window semantics
 
 The authorized window is the half-open interval **[start, end)**.
@@ -101,7 +137,7 @@ from redcell.gate import Gate
 
 eng = load_engagement("examples/engagement.yaml")
 log = AuditLog.for_engagement(eng, "logs/")
-gate = Gate(eng)                      # one Gate per engagement; it holds the rate state
+gate = Gate(eng, audit_pin=log.record_dns_pin)   # one Gate per engagement; holds rate state + DNS pins
 
 d = gate.check("203.0.113.5", audit=log.sink(tool="nmap", parameters={"ports": "1-1024"}))
 if d.allowed:

@@ -30,8 +30,13 @@ Security properties, each covered by tests:
   host, malformed or oversized output come back as a ``ToolOutput`` with a
   non-ok status and a structured error the loop can read.
 
-Note: nmap resolves a hostname target itself, so its answer can differ from the
-one the gate saw (DNS can change between the check and the scan).
+RC-23 (resolve-once): the toolbox always hands this wrapper the gate-approved
+IP as ``target`` - never a hostname - and ``-n`` is always passed, disabling
+nmap's own forward *and* reverse DNS. This closes what used to be a real gap:
+nmap resolved a hostname target itself, independently of the gate, so a DNS
+change between the gate's check and nmap's own lookup could make it scan an
+address the gate never saw. ``hostname``, when given, is recorded in the
+result for the report; it is never resolved or used to build the command.
 """
 
 from __future__ import annotations
@@ -298,6 +303,7 @@ class NmapTool:
             nmap,
             "-oX", "-",
             "--no-stylesheet",
+            "-n",  # RC-23: never resolve - target is always the gate-approved IP
             "--max-rate", str(self.max_rps),
             "--host-timeout", f"{self._host_timeout}s",
             *PROFILES[profile][0],
@@ -311,13 +317,13 @@ class NmapTool:
         return argv
 
     # -- run ------------------------------------------------------------------
-    def run(self, target: str, parameters: Mapping[str, Any]) -> ToolOutput:
+    def run(self, target: str, parameters: Mapping[str, Any], *, hostname: str | None = None) -> ToolOutput:
         try:
-            return self._run(target, parameters)
+            return self._run(target, parameters, hostname)
         except Exception as exc:  # a wrapper bug must not kill the loop
             return _error("wrapper_error", f"{type(exc).__name__}: {exc}")
 
-    def _run(self, target: str, parameters: Mapping[str, Any]) -> ToolOutput:
+    def _run(self, target: str, parameters: Mapping[str, Any], hostname: str | None = None) -> ToolOutput:
         problem = self.validate_parameters(parameters) or self.target_problem(target)
         if problem:
             return _error("invalid_input", problem)
@@ -354,6 +360,8 @@ class NmapTool:
             return _error("malformed_output", f"could not parse nmap output: {exc}", raw=stdout)
         if proc.returncode != 0:
             findings["warnings"] = [f"nmap exited with {proc.returncode}: {_clip(stderr, 300)}"]
+        if hostname:
+            findings["target_hostname"] = hostname  # RC-23: which name this pinned IP was
         if not any(h["status"] == "up" for h in findings["hosts"]):
             findings["status"] = "error"
             findings["error"] = {"code": "host_unreachable",

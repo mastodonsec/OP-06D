@@ -16,6 +16,17 @@ If the audit write fails, the result is a deny.
 
 Fail closed: if the engagement's window or rate is missing or malformed, every
 check is denied with the reason. ``check`` never raises.
+
+RC-23 (resolve-once): a ``Gate`` owns one ``DnsPinner`` for its whole life
+(one ``Gate`` per engagement run), so each hostname is resolved **once** -
+the first scope check pins it, and every later check of that hostname, no
+matter how much later or how many other actions ran in between, reuses the
+exact same address(es). This closes the DNS-rebinding TOCTOU between "the
+gate approved this address" and "the tool scanned that address": the tool is
+handed the pinned IP(s) via ``GateDecision.resolved_ips`` (see
+``tools.py``/``GatedToolbox``), never the hostname, and never resolves on its
+own. Pass ``audit_pin`` to have the first pin of each hostname recorded as a
+``dns_pinned`` audit entry.
 """
 
 from __future__ import annotations
@@ -28,7 +39,8 @@ from typing import Callable
 from redcell.audit import AuditSink
 from redcell.engagement import Engagement
 from redcell.limits import RateLimiter, evaluate_window, window_problem
-from redcell.scope import Resolver, check_scope, system_resolver
+from redcell.resolve import DnsPinner, PinAuditor, Resolver, system_resolver
+from redcell.scope import check_scope
 
 # Which stage produced the decision.
 ALLOWED = "allowed"
@@ -66,10 +78,14 @@ class Gate:
         engagement: Engagement,
         *,
         resolver: Resolver = system_resolver,
+        audit_pin: PinAuditor | None = None,
         now: Callable[[], datetime] = _utcnow,
         monotonic: Callable[[], float] = time.monotonic,
     ) -> None:
-        self._resolver = resolver
+        # RC-23: one pinner for this Gate's whole life = one per engagement.
+        # ``resolver`` is only ever called through it, so every hostname is
+        # resolved at most once no matter how many actions check it.
+        self._pinner = DnsPinner(resolver, on_pin=audit_pin)
         self._now = now
         self._engagement = engagement
         self._limiter: RateLimiter | None = None
@@ -126,7 +142,7 @@ class Gate:
         scope = check_scope(
             target,
             self._engagement.scope,
-            resolver=self._resolver,
+            resolver=self._pinner.resolve,  # resolve-once: cached per engagement (RC-23)
             audit=lambda t, a, r: None,  # the gate writes the one final entry
         )
         if not scope.allowed:

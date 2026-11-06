@@ -48,6 +48,10 @@ EVENT_INJECTION_FLAG = "injection_flag"
 EVENT_ITERATION = "iteration"  # RC-7: the planner's proposal for one loop iteration
 EVENT_APPROVAL = "approval"  # RC-8: operator approved/declined a higher-risk action
 EVENT_LOOP_END = "loop_terminated"  # RC-7: why and when the loop stopped
+# RC-23: a hostname's first (and only) resolution for this engagement - the
+# resolve-once pin. Written once per hostname, never again, even if DNS for
+# that name changes later in the same engagement.
+EVENT_DNS_PINNED = "dns_pinned"
 # Events whose ``allowed`` flag is meaningful (an allow/deny or approve/decline).
 _ALLOWED_EVENTS = frozenset({EVENT_GATE_DECISION, EVENT_APPROVAL})
 EVENT_ACTION_EXECUTED = "action_executed"
@@ -245,6 +249,20 @@ class AuditLog:
             )
 
         return write
+
+    def record_dns_pin(self, hostname: str, resolved_ips: object) -> AuditEntry:
+        """Record a hostname's resolve-once pin (RC-23): the first, and only,
+        resolution of ``hostname`` for this engagement. Matches the
+        ``PinAuditor`` shape ``DnsPinner`` expects, so it can be passed
+        straight through as ``Gate(..., audit_pin=log.record_dns_pin)``.
+        Raises ``AuditError`` on failure, same as any other write - letting
+        that propagate (rather than swallowing it) is what makes an
+        unrecorded pin deny the action instead of silently proceeding."""
+        ips = list(resolved_ips) if isinstance(resolved_ips, (list, tuple)) else [resolved_ips]
+        return self.record(
+            EVENT_DNS_PINNED, target=hostname, parameters={"resolved_ips": ips},
+            reason=f"pinned {hostname!r} -> {ips}",
+        )
 
     def record_execution(
         self,

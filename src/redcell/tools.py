@@ -42,6 +42,15 @@ Tool wrappers must: use argv, never a shell; declare only ``allowed_parameters``
 that cannot carry a second target (the gate checks ``target`` only); validate
 parameter values in ``validate_parameters``; and bound the traffic the tool
 itself sends using the engagement's ``max_rps``.
+
+RC-23 (resolve-once): ``__execute`` never hands a tool the hostname it was
+given. If ``action.target`` was a hostname, the gate already resolved and
+pinned it (``redcell.resolve.DnsPinner``) to decide scope, and
+``GateDecision.resolved_ips`` carries that pinned address; ``__execute`` scans
+*that* address, passing the original hostname separately only as the
+``hostname=`` keyword (for vhost/SNI correctness - nuclei). A tool must never
+perform its own DNS lookup; this is what closes the TOCTOU between "the gate
+approved this address" and "the tool touched that address".
 """
 
 from __future__ import annotations
@@ -100,7 +109,13 @@ class Tool(Protocol):
     destructive: bool
     allowed_parameters: frozenset[str]
 
-    def run(self, target: str, parameters: Mapping[str, Any]) -> object: ...
+    def run(self, target: str, parameters: Mapping[str, Any], *, hostname: str | None = None) -> object: ...
+    # ``target``: the address to actually scan - the IP the gate resolved and
+    # approved (RC-23), or the original target unchanged if it was already an
+    # IP/CIDR. ``hostname``: the original hostname when ``target`` is its
+    # pinned IP, else None. A tool must never resolve ``target`` itself; it
+    # may use ``hostname`` only for vhost/SNI correctness (nuclei), never as
+    # something to connect to or re-resolve.
 
 
 @dataclass(frozen=True)
@@ -369,11 +384,18 @@ class GatedToolbox:
                 executed=False, risk=risk,
             )
 
+        # RC-23 resolve-once: scan exactly the IP the gate approved, never the
+        # hostname. ``resolved_ips`` is populated only when ``action.target``
+        # was a hostname (scope.py never sets it for an IP/CIDR target), so
+        # this also leaves IP/CIDR actions byte-for-byte unchanged.
+        scan_target = decision.resolved_ips[0] if decision.resolved_ips else action.target
+        hostname = action.target if decision.resolved_ips else None
+
         outcome, status = Outcome.EXECUTED, "ok"
         raw: object
         findings: object
         try:
-            produced = tool.run(action.target, dict(action.parameters))
+            produced = tool.run(scan_target, dict(action.parameters), hostname=hostname)
         except Exception as exc:
             produced = ToolOutput(
                 {"status": "error", "error": {"code": "tool_exception",
@@ -399,6 +421,7 @@ class GatedToolbox:
                 status=status,
                 detail=f"risk={risk.name} output={sanitized.original_length} chars "
                        f"sha256={sanitized.sha256} raw_sha256={sha256_of(raw)}"
+                       + (f" scanned_ip={scan_target}" if hostname else "")
                        + (" flagged" if sanitized.flagged else ""),
             )
         except AuditError:

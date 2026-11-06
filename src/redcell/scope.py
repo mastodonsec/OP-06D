@@ -31,16 +31,15 @@ checks) and the audit call. ``is_in_scope`` is the boolean convenience.
 from __future__ import annotations
 
 import ipaddress
-import socket
 from dataclasses import dataclass
-from typing import Callable, Iterable, Sequence
+from typing import Iterable, Sequence
 
 from redcell.audit import AuditSink
 from redcell.engagement import Scope, normalize_target
+from redcell.resolve import Resolver, system_resolver  # re-exported: see below
 
 IPNetwork = ipaddress.IPv4Network | ipaddress.IPv6Network
 IPAddress = ipaddress.IPv4Address | ipaddress.IPv6Address
-Resolver = Callable[[str], Sequence[str]]
 
 
 @dataclass(frozen=True)
@@ -242,11 +241,12 @@ def _evaluate(
 
 
 # --- orchestration (DNS + audit) -------------------------------------------
-
-def system_resolver(host: str) -> Sequence[str]:
-    """Resolve A/AAAA records via the OS resolver."""
-    infos = socket.getaddrinfo(host, None, type=socket.SOCK_STREAM)
-    return [info[4][0].split("%", 1)[0] for info in infos]
+#
+# RC-23: DNS itself is centralized in ``redcell.resolve`` (``system_resolver``,
+# re-exported above for compatibility); this module no longer calls it
+# directly. ``Gate`` is the only caller of ``check_scope``/``is_in_scope`` in
+# production, and it passes a ``DnsPinner.resolve`` (resolve-once, pinned for
+# the engagement) as ``resolver`` instead of a fresh lookup per call.
 
 
 def check_scope(

@@ -133,7 +133,7 @@ and a structured error that the loop feeds back to the planner as a tool error:
 | `invalid_input` | target or parameters rejected by the wrapper |
 | `nmap_not_found` | nmap is not installed or not executable (clear message, nothing runs) |
 | `timeout` | exceeded `run_timeout_s` (default 900 s); partial output kept as evidence |
-| `resolution_failed` | nmap could not resolve the hostname |
+| `resolution_failed` | nmap reported it could not resolve the target (defense in depth; `-n` means this should not occur in practice - RC-23) |
 | `host_unreachable` | no host came up (down, filtered or unreachable) |
 | `nmap_failed` | non-zero exit with no output |
 | `malformed_output` | not valid nmap XML, or contains DTD entity declarations |
@@ -189,13 +189,26 @@ Run the tests (no real nmap is started):
 uv run --extra dev pytest tests/test_nmap_tool.py
 ```
 
+## Resolve-once (RC-23)
+
+`run`/`build_argv` take an optional `hostname` keyword, set only by
+`GatedToolbox` and only when `target` is the IP the gate resolved and pinned
+for an originally-hostname action (see
+[gate-rate-and-window.md](gate-rate-and-window.md#resolve-once-rc-23)). nmap
+never resolves anything itself: `-n` (disabling nmap's own forward *and*
+reverse DNS) is always in `build_argv`'s output, for every profile. This
+closes what used to be a real gap - nmap used to resolve a hostname target
+independently of the gate, so a DNS change between the gate's check and
+nmap's own lookup could make it scan an address the gate never saw.
+`hostname`, when given, is only recorded in the result (`target_hostname`,
+for the report); nmap has no vhost/SNI concept to preserve the way nuclei
+does, so nothing else is done with it.
+
 ## Known limits
 
 - **The fixture is hand-written** in nmap 7.94 format, not captured from a live
   scan. Replace it with a real capture once the lab exists (RC-19), and run the
   wrapper against a real nmap there.
-- nmap resolves a hostname target itself, so its answer can differ from the one
-  the gate saw (DNS can change between the check and the scan).
 - Some options (`-A`, OS detection, SYN scans) need root or administrator rights;
   without them nmap falls back or fails, and the failure comes back as a tool
   error.

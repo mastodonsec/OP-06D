@@ -126,7 +126,9 @@ treated as a scan target. Results report `out_of_band: "off"` or `"self-hosted"`
 `-disable-redirects` is always passed and there is no parameter to change it.
 As a second layer, after parsing, every finding's `host` and `matched-at` must
 be the approved target (an IP or hostname match, or an address inside the
-approved CIDR). A subdomain or look-alike host does not count. Anything else is
+approved CIDR) - since RC-23, `target` here is the gate-pinned IP for an
+originally-hostname action, so this comparison is against that pinned IP, not
+the hostname. A subdomain or look-alike host does not count. Anything else is
 **removed from the findings** and the run returns status `off_target_activity`
 with the host list. That is a tool error, so it is visible to the loop and in
 the audit log; the raw JSONL keeps everything as evidence. Note the request to
@@ -147,6 +149,29 @@ Statuses: `invalid_input`, `nuclei_not_found`, `templates_not_found`, `timeout`
 `malformed_output` (only non-JSON lines), `output_too_large` (over 5 MB),
 `off_target_activity`, `wrapper_error`. No findings with exit 0 is a normal `ok`
 result with an empty list, unlike nmap where a down host is an error.
+
+## Resolve-once (RC-23)
+
+nuclei has no `-n`-style flag to turn off its own DNS the way nmap does, so
+instead the toolbox never gives it a hostname to resolve in the first place:
+`target` is always a literal address - either the original target if it was
+already an IP/CIDR, or the IP the gate resolved and pinned once for the whole
+engagement, if it was a hostname (see
+[gate-rate-and-window.md](gate-rate-and-window.md#resolve-once-rc-23)). `-u`
+is therefore always built from a literal address, so nuclei makes no
+request-time lookup.
+
+The one thing a literal-IP target loses is vhost/SNI routing - a name-based
+vhost (the lab's `juice-shop.lab`/`dvwa.lab` included) would otherwise answer
+as the wrong site, or TLS would hand back the default certificate. `run`/
+`build_argv` take an optional `hostname` keyword, set by `GatedToolbox` only
+when `target` is a pinned IP standing in for that hostname; when given, the
+wrapper adds `-H "Host: <hostname>"` and `-sni <hostname>` so the request
+still goes to the IP the gate approved, addressed - and TLS-negotiated - as
+the right site. `hostname` is also recorded in the result (`target_hostname`,
+for the report). It is never resolved and can never itself become the
+connection target: it only ever reaches the fixed `-H`/`-sni` flags, never a
+parameter the planner controls.
 
 ## Template pinning (repeatability)
 
@@ -213,7 +238,6 @@ uv run --extra dev pytest tests/test_nuclei_tool.py
 - The curated set is as safe as its contents: a template can still do more than
   its tags suggest. Review what goes in the pinned directory; the tag mapping is
   a classification, not a sandbox.
-- nuclei resolves hostnames itself, so DNS can differ from what the gate saw.
 - The off-target check detects after the fact; it cannot stop a request.
 - The window is checked between actions; a run is bounded by `run_timeout_s`
   (default 900 s) and the per-request timeout.

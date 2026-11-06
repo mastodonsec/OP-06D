@@ -136,9 +136,15 @@ recorded must not proceed.
 
 ## Known limits
 
-- DNS answers can change between the check and the tool's own lookup (rebinding,
-  round-robin). Tools should connect to the checked IP, or the gate should
-  re-check at execution time. Track this under RC-7/RC-13.
-- `system_resolver` uses the OS resolver with no timeout control.
+- ~~DNS answers can change between the check and the tool's own lookup
+  (rebinding, round-robin).~~ **Fixed by RC-23.** `check_scope`/`evaluate_scope`
+  here are unchanged (still pure, still take `resolved_ips` as given), but
+  the one production caller, `Gate`, no longer calls a fresh resolver per
+  check - it resolves each hostname once per engagement and reuses that pin
+  for every later check, and `GatedToolbox` scans that pinned address, never
+  the hostname. See [`resolve.py`](../src/redcell/resolve.py) and
+  [gate-rate-and-window.md](gate-rate-and-window.md#resolve-once-rc-23).
+- `system_resolver` ([`resolve.py`](../src/redcell/resolve.py), re-exported
+  here for compatibility) uses the OS resolver with no timeout control.
 - Redirects, CNAME chains and URLs returned by tools are new targets and must
   go through the gate again.

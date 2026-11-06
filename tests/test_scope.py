@@ -148,6 +148,19 @@ def test_hostname_resolving_to_out_of_scope_ip_denied():
     assert not d.allowed and "203.0.113.9" in d.reason
 
 
+def test_multi_ip_host_with_one_out_of_scope_address_denies_the_whole_action():
+    # RC-23 design decision: a name pointing partly out of scope is
+    # untrustworthy as a whole - no "scan the in-scope subset" fallback.
+    d = run("app.acme.com", resolver=fixed("198.51.100.7", "203.0.113.9"))
+    assert not d.allowed and "203.0.113.9" in d.reason
+    # order doesn't matter: whichever position the bad address is in
+    d = run("app.acme.com", resolver=fixed("203.0.113.9", "198.51.100.7"))
+    assert not d.allowed and "203.0.113.9" in d.reason
+    # all addresses in scope (none blocked) is still allowed, for comparison
+    d = run("app.acme.com", resolver=fixed("198.51.100.7", "198.51.100.8"))
+    assert d.allowed and d.resolved_ips == ("198.51.100.7", "198.51.100.8")
+
+
 def test_any_blocked_address_among_many_denies():
     d = run("app.acme.com", resolver=fixed("198.51.100.7", "203.0.113.9"))
     assert not d.allowed

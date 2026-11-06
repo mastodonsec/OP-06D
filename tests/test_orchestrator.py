@@ -56,7 +56,7 @@ class FakeTool:
         self.output, self.raises, self.on_run = output, raises, on_run
         self.calls = []
 
-    def run(self, target, parameters):
+    def run(self, target, parameters, *, hostname=None):
         self.calls.append((target, dict(parameters)))
         if self.on_run:
             self.on_run()

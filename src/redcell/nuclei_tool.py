@@ -41,6 +41,17 @@ Reproducibility (RC-20): templates come from the pinned ``template_dir`` and are
 never updated by the tool (``-disable-update-check``); an optional
 ``templates_pin`` label is recorded in every result.
 
+RC-23 (resolve-once): this wrapper has no header flag to disable nuclei's own
+DNS the way nmap's ``-n`` does, so instead the toolbox never gives it a
+hostname to resolve in the first place - ``target`` is always the gate-pinned
+IP literal (a hostname target's own resolution happened once, in the gate).
+``-u`` is therefore always built from a literal address, which nuclei makes
+no request-time lookup for. The one thing that loses is vhost/SNI routing, so
+when the approved target *was* a hostname, the toolbox passes it separately
+as ``hostname``, and this wrapper restores correctness with ``-H "Host:
+<hostname>"`` and ``-sni <hostname>`` - the request still reaches the IP the
+gate approved, but is addressed, and TLS-negotiated, as the right site.
+
 Flag names follow nuclei v3; verify them against the pinned nuclei version in the
 lab (RC-19).
 """
@@ -343,7 +354,9 @@ class NucleiTool:
         url = f"{scheme or 'https'}://{host}"
         return f"{url}:{port}" if port is not None else url
 
-    def build_argv(self, nuclei: str, target: str, parameters: Mapping[str, Any]) -> list[str]:
+    def build_argv(
+        self, nuclei: str, target: str, parameters: Mapping[str, Any], hostname: str | None = None,
+    ) -> list[str]:
         concurrency = max(1, min(self.max_rps, 10))
         argv = [nuclei]
         if self._config:
@@ -360,6 +373,14 @@ class NucleiTool:
             "-retries", "1",
             "-disable-redirects",
         ]
+        if hostname:
+            # RC-23: ``target`` is the gate-pinned IP, never a hostname (the
+            # tool performs no DNS of its own), so vhost routing and TLS SNI
+            # have to be told the original hostname explicitly - otherwise a
+            # name-based vhost (exactly the lab's juice-shop.lab/dvwa.lab)
+            # would answer as the wrong site, or TLS would hand back the
+            # default certificate instead of the intended one.
+            argv += ["-H", f"Host: {hostname}", "-sni", hostname]
         argv += ["-interactsh-server", self._interactsh] if self._interactsh else ["-no-interactsh"]
         argv += ["-severity", _csv(parameters.get("severity") or SEVERITIES)]
         tags = self._effective_tags(parameters)
@@ -374,13 +395,13 @@ class NucleiTool:
         return argv
 
     # -- run ------------------------------------------------------------------
-    def run(self, target: str, parameters: Mapping[str, Any]) -> ToolOutput:
+    def run(self, target: str, parameters: Mapping[str, Any], *, hostname: str | None = None) -> ToolOutput:
         try:
-            return self._run(target, parameters)
+            return self._run(target, parameters, hostname)
         except Exception as exc:  # a wrapper bug must not kill the loop
             return _error("wrapper_error", f"{type(exc).__name__}: {exc}")
 
-    def _run(self, target: str, parameters: Mapping[str, Any]) -> ToolOutput:
+    def _run(self, target: str, parameters: Mapping[str, Any], hostname: str | None = None) -> ToolOutput:
         problem = self.validate_parameters(parameters) or self.target_problem(target)
         if problem:
             return _error("invalid_input", problem)
@@ -390,7 +411,7 @@ class NucleiTool:
             return _error("nuclei_not_found", str(exc))
         except NotADirectoryError as exc:
             return _error("templates_not_found", str(exc))
-        argv = self.build_argv(nuclei, target, parameters)
+        argv = self.build_argv(nuclei, target, parameters, hostname)
 
         try:
             proc = self._runner(argv, self._run_timeout)
@@ -431,6 +452,8 @@ class NucleiTool:
             "summary": {"findings": len(kept), "off_target": len(findings) - len(kept),
                         "unparsed_lines": bad},
         }
+        if hostname:
+            result["target_hostname"] = hostname  # RC-23: which name this pinned IP was
         if off:
             result["status"] = "error"
             result["error"] = {

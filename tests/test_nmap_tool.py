@@ -190,12 +190,13 @@ def test_valid_parameter_combinations_only_ever_add_known_argv():
             if scripts:
                 params["scripts"] = scripts
             t.run(IP, params)
-    known = {NMAP_PATH, "-oX", "-", "--no-stylesheet", "--max-rate", "20", "--host-timeout", "300s",
+    known = {NMAP_PATH, "-oX", "-", "--no-stylesheet", "-n", "--max-rate", "20", "--host-timeout", "300s",
              "-sn", "-F", "-sV", "-p-", "-A", "--", IP}
     for argv, _ in r.calls:
         for a in argv:
             assert a in known or a.startswith("--script="), a
         assert [a for a in argv if a == IP] == [IP]
+        assert "-n" in argv  # RC-23: never resolve, for every profile
 
 
 # --- parameter allow-list ----------------------------------------------------
@@ -389,7 +390,7 @@ def test_secrets_are_redacted_everywhere_for_a_tool_with_sensitive_parameters(tm
         allowed_parameters = frozenset({"creds_ref", "mode"})
         sensitive_parameters = frozenset({"creds_ref"})
 
-        def run(self, target, parameters):
+        def run(self, target, parameters, *, hostname=None):
             return "ok"
 
     eng = ENG
@@ -500,6 +501,47 @@ def test_scan_only_runs_against_gate_approved_targets(rig):
     assert r.runner.calls == []
     r.clock_wall = START + timedelta(hours=1)
     assert r.box.execute(ToolAction("nmap", IP), iteration=3).executed and len(r.runner.calls) == 1
+
+
+# --- RC-23: resolve-once end to end (gate pins the IP, nmap scans only it) ---
+
+def test_hostname_action_scans_the_gate_pinned_ip_not_the_hostname(rig):
+    r = rig()  # rig's gate resolver always answers 198.51.100.7
+    res = r.box.execute(ToolAction("nmap", "app.acme.com", {"profile": "service", "ports": "80"}),
+                        iteration=1)
+    assert res.executed
+    (argv, _), = r.runner.calls
+    assert argv[-2:] == ["--", "198.51.100.7"]  # the pinned IP, never the hostname
+    assert "app.acme.com" not in argv and "-n" in argv
+    assert res.findings["target_hostname"] == "app.acme.com"  # recorded for the report
+    # the action/audit record still shows the hostname the planner asked for
+    executed = next(e for e in read_log(r.log.path) if e.event == "action_executed")
+    assert executed.target == repr("app.acme.com") and "scanned_ip=198.51.100.7" in executed.reason
+
+
+def test_ip_action_is_unaffected_by_resolve_once(rig):
+    r = rig()
+    res = r.box.execute(ToolAction("nmap", IP, {"profile": "service", "ports": "80"}), iteration=1)
+    assert res.executed and res.findings.get("target_hostname") is None
+    (argv, _), = r.runner.calls
+    assert argv[-2:] == ["--", IP]
+
+
+def test_rebinding_does_not_change_which_ip_nmap_scans(rig):
+    # Mock the resolver so the FIRST check (inside the gate) sees an in-scope
+    # address, and a second lookup (if it ever happened) would see a
+    # different one. nmap must only ever be invoked with the first, pinned
+    # address - never the second.
+    answers = iter([["198.51.100.7"], ["198.51.100.66"]])
+    r = rig()
+    r.gate = Gate(r.eng, resolver=lambda h: next(answers), now=lambda: r.clock_wall)
+    r.box = GatedToolbox(r.eng, r.gate, r.log, [r.t])
+    r.box.execute(ToolAction("nmap", "app.acme.com", {"profile": "service", "ports": "80"}), iteration=1)
+    r.box.execute(ToolAction("nmap", "app.acme.com", {"profile": "service", "ports": "443"}), iteration=2)
+    assert len(r.runner.calls) == 2
+    for argv, _ in r.runner.calls:
+        assert argv[-1] == "198.51.100.7"
+        assert "198.51.100.66" not in argv
 
 
 def test_planner_sees_structured_findings_and_evidence_keeps_the_raw_xml(rig):
