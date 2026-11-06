@@ -263,4 +263,16 @@ and any web UI. Red Cell is config-file + CLI for now.
 
 ## License
 
-All rights reserved (license decision deferred). Do not redistribute.
+Red Cell is licensed under the **GNU Affero General Public License v3.0 or later
+(AGPL-3.0-or-later)** — see [`LICENSE`](LICENSE). In short: you are free to use,
+study, modify, and redistribute it, but any modified version you distribute **or
+run as a network service** must be made available under the same license. If you
+run a modified Red Cell as a service for others, you must offer them its source.
+
+Copyright (c) 2026 Thomas Pavan / Mastodon Security. The copyright holder also
+offers **commercial licenses** without the AGPL's source-disclosure obligations —
+contact thomas@mastodonsec.com.
+
+Contributions are accepted under the AGPL via the Developer Certificate of Origin;
+see [`CONTRIBUTING.md`](CONTRIBUTING.md). Read [`NOTICE`](NOTICE) before running the
+tool — it is for authorized testing only.

@@ -1,0 +1,49 @@
+Red Cell
+Copyright (c) 2026 Thomas Pavan / Mastodon Security (mastodonsec)
+
+This program is free software: you can redistribute it and/or modify it under
+the terms of the GNU Affero General Public License as published by the Free
+Software Foundation, either version 3 of the License, or (at your option) any
+later version. See the LICENSE file for the full text.
+
+This program is distributed in the hope that it will be useful, but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE. See the GNU Affero General Public License for more details.
+
+------------------------------------------------------------------------------
+Dual licensing
+------------------------------------------------------------------------------
+The copyright holder (Thomas Pavan / Mastodon Security) retains all rights in
+this work. In addition to the AGPL-3.0 terms above, commercial licenses that do
+not carry the AGPL's source-disclosure obligations are available from the
+copyright holder. Contact: thomas@mastodonsec.com
+
+------------------------------------------------------------------------------
+Authorized-use notice (read before running)
+------------------------------------------------------------------------------
+Red Cell drives active security tools (network and web reconnaissance) against
+targets. It is intended ONLY for systems you own or for which you hold explicit,
+written authorization to test.
+
+Running reconnaissance or scanning against systems without authorization may be
+illegal and may cause disruption. You are solely responsible for ensuring you
+have authorization for every target in an engagement scope. The engagement file
+is the authorization boundary: the tool is designed so that nothing outside a
+signed, authorized scope is acted upon, but that safeguard does not relieve you
+of the duty to obtain authorization.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND. The authors and
+copyright holder accept no liability for any use of this software. This notice
+is a statement of intended use and is not part of the license grant.
+
+------------------------------------------------------------------------------
+Third-party components
+------------------------------------------------------------------------------
+Red Cell invokes, but does not include or link, external tools that are licensed
+separately by their respective authors, including:
+  - nmap            (https://nmap.org/)
+  - nuclei          (https://github.com/projectdiscovery/nuclei)
+  - nuclei-templates
+Python dependencies (pydantic, PyYAML, and others) are distributed under their
+own licenses. These components are used as separate programs or libraries under
+their own terms; their licenses are not altered by Red Cell's license.
