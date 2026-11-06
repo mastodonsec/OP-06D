@@ -1,0 +1,150 @@
+{
+  "scanner": "nmap",
+  "version": "7.93",
+  "hosts": [
+    {
+      "status": "up",
+      "addresses": [
+        {
+          "address": "172.31.77.11",
+          "type": "ipv4"
+        },
+        {
+          "address": "36:85:56:D5:B9:10",
+          "type": "mac"
+        }
+      ],
+      "hostnames": [
+        "rc-lab-dvwa-1.rc-lab_labnet"
+      ],
+      "ports": [
+        {
+          "port": 80,
+          "protocol": "tcp",
+          "state": "open",
+          "reason": "syn-ack",
+          "service": {
+            "name": "http",
+            "product": "Apache httpd",
+            "version": "2.4.25",
+            "extrainfo": "(Debian)",
+            "tunnel": "",
+            "cpe": [
+              "cpe:/a:apache:http_server:2.4.25"
+            ]
+          },
+          "scripts": [
+            {
+              "id": "http-server-header",
+              "output": "Apache/2.4.25 (Debian)"
+            },
+            {
+              "id": "http-fetch",
+              "output": "Please enter the complete path of the directory to save data in."
+            },
+            {
+              "id": "http-comments-displayer",
+              "output": "Couldn't find any comments."
+            },
+            {
+              "id": "http-errors",
+              "output": "\nSpidering limited to: maxpagecount=40; withinhost=rc-lab-dvwa-1.rc-lab_labnet\n  Found the following error pages: \n  \n  Error Code: 400\n  \thttp://rc-lab-dvwa-1.rc-lab_labnet:80/\n"
+            },
+            {
+              "id": "http-grep",
+              "output": "\n  (1) http://rc-lab-dvwa-1.rc-lab_labnet:80/: \n    (1) ip: \n      + 172.31.77.11"
+            },
+            {
+              "id": "http-headers",
+              "output": "\n  Date: Fri, 06 Nov 2026 02:42:58 GMT\n  Server: Apache/2.4.25 (Debian)\n  Content-Length: 425\n  Connection: close\n  Content-Type: text/html; charset=iso-8859-1\n  \n  (Request type: GET)\n"
+            },
+            {
+              "id": "http-mobileversion-checker",
+              "output": "No mobile version detected."
+            },
+            {
+              "id": "http-sitemap-generator",
+              "output": "\n  Directory structure:\n  Longest directory structure:\n    Depth: 0\n    Dir: /\n  Total files found (by extension):\n    \n"
+            },
+            {
+              "id": "http-referer-checker",
+              "output": "Couldn't find any cross-domain scripts."
+            },
+            {
+              "id": "http-chrono",
+              "output": "Request times for /; avg: 152.82ms; min: 151.50ms; max: 156.33ms"
+            },
+            {
+              "id": "http-vhosts",
+              "output": "\n128 names had status 400"
+            },
+            {
+              "id": "http-security-headers",
+              "output": ""
+            },
+            {
+              "id": "http-title",
+              "output": "400 Bad Request"
+            },
+            {
+              "id": "http-date",
+              "output": "Fri, 06 Nov 2026 02:42:58 GMT; 0s from local time."
+            },
+            {
+              "id": "http-feed",
+              "output": "Couldn't find any feeds."
+            },
+            {
+              "id": "http-xssed",
+              "output": "ERROR: Script execution failed (use -d to debug)"
+            },
+            {
+              "id": "http-devframework",
+              "output": "Couldn't determine the underlying framework or CMS. Try increasing 'httpspider.maxpagecount' value to spider more pages."
+            },
+            {
+              "id": "http-useragent-tester",
+              "output": "\n  Status for browser useragent: 400\n  Allowed User Agents: \n    Mozilla/5.0 (compatible; Nmap Scripting Engine; https://nmap.org/book/nse.html)\n    libwww\n    lwp-trivial\n    libcurl-agent/1.0\n    PHP/\n    Python-urllib/2.5\n    GT::WWW\n    Snoopy\n    MFC_Tear_Sample\n    HTTP::Lite\n    PHPCrawl\n    URI::Fetch\n    Zend_Http_Client\n    http client\n    PECL::HTTP\n    Wget/1.13.4 (linux-gnu)\n    WWW-Mechanize/1.34"
+            }
+          ]
+        }
+      ],
+      "host_scripts": [
+        {
+          "id": "ipidseq",
+          "output": "All zeros"
+        },
+        {
+          "id": "fcrdns",
+          "output": "PASS (rc-lab-dvwa-1.rc-lab_labnet)"
+        },
+        {
+          "id": "port-states",
+          "output": "\n  tcp: \n    open: 80"
+        },
+        {
+          "id": "dns-blacklist",
+          "output": "\n  PROXY\n    misc.dnsbl.sorbs.net - FAIL\n    tor.dan.me.uk - FAIL\n    dnsbl.tornevall.org - FAIL\n    http.dnsbl.sorbs.net - FAIL\n    socks.dnsbl.sorbs.net - FAIL\n  SPAM\n    bl.spamcop.net - FAIL\n    all.spamrats.com - FAIL\n    list.quorum.to - FAIL\n    l2.apews.org - FAIL\n    bl.nszones.com - FAIL\n    dnsbl.inps.de - FAIL\n    spam.dnsbl.sorbs.net - FAIL\n    sbl.spamhaus.org - FAIL\n  ATTACK\n    all.bl.blocklist.de - FAIL\n"
+        },
+        {
+          "id": "path-mtu",
+          "output": "PMTU == 1500"
+        },
+        {
+          "id": "sniffer-detect",
+          "output": "Likely in promiscuous mode (tests: \"11111111\")"
+        },
+        {
+          "id": "dns-brute",
+          "output": "\n  DNS Brute-force hostnames: No results."
+        }
+      ]
+    }
+  ],
+  "summary": {
+    "hosts_up": 1,
+    "hosts_down": 0,
+    "hosts_total": 1,
+    "elapsed_seconds": 72.42
+  }
+}

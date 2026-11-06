@@ -1,0 +1,117 @@
+{
+  "scanner": "nuclei",
+  "templates_pin": "v10.5.1",
+  "selection": {
+    "severity": [
+      "info",
+      "low",
+      "medium",
+      "high",
+      "critical"
+    ],
+    "tags": [
+      "tech",
+      "detect",
+      "panel",
+      "exposure",
+      "misconfig",
+      "config"
+    ],
+    "template_ids": []
+  },
+  "out_of_band": "off",
+  "findings": [
+    {
+      "template_id": "swagger-api",
+      "name": "Public Swagger API - Detect",
+      "severity": "info",
+      "tags": [
+        "exposure",
+        "api",
+        "swagger",
+        "discovery"
+      ],
+      "description": "Public Swagger API was detected.\n",
+      "type": "http",
+      "host": "juice-shop.lab",
+      "matched_at": "http://juice-shop.lab:3000/api-docs/swagger.json",
+      "ip": "172.31.77.10",
+      "matcher_name": "",
+      "extracted": [],
+      "references": [
+        "https://swagger.io/"
+      ],
+      "cve": "",
+      "cvss_score": null,
+      "timestamp": "2026-11-06T02:44:59.556743895Z"
+    },
+    {
+      "template_id": "owasp-juice-shop-detect",
+      "name": "OWASP Juice Shop",
+      "severity": "info",
+      "tags": [
+        "tech",
+        "owasp",
+        "discovery"
+      ],
+      "description": "",
+      "type": "http",
+      "host": "juice-shop.lab",
+      "matched_at": "http://juice-shop.lab:3000",
+      "ip": "172.31.77.10",
+      "matcher_name": "",
+      "extracted": [],
+      "references": [],
+      "cve": "",
+      "cvss_score": null,
+      "timestamp": "2026-11-06T02:45:47.441891259Z"
+    },
+    {
+      "template_id": "fingerprinthub-web-fingerprints",
+      "name": "FingerprintHub Technology Fingerprint",
+      "severity": "info",
+      "tags": [
+        "tech",
+        "discovery"
+      ],
+      "description": "FingerprintHub Technology Fingerprint tests run in nuclei.",
+      "type": "http",
+      "host": "juice-shop.lab",
+      "matched_at": "http://juice-shop.lab:3000",
+      "ip": "172.31.77.10",
+      "matcher_name": "qm-system",
+      "extracted": [],
+      "references": [
+        "https://github.com/0x727/FingerprintHub"
+      ],
+      "cve": "",
+      "cvss_score": null,
+      "timestamp": "2026-11-06T02:45:51.605951902Z"
+    },
+    {
+      "template_id": "tech-detect",
+      "name": "Wappalyzer Technology Detection",
+      "severity": "info",
+      "tags": [
+        "tech",
+        "discovery"
+      ],
+      "description": "",
+      "type": "http",
+      "host": "juice-shop.lab",
+      "matched_at": "http://juice-shop.lab:3000",
+      "ip": "172.31.77.10",
+      "matcher_name": "google-font-api",
+      "extracted": [],
+      "references": [],
+      "cve": "",
+      "cvss_score": null,
+      "timestamp": "2026-11-06T02:45:51.625108055Z"
+    }
+  ],
+  "summary": {
+    "findings": 4,
+    "off_target": 0,
+    "unparsed_lines": 0
+  }
+}

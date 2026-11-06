@@ -1,0 +1,94 @@
+{
+  "scanner": "nuclei",
+  "templates_pin": "v10.5.1",
+  "selection": {
+    "severity": [
+      "info",
+      "low",
+      "medium",
+      "high",
+      "critical"
+    ],
+    "tags": [
+      "config",
+      "exposure",
+      "misconfig",
+      "panel",
+      "tech"
+    ],
+    "template_ids": []
+  },
+  "out_of_band": "off",
+  "findings": [
+    {
+      "template_id": "waf-detect",
+      "name": "WAF Detection",
+      "severity": "info",
+      "tags": [
+        "waf",
+        "tech",
+        "misc",
+        "discovery"
+      ],
+      "description": "A web application firewall was detected.",
+      "type": "http",
+      "host": "dvwa.lab",
+      "matched_at": "http://dvwa.lab",
+      "ip": "172.31.77.11",
+      "matcher_name": "apachegeneric",
+      "extracted": [],
+      "references": [
+        "https://github.com/Ekultek/WhatWaf"
+      ],
+      "cve": "",
+      "cvss_score": null,
+      "timestamp": "2026-11-06T02:44:19.160117487Z"
+    },
+    {
+      "template_id": "php-detect",
+      "name": "PHP Detect",
+      "severity": "info",
+      "tags": [
+        "tech",
+        "php",
+        "discovery"
+      ],
+      "description": "",
+      "type": "http",
+      "host": "dvwa.lab",
+      "matched_at": "http://dvwa.lab",
+      "ip": "172.31.77.11",
+      "matcher_name": "",
+      "extracted": [],
+      "references": [],
+      "cve": "",
+      "cvss_score": null,
+      "timestamp": "2026-11-06T02:44:19.157223844Z"
+    },
+    {
+      "template_id": "tech-detect",
+      "name": "Wappalyzer Technology Detection",
+      "severity": "info",
+      "tags": [
+        "tech",
+        "discovery"
+      ],
+      "description": "",
+      "type": "http",
+      "host": "dvwa.lab",
+      "matched_at": "http://dvwa.lab",
+      "ip": "172.31.77.11",
+      "matcher_name": "php",
+      "extracted": [],
+      "references": [],
+      "cve": "",
+      "cvss_score": null,
+      "timestamp": "2026-11-06T02:44:41.203146325Z"
+    }
+  ],
+  "summary": {
+    "findings": 3,
+    "off_target": 0,
+    "unparsed_lines": 0
+  }
+}

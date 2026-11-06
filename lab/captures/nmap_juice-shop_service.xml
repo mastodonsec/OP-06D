@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE nmaprun>
+<!-- Nmap 7.93 scan initiated Fri Nov  6 02:41:29 2026 as: /usr/bin/nmap -oX - -&#45;no-stylesheet -&#45;max-rate 50 -&#45;host-timeout 300s -sV -p 3000 -&#45; 172.31.77.10 -->
+<nmaprun scanner="nmap" args="/usr/bin/nmap -oX - -&#45;no-stylesheet -&#45;max-rate 50 -&#45;host-timeout 300s -sV -p 3000 -&#45; 172.31.77.10" start="1793932889" startstr="Fri Nov  6 02:41:29 2026" version="7.93" xmloutputversion="1.05">
+<scaninfo type="syn" protocol="tcp" numservices="1" services="3000"/>
+<verbose level="0"/>
+<debugging level="0"/>
+<hosthint><status state="up" reason="arp-response" reason_ttl="0"/>
+<address addr="172.31.77.10" addrtype="ipv4"/>
+<address addr="96:A6:34:57:6E:2F" addrtype="mac"/>
+<hostnames>
+</hostnames>
+</hosthint>
+<host starttime="1793932890" endtime="1793932901"><status state="up" reason="arp-response" reason_ttl="0"/>
+<address addr="172.31.77.10" addrtype="ipv4"/>
+<address addr="96:A6:34:57:6E:2F" addrtype="mac"/>
+<hostnames>
+<hostname name="rc-lab-juice-shop-1.rc-lab_labnet" type="PTR"/>
+</hostnames>
+<ports><port protocol="tcp" portid="3000"><state state="open" reason="syn-ack" reason_ttl="64"/><service name="ppp" servicefp="SF-Port3000-TCP:V=7.93%I=7%D=11/6%Time=6AED3E65%P=x86_64-pc-linux-gnu%r(GetRequest,1C48,&quot;HTTP/1\.1\x20200\x20OK\r\nAccess-Control-Allow-Origin:\x20\*\r\nX-Content-Type-Options:\x20nosniff\r\nX-Frame-Options:\x20SAMEORIGIN\r\nFeature-Policy:\x20payment\x20&apos;self&apos;\r\nX-Recruiting:\x20/#/jobs\r\nAccept-Ranges:\x20bytes\r\nCache-Control:\x20public,\x20max-age=0\r\nLast-Modified:\x20Thu,\x2005\x20Nov\x202026\x2021:30:56\x20GMT\r\nETag:\x20W/\&quot;2700-1a1ad9f3e17\&quot;\r\nContent-Type:\x20text/html;\x20charset=UTF-8\r\nContent-Length:\x209984\r\nVary:\x20Accept-Encoding\r\nDate:\x20Fri,\x2006\x20Nov\x202026\x2002:41:41\x20GMT\r\nConnection:\x20close\r\n\r\n&lt;!-&#45;\n\x20\x20~\x20Copyright\x20\(c\)\x202014-2026\x20Bjoern\x20Kimminich\x20&amp;\x20the\x20OWASP\x20Juice\x20Shop\x20contributors\.\n\x20\x20~\x20SPDX-License-Identifier:\x20MIT\n\x20\x20-&#45;&gt;\n\n&lt;!doctype\x20html&gt;\n&lt;html\x20lang=\&quot;en\&quot;\x20data-beasties-container&gt;\n&lt;head&gt;\n\x20\x20&lt;meta\x20charset=\&quot;utf-8\&quot;&gt;\n\x20\x20&lt;title&gt;OWASP\x20Juice\x20Shop&lt;/title&gt;\n\x20\x20&lt;meta\x20name=\&quot;description\&quot;\x20content=\&quot;Probably\x20the\x20most\x20modern\x20and\x20sophisticated\x20insecure\x20web\x20application\&quot;&gt;\n\x20\x20&lt;meta\x20name=\&quot;viewport\&quot;\x20content=\&quot;width=device-width,\x20initial-scale=1\&quot;&gt;\n\x20\x20&lt;link\x20rel=\&quot;preconnect\&quot;\x20href=\&quot;htt&quot;)%r(Help,2F,&quot;HTTP/1\.1\x20400\x20Bad\x20Request\r\nConnection:\x20close\r\n\r\n&quot;)%r(NCP,2F,&quot;HTTP/1\.1\x20400\x20Bad\x20Request\r\nConnection:\x20close\r\n\r\n&quot;)%r(HTTPOptions,EA,&quot;HTTP/1\.1\x20204\x20No\x20Content\r\nAccess-Control-Allow-Origin:\x20\*\r\nAccess-Control-Allow-Methods:\x20GET,HEAD,PUT,PATCH,POST,DELETE\r\nVary:\x20Access-Control-Request-Headers\r\nContent-Length:\x200\r\nDate:\x20Fri,\x2006\x20Nov\x202026\x2002:41:41\x20GMT\r\nConnection:\x20close\r\n\r\n&quot;)%r(RTSPRequest,EA,&quot;HTTP/1\.1\x20204\x20No\x20Content\r\nAccess-Control-Allow-Origin:\x20\*\r\nAccess-Control-Allow-Methods:\x20GET,HEAD,PUT,PATCH,POST,DELETE\r\nVary:\x20Access-Control-Request-Headers\r\nContent-Length:\x200\r\nDate:\x20Fri,\x2006\x20Nov\x202026\x2002:41:41\x20GMT\r\nConnection:\x20close\r\n\r\n&quot;)%r(RPCCheck,2F,&quot;HTTP/1\.1\x20400\x20Bad\x20Request\r\nConnection:\x20close\r\n\r\n&quot;);" method="table" conf="3"/></port>
+</ports>
+<times srtt="130" rttvar="3763" to="100000"/>
+</host>
+<runstats><finished time="1793932901" timestr="Fri Nov  6 02:41:41 2026" summary="Nmap done at Fri Nov  6 02:41:41 2026; 1 IP address (1 host up) scanned in 11.52 seconds" elapsed="11.52" exit="success"/><hosts up="1" down="0" total="1"/>
+</runstats>
+</nmaprun>
