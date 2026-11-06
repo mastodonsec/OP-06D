@@ -222,3 +222,23 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# ---------------------------------------------------------------------------
+# Red Cell — local-only, do NOT commit (internal ops / sensitive run data)
+# ---------------------------------------------------------------------------
+# Internal handoff primer: commercial strategy, the unfixed-gap roadmap, Jira
+# keys, local paths. Keep it on disk in your working copy (fresh dev sessions
+# still read it) — just keep it out of the licensed/public repo. README.md is
+# the public-facing architecture/status doc.
+CONTEXT.md
+
+# Real client engagement scopes are authorization documents, not repo content.
+# The lab sample (lab/engagement.yaml) is self-owned and harmless, so it stays
+# tracked. Put real-scope files outside the repo, or add a pattern here, e.g.:
+# engagements/
+
+# Per-engagement audit logs are the liability record, not repo content. Note
+# *.log is already ignored above; if the audit sink uses another extension or a
+# directory, add it here, e.g.:
+# audit/
+# *.audit.jsonl
