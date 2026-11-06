@@ -709,26 +709,3 @@ docker compose -f $LAB down
 ```
 
 (`down -v` is unnecessary; no volumes are used. Images stay cached.)
-
-Send me, so I can finish RC-19 (adapt parsers and tests to real output, fix flags
-and the ambient-config handling, update the docs and the Jira ticket):
-
-1. `lab/captures/isolation-check.txt` (Step 4 output, with the control result).
-2. `lab/captures/versions.txt` (Step 5).
-3. The Step 7 results: `wrapper-argv.txt` and the per-flag accepted/rejected table.
-4. The real captures (`nmap_*.xml`, `nuclei_*.jsonl`, `*.findings.json`) and the Step 9 parser output.
-5. Step 10 output (tag audit) and `default-selection-templates.txt`.
-6. Step 11 output (the A to E table) and `cfgtest-requests.log`.
-7. Step 12 output (root vs unprivileged) and the privileged-scripts list.
-8. Step 13 output and the e2e audit log.
-9. Anything that failed, looked odd, or differed from what this runbook predicted.
-
-## Predicted gaps to confirm (not yet known)
-
-These are my predictions from reading my own code, not observations:
-
-- **Ambient nuclei config and environment are not controlled** (Step 11, B and D).
-- **One or more nuclei flag names may be wrong** for v3.11.1 (Step 7).
-- **Some "active-recon" tags may include templates that send non-GET requests or
-  use payloads** (Step 10).
-- **`-A` and OS detection fail without root** (Step 12), reported as `nmap_failed`.
