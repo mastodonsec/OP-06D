@@ -8,13 +8,15 @@ chain once. Nothing in this repository executes any of this for you.
 > below is unverified. If something differs, that is a finding: send me the output
 > and I will adapt the code, the fixtures and these docs.
 
-Run all commands from the repository root (`R:\My Drive\Git\RedCell`) in
+Run all commands from the repository root (`Z:\git\RedCell`) in
 **PowerShell 7** (`pwsh`). Snippets are piped into the container, which needs
 UTF-8 handling that Windows PowerShell 5.1 does not do reliably.
 
 ```powershell
 $LAB = "lab/docker-compose.yml"
 ```
+
+> **Reading this runbook.** Lines to type are in `powershell` code blocks. When a step also shows what you should see, the expected output follows under an **Expected output:** label, in its own plain block — that block is the result to compare against, never something to run.
 
 ---
 
@@ -106,7 +108,13 @@ second network; the digests match the table above. Edit the `window` in
 Validate the file syntax without starting anything:
 
 ```powershell
-docker compose -f $LAB config | Out-Null; if ($LASTEXITCODE -eq 0) { "compose file OK" }                                                     
+docker compose -f $LAB config | Out-Null
+if ($LASTEXITCODE -eq 0) { "compose file OK" }
+```
+
+Expected output:
+
+```
 compose file OK
 ```
 
