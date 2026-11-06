@@ -106,7 +106,8 @@ second network; the digests match the table above. Edit the `window` in
 Validate the file syntax without starting anything:
 
 ```powershell
-docker compose -f $LAB config --quiet; if ($LASTEXITCODE -eq 0) { "compose file OK" }
+docker compose -f $LAB config | Out-Null; if ($LASTEXITCODE -eq 0) { "compose file OK" }                                                     
+compose file OK
 ```
 
 ## Step 2. Build the scanner image (internet required, outside the lab)
@@ -139,9 +140,19 @@ port); do it with curl from the scanner: fetch `/setup.php`, read the
 `user_token` hidden field, then POST `create_db=Create / Reset Database` with
 that token and the same session cookie. If the page changes, skip this step.
 
+This is lab SETUP, not a scan — it is run directly, not through Red Cell.
+Without it, DVWA's / redirects to /setup.php; after it, / redirects to /login.php
+(its normal deployed state, which the PLANTED_VULNS baseline assumes). Record "DVWA DB initialized" as a baseline precondition: if the dvwa container
+is ever recreated (down/up), the DB resets and this step must be re-run.
+
+``` docker compose -f $LAB exec -T scanner curl -sS -X POST http://dvwa.lab/setup.php --data "create_db=1" -o /dev/null -w "dvwa setup HTTP %{http_code}`n" ```
+
+##### Verify: / should now redirect (302) to /login.php instead of /setup.php
+``` docker compose -f $LAB exec -T scanner curl -sS -o /dev/null -w "dvwa / -> HTTP %{http_code}`n" http://dvwa.lab/ ```
+
 ## Step 4. ISOLATION GATE (BLOCKING)
 
-**Do not continue unless this prints PASS.**
+**Do not continue unless the following command prints PASS.**
 
 ```powershell
 pwsh -File lab\check_isolation.ps1 -WithInternetControl
@@ -179,7 +190,7 @@ pwsh -File lab\check_isolation.ps1 -WithInternetControl *>&1 | Tee-Object lab\ca
 ```
 
 (Optional, extra paranoia: `docker network inspect rc-lab_labnet` and confirm
-`"Internal": true`, three entries under `Containers`, and no `Gateway` in IPAM.)
+`"Internal": true`, three entries under `Containers`. IPAM will show a Gateway IP (the .1); that’s normal. What matters is ```Internal: true``` and that the inside-scanner egress test finds no default route and blocks all outbound.)
 
 ## Step 5. Record the installed versions
 
@@ -212,7 +223,7 @@ The wrappers pass these flags. The authoritative test is that the **real tool
 accepts them and does what they mean**; Step 8 runs every one for real. This step
 prints exactly what the wrappers build and does a quick `--help` cross-check.
 
-**7a. Print every command line the wrappers build (nothing is executed):**
+**7a. Print every command line the wrappers build (nothing is executed):** Copy and paste to the command line.
 
 ```powershell
 @'
@@ -260,7 +271,7 @@ This goes through the **gate and the toolbox** (not the raw tools), so the gate,
 sanitizer and audit log are exercised as well. The scanner has no network beyond
 the lab, and the engagement scopes only the two targets.
 
-```powershell
+```
 @'
 import json, pathlib
 from redcell.engagement import load_engagement
@@ -272,32 +283,30 @@ OUT = pathlib.Path("/captures")
 eng = load_engagement("/lab/engagement.yaml")
 log = AuditLog.for_engagement(eng, OUT / "audit")
 tools = default_tools(eng, nuclei_template_dir="/opt/nuclei-templates", nuclei_templates_pin="v10.5.1")
-box = GatedToolbox(eng, Gate(eng), log, tools)   # no approver: risky actions are declined
+box = GatedToolbox(eng, Gate(eng), log, tools)
 
 RUNS = [
-    # name, tool, target, parameters, raw extension
     ("nmap_juice-shop_service", "nmap",   "172.31.77.10", {"profile": "service", "ports": "3000"}, "xml"),
     ("nmap_dvwa_service",       "nmap",   "172.31.77.11", {"profile": "service", "ports": "80"},   "xml"),
     ("nmap_dvwa_default",       "nmap",   "172.31.77.11", {},                                      "xml"),
     ("nmap_dvwa_safe_scripts",  "nmap",   "172.31.77.11", {"profile": "service", "ports": "80", "scripts": ["safe", "default", "discovery", "version"]}, "xml"),
     ("nuclei_dvwa_default",     "nuclei", "dvwa.lab",     {},                                      "jsonl"),
     ("nuclei_dvwa_exposure",    "nuclei", "dvwa.lab",     {"tags": ["exposure", "misconfig", "config", "panel", "tech"]}, "jsonl"),
-    # RC-14 fix: Juice Shop listens on 3000 (plain HTTP, no TLS), so this needs the
-    # explicit port/scheme parameters - the bare-host default only reaches 80/443.
-    ("nuclei_juice-shop_default", "nuclei", "juice-shop.lab", {"port": 3000, "scheme": "http"},      "jsonl"),
+    ("nuclei_juice-shop_3000",  "nuclei", "juice-shop.lab", {"port": 3000, "scheme": "http"},      "jsonl"),
 ]
 for i, (name, tool, target, params, ext) in enumerate(RUNS, 1):
+    print(f"[{i}/{len(RUNS)}] starting {name} ...", flush=True)
     r = box.execute(ToolAction(tool, target, params), iteration=i)
-    print(f"{name:28} outcome={r.outcome.value:12} status={r.status or '-':18} stage={r.decision.stage} risk={r.risk}")
+    print(f"    {name:28} outcome={r.outcome.value:12} status={r.status or '-':18} stage={r.decision.stage} risk={r.risk}", flush=True)
     if not r.executed:
-        print("    not run:", r.decision.reason)
+        print("    not run:", r.decision.reason, flush=True)
         continue
     raw = r.raw_output if isinstance(r.raw_output, str) else json.dumps(r.raw_output, indent=2, default=repr)
     (OUT / f"{name}.{ext}").write_text(raw, encoding="utf-8")
     (OUT / f"{name}.findings.json").write_text(json.dumps(r.findings, indent=2, default=repr), encoding="utf-8")
-print("audit entries verified:", verify_log(log.path))
-print("audit log:", log.path)
-'@ | docker compose -f $LAB exec -T scanner python3 -
+print("audit entries verified:", verify_log(log.path), flush=True)
+print("audit log:", log.path, flush=True)
+'@ | docker compose -f $LAB exec -T scanner python3 -u -
 ```
 
 Expected: every row `outcome=executed`. The Juice Shop nuclei row now targets

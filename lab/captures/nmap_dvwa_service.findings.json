@@ -1,0 +1,46 @@
+{
+  "scanner": "nmap",
+  "version": "7.93",
+  "hosts": [
+    {
+      "status": "up",
+      "addresses": [
+        {
+          "address": "172.31.77.11",
+          "type": "ipv4"
+        },
+        {
+          "address": "36:85:56:D5:B9:10",
+          "type": "mac"
+        }
+      ],
+      "hostnames": [
+        "rc-lab-dvwa-1.rc-lab_labnet"
+      ],
+      "ports": [
+        {
+          "port": 80,
+          "protocol": "tcp",
+          "state": "open",
+          "reason": "syn-ack",
+          "service": {
+            "name": "http",
+            "product": "Apache httpd",
+            "version": "2.4.25",
+            "extrainfo": "(Debian)",
+            "tunnel": "",
+            "cpe": [
+              "cpe:/a:apache:http_server:2.4.25"
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "summary": {
+    "hosts_up": 1,
+    "hosts_down": 0,
+    "hosts_total": 1,
+    "elapsed_seconds": 6.45
+  }
+}
