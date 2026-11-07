@@ -14,7 +14,7 @@ authorization:
   client: "Red Cell lab (self-owned, isolated)"
   signed_scope_ref: "LAB-INTERNAL-NOT-A-CLIENT"
   authorized_by: "thomas@mastodonsec.com"
-  window: ["2026-11-05T00:00Z", "2026-11-07T00:00Z"]
+  window: ["2026-11-05T00:00Z", "2026-11-10T00:00Z"]
 scope:
   in_scope:
     - juice-shop.lab

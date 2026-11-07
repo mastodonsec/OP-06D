@@ -319,7 +319,11 @@ Expected: every row `outcome=executed`. The Juice Shop nuclei row now targets
 the DVWA rows rather than coming back empty. Also expect exactly two
 `dns_pinned` lines (`dvwa.lab`, `juice-shop.lab`, each pinned once even
 though each hostname is scanned in more than one row - RC-23). Anything `denied`/`declined` is
-also informative: send me the printed lines.
+also informative: send me the printed lines. Each nuclei row's
+`*.findings.json` now also carries `summary.templates_loaded` (RC-26) -
+expect a real positive count (thousands, against the pinned v10.5.1 set); `0`
+or missing means the coverage instrumentation itself regressed, not that the
+scan was clean.
 
 Outputs land in `lab/captures/` (raw XML/JSONL, parsed `*.findings.json`, and the
 audit log under `lab/captures/audit/`). These are the real fixtures.

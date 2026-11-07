@@ -185,6 +185,15 @@ def _assert_runs_against_baseline(summary: dict) -> None:
             assert ids == set(expected["template_ids"]), f"{name}: template ids {ids} != {expected['template_ids']}"
             assert findings["out_of_band"] == "off", f"{name}: out_of_band must be 'off'"
             assert findings["summary"]["off_target"] == 0, f"{name}: off_target must be 0"
+            # RC-26: the templates-loaded instrumentation must actually report a
+            # real count against the live pinned template set - a regression here
+            # would silently bring back the "loaded nothing vs matched nothing"
+            # blind spot the whole ticket exists to close.
+            loaded = findings["summary"].get("templates_loaded")
+            assert loaded is not None and loaded > 0, (
+                f"{name}: templates_loaded is {loaded!r} - coverage instrumentation regressed"
+            )
+            assert "coverage_warning" not in findings, f"{name}: unexpected coverage_warning: {findings.get('coverage_warning')}"
             if expected.get("hostname_target"):
                 assert findings.get("target_hostname") == expected["hostname_target"], (
                     f"{name}: target_hostname missing/wrong for a hostname target"
