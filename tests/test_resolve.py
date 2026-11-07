@@ -142,4 +142,8 @@ def test_only_gate_and_scope_import_redcell_resolve():
                 names = [a.name for a in node.names]
             if any(n == "redcell.resolve" for n in names):
                 importers.add(path.name)
-    assert importers == {"gate.py", "scope.py"}
+    # cli.py (RC-29) is the run wiring that constructs the Gate: it imports
+    # Resolver/system_resolver only to plumb a resolver through to Gate(...)
+    # (and to accept a test's fake resolver as an injection point) - it does
+    # no DNS lookup of its own.
+    assert importers == {"gate.py", "scope.py", "cli.py"}
