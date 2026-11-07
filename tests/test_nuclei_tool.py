@@ -970,3 +970,106 @@ def test_run_subprocess_explicit_env_replaces_the_parent_environment(monkeypatch
         10, env={"PATH": os.environ.get("PATH", "")},
     )
     assert result.stdout.decode().strip() == "MISSING"
+
+
+# --- RC-36: HTTP write-method backstop ----------------------------------------
+
+def _write_write_method_exclusions_file(path, ids):
+    path.write_text(json.dumps({
+        "templates_pin": "test",
+        "write_method_template_ids": sorted(ids),
+    }), encoding="utf-8")
+
+
+def test_build_argv_always_passes_eid_with_the_loaded_exclusion_ids(tmp_path):
+    exclusions = tmp_path / "exclusions.json"
+    _write_write_method_exclusions_file(exclusions, {"evil-delete", "evil-put"})
+    t = tool(write_method_exclusions_path=str(exclusions))
+    argv = t.build_argv("nuclei", IP, {})
+    assert value_after(argv, "-eid") == "evil-delete,evil-put"
+
+
+def test_default_bundled_exclusions_file_loads_and_is_non_empty():
+    # the real, checked-in artifact (v10.5.1, confirmed 69 ids live in the lab)
+    t = tool()
+    assert t._write_method_exclusion_ids is not None
+    assert len(t._write_method_exclusion_ids) > 0
+
+
+def test_no_eid_flag_when_the_exclusion_set_is_empty(tmp_path):
+    exclusions = tmp_path / "exclusions.json"
+    _write_write_method_exclusions_file(exclusions, set())
+    t = tool(write_method_exclusions_path=str(exclusions))
+    argv = t.build_argv("nuclei", IP, {})
+    assert "-eid" not in argv
+
+
+def test_missing_exclusions_file_refuses_every_run_fail_closed(tmp_path):
+    missing = tmp_path / "does-not-exist.json"
+    r = Runner()
+    out = tool(runner=r, write_method_exclusions_path=str(missing)).run(HOST, {})
+    assert out.status == "method_exclusions_unavailable"
+    assert r.calls == []  # never even got to check_available()/build_argv
+
+
+def test_malformed_exclusions_file_refuses_every_run_fail_closed(tmp_path):
+    bad = tmp_path / "bad.json"
+    bad.write_text("not json at all {{{", encoding="utf-8")
+    r = Runner()
+    out = tool(runner=r, write_method_exclusions_path=str(bad)).run(HOST, {})
+    assert out.status == "method_exclusions_unavailable"
+    assert r.calls == []
+
+
+def test_wrong_shape_exclusions_file_refuses_every_run_fail_closed(tmp_path):
+    wrong = tmp_path / "wrong.json"
+    wrong.write_text(json.dumps({"not_the_right_key": []}), encoding="utf-8")
+    r = Runner()
+    out = tool(runner=r, write_method_exclusions_path=str(wrong)).run(HOST, {})
+    assert out.status == "method_exclusions_unavailable"
+
+
+def test_curated_write_method_id_is_refused_at_construction(tmp_path):
+    exclusions = tmp_path / "exclusions.json"
+    _write_write_method_exclusions_file(exclusions, {"evil-delete"})
+    with pytest.raises(ValueError, match="write-method"):
+        tool(write_method_exclusions_path=str(exclusions),
+             curated_ids={"evil-delete": Risk.ACTIVE_RECON})
+
+
+def test_curated_safe_id_alongside_a_write_method_exclusion_is_fine(tmp_path):
+    exclusions = tmp_path / "exclusions.json"
+    _write_write_method_exclusions_file(exclusions, {"evil-delete"})
+    t = tool(write_method_exclusions_path=str(exclusions),
+              curated_ids={"safe-check": Risk.ACTIVE_RECON})
+    assert t._curated == {"safe-check": Risk.ACTIVE_RECON}
+
+
+def test_curated_ids_with_unavailable_exclusions_file_refuses_construction(tmp_path):
+    missing = tmp_path / "does-not-exist.json"
+    with pytest.raises(ValueError, match="cannot be validated"):
+        tool(write_method_exclusions_path=str(missing), curated_ids={"anything": Risk.ACTIVE_RECON})
+
+
+def test_construction_without_curated_ids_tolerates_an_unavailable_exclusions_file(tmp_path):
+    missing = tmp_path / "does-not-exist.json"
+    t = tool(write_method_exclusions_path=str(missing))  # must not raise
+    assert t._write_method_exclusion_ids is None
+
+
+def test_eid_applies_regardless_of_tag_or_template_id_selection(tmp_path):
+    exclusions = tmp_path / "exclusions.json"
+    _write_write_method_exclusions_file(exclusions, {"evil-delete"})
+    t = tool(write_method_exclusions_path=str(exclusions), curated_ids={"safe-check": Risk.ACTIVE_RECON})
+    by_tags = t.build_argv("nuclei", IP, {"tags": ["tech"]})
+    by_id = t.build_argv("nuclei", IP, {"template_ids": ["safe-check"]})
+    default = t.build_argv("nuclei", IP, {})
+    for argv in (by_tags, by_id, default):
+        assert value_after(argv, "-eid") == "evil-delete"
+
+
+def test_a_real_run_with_the_backstop_in_place_still_succeeds(tmp_path):
+    exclusions = tmp_path / "exclusions.json"
+    _write_write_method_exclusions_file(exclusions, {"some-other-template"})
+    out = tool(write_method_exclusions_path=str(exclusions)).run(HOST, {})
+    assert out.status == "ok"

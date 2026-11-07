@@ -33,6 +33,11 @@ report-pdf = ["weasyprint"]
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+# RC-36: the bundled write-method exclusion list must ship with the package,
+# or every nuclei run fails closed (method_exclusions_unavailable).
+redcell = ["nuclei_write_method_exclusions.json"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]

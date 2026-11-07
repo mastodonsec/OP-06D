@@ -458,6 +458,25 @@ redirects. Count them, list examples, and send me the output. The fix, if needed
 is to remove or demote the tag, tighten `-exclude-tags`, or exclude by protocol.
 (`also-tagged:` rows are already handled by `-exclude-tags`.)
 
+**RESOLVED (RC-36, 2026-11-07).** Against the pinned v10.5.1 set (14,104
+templates), 52 templates survive `-exclude-tags` and send a non-GET request -
+all query-style `POST` (GraphQL introspection, JSON-RPC reads, API
+fingerprinting), zero declaring a write method (`PUT`/`DELETE`/`PATCH`/
+`PURGE`), because every one that does also carries a danger tag
+`-exclude-tags` already drops. Safe today, but tag-dependent, not
+structural - a future re-pin could add a write-method template without a
+danger tag. `NucleiTool` now always passes `-eid`/`-exclude-id` with every
+id a full scan of the pinned set found declaring a write method in either
+shape (an `http`/`requests` block's `method:`, or a `raw:` request line) -
+69 ids, bundled as `src/redcell/nuclei_write_method_exclusions.json`,
+regenerated with `scripts/generate_nuclei_write_method_exclusions.py` on a
+re-pin. `tests/test_nuclei_method_audit.py` is the CI-enforced,
+synthetic-tree-proven-non-vacuous guarantee against drift;
+`tests/integration/test_lab_rc36.py` (gated) verifies the bundled list
+against the real pinned set and confirms `-eid` actually excludes (not just
+accepts) a known write-method id, and that the 52 read-oriented survivors
+are untouched.
+
 ## Step 11. nuclei ambient-config precedence
 
 Question (RC-14 follow-up): can a hostile `~/.config/nuclei` config re-enable
