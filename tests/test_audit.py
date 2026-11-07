@@ -85,7 +85,8 @@ def test_log_refuses_other_engagements_file(log):
         AuditLog(log.path, "some-other-engagement")
 
 
-@pytest.mark.parametrize("bad", ["../evil", "a/b", "a\\b", "", ".hidden", "x" * 200, "a b", None, 5])
+@pytest.mark.parametrize("bad", ["../evil", "a/b", "a\\b", "", ".hidden", "x" * 200, "a b", None, 5,
+                                 "acme\n", "acme\r\n", "NUL", "con.x"])
 def test_unsafe_engagement_id_rejected(tmp_path, bad):
     with pytest.raises(AuditError):
         AuditLog(tmp_path / "x.jsonl", bad)

@@ -35,6 +35,31 @@ _MIN_PREFIX_V6 = 32
 
 NonEmptyStr = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 
+# Engagement ID (RC-22): the single source of truth, shared with the RC-11 audit
+# log (which uses it as "<id>.audit.jsonl"), so the two layers cannot drift.
+# - 1-128 chars of [A-Za-z0-9._-], first char a letter or digit: no path
+#   separators, no "."/".." or dotfiles, no leading "-" (option-looking), no
+#   whitespace, control chars or unicode look-alikes (e.g. U+2215 "∕").
+# - Windows reserved device names (CON, PRN, AUX, NUL, COM0-9, LPT0-9) are
+#   refused case-insensitively, alone or before any ".": Windows treats
+#   "nul.audit.jsonl" as the NUL device, so the audit file would vanish.
+# Always use ENGAGEMENT_ID_RE.fullmatch(): "$" with match() also matches before
+# a trailing newline, so "acme\n" would slip through.
+ENGAGEMENT_ID_PATTERN = (
+    r"(?!(?i:CON|PRN|AUX|NUL|COM[0-9]|LPT[0-9])(?:\.|\Z))"
+    r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}"
+)
+ENGAGEMENT_ID_RE = re.compile(ENGAGEMENT_ID_PATTERN)
+ENGAGEMENT_ID_RULE = (
+    "engagement id must be 1-128 chars of [A-Za-z0-9._-], starting with a letter or "
+    "digit, and not a Windows reserved device name (CON, PRN, AUX, NUL, COM0-9, LPT0-9)"
+)
+
+
+def is_valid_engagement_id(value: object) -> bool:
+    """True if ``value`` is a str that fully matches ``ENGAGEMENT_ID_RE``."""
+    return isinstance(value, str) and ENGAGEMENT_ID_RE.fullmatch(value) is not None
+
 
 class EngagementError(Exception):
     """The engagement file could not be read or failed validation."""
@@ -130,6 +155,15 @@ class Engagement(_Frozen):
     # Optional self-hosted interactsh server for out-of-band checks. Absent means
     # out-of-band detection stays OFF (nuclei is run with -no-interactsh).
     interactsh_server: NonEmptyStr | None = None
+
+    @field_validator("engagement")
+    @classmethod
+    def _check_engagement_id(cls, v: str) -> str:
+        # Runs after NonEmptyStr strips outer whitespace, so " acme " loads as
+        # "acme" (harmless); any whitespace, "/", "\" or NUL left inside fails.
+        if not is_valid_engagement_id(v):
+            raise ValueError(ENGAGEMENT_ID_RULE)
+        return v
 
     @field_validator("interactsh_server")
     @classmethod

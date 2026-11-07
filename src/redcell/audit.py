@@ -23,7 +23,6 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-import re
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
@@ -31,7 +30,7 @@ from typing import Any, Callable
 
 from pydantic import BaseModel, ConfigDict, ValidationError
 
-from redcell.engagement import Engagement
+from redcell.engagement import Engagement, is_valid_engagement_id
 
 # (target, allowed, reason) -> None. The scope gate depends only on this.
 AuditSink = Callable[[str, bool, str], None]
@@ -39,8 +38,6 @@ AuditSink = Callable[[str, bool, str], None]
 SCHEMA_VERSION = 1
 GENESIS_HASH = "0" * 64
 MAX_TARGET_CHARS = 1024
-
-_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 
 EVENT_LOG_OPENED = "log_opened"
 EVENT_GATE_DECISION = "gate_decision"
@@ -135,7 +132,9 @@ class AuditLog:
         *,
         clock: Callable[[], datetime] | None = None,
     ) -> None:
-        if not isinstance(engagement_id, str) or not _ID_RE.match(engagement_id):
+        # Second line of defense (RC-22): same shared rule the RC-6 schema
+        # enforces at load, so a hand-built id can't escape the log directory.
+        if not is_valid_engagement_id(engagement_id):
             raise AuditError(f"engagement id {engagement_id!r} is not safe to use in a log")
         self.path = Path(path)
         self.engagement_id = engagement_id
