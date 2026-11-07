@@ -12,6 +12,15 @@ Run all commands from the repository root (`Z:\git\RedCell`) in
 **PowerShell 7** (`pwsh`). Snippets are piped into the container, which needs
 UTF-8 handling that Windows PowerShell 5.1 does not do reliably.
 
+> **RC-20: there is now a gated, automated version of Steps 4+8+9** (isolation
+> precondition, the real scan set, and a repeatability check), driven by
+> `tests/integration/test_lab_rc20.py` against the frozen baseline in
+> `tests/integration/baseline.json`. It is excluded from the default test
+> suite and needs `REDCELL_LAB=1`:
+> `REDCELL_LAB=1 pytest -m lab tests/integration/test_lab_rc20.py`.
+> It does not replace the exploratory one-off steps below (10/11/12) or the
+> scripted-orchestrator end-to-end in Step 13.
+
 ```powershell
 $LAB = "lab/docker-compose.yml"
 ```
@@ -294,45 +303,15 @@ entry per hostname in the audit log (two total: `dvwa.lab`, `juice-shop.lab`).
 The `nmap` rows already target literal IPs, so they are unaffected beyond
 `-n` now always being in the argv.
 
-```
-@'
-import json, pathlib
-from redcell.engagement import load_engagement
-from redcell.audit import AuditLog, read_log, verify_log
-from redcell.gate import Gate
-from redcell.tools import GatedToolbox, ToolAction, default_tools
+**RC-20:** this step now runs through `lab/scan_driver.py` - the same RUNS
+list and gated-execute logic the automated harness
+(`tests/integration/test_lab_rc20.py`) calls, so the two cannot drift apart.
+Writing straight to `lab/captures/` here is deliberate (these are the
+committed, by-hand captures); the automated test always uses a fresh,
+ephemeral subdirectory instead (see RC-20 in CONTEXT.md).
 
-OUT = pathlib.Path("/captures")
-eng = load_engagement("/lab/engagement.yaml")
-log = AuditLog.for_engagement(eng, OUT / "audit")
-tools = default_tools(eng, nuclei_template_dir="/opt/nuclei-templates", nuclei_templates_pin="v10.5.1")
-box = GatedToolbox(eng, Gate(eng, audit_pin=log.record_dns_pin), log, tools)
-
-RUNS = [
-    ("nmap_juice-shop_service", "nmap",   "172.31.77.10", {"profile": "service", "ports": "3000"}, "xml"),
-    ("nmap_dvwa_service",       "nmap",   "172.31.77.11", {"profile": "service", "ports": "80"},   "xml"),
-    ("nmap_dvwa_default",       "nmap",   "172.31.77.11", {},                                      "xml"),
-    ("nmap_dvwa_safe_scripts",  "nmap",   "172.31.77.11", {"profile": "service", "ports": "80", "scripts": ["safe", "default", "discovery", "version"]}, "xml"),
-    ("nuclei_dvwa_default",     "nuclei", "dvwa.lab",     {},                                      "jsonl"),
-    ("nuclei_dvwa_exposure",    "nuclei", "dvwa.lab",     {"tags": ["exposure", "misconfig", "config", "panel", "tech"]}, "jsonl"),
-    ("nuclei_juice-shop_3000",  "nuclei", "juice-shop.lab", {"port": 3000, "scheme": "http"},      "jsonl"),
-]
-for i, (name, tool, target, params, ext) in enumerate(RUNS, 1):
-    print(f"[{i}/{len(RUNS)}] starting {name} ...", flush=True)
-    r = box.execute(ToolAction(tool, target, params), iteration=i)
-    print(f"    {name:28} outcome={r.outcome.value:12} status={r.status or '-':18} stage={r.decision.stage} risk={r.risk}", flush=True)
-    if not r.executed:
-        print("    not run:", r.decision.reason, flush=True)
-        continue
-    raw = r.raw_output if isinstance(r.raw_output, str) else json.dumps(r.raw_output, indent=2, default=repr)
-    (OUT / f"{name}.{ext}").write_text(raw, encoding="utf-8")
-    (OUT / f"{name}.findings.json").write_text(json.dumps(r.findings, indent=2, default=repr), encoding="utf-8")
-print("audit entries verified:", verify_log(log.path), flush=True)
-print("audit log:", log.path, flush=True)
-for e in read_log(log.path):
-    if e.event == "dns_pinned":
-        print(f"    dns_pinned: {e.target} -> {e.parameters.get('resolved_ips')}", flush=True)
-'@ | docker compose -f $LAB exec -T scanner python3 -u -
+```powershell
+docker compose -f $LAB exec -T scanner python3 /lab/scan_driver.py /captures
 ```
 
 Expected: every row `outcome=executed`. The Juice Shop nuclei row now targets

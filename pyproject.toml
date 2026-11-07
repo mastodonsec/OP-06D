@@ -28,3 +28,7 @@ where = ["src"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+addopts = "-m 'not lab'"
+markers = [
+    "lab: gated lab integration test (RC-20) - needs Docker/compose and REDCELL_LAB=1; excluded by default",
+]

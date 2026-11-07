@@ -1,0 +1,49 @@
+{
+  "_comment": "RC-20 frozen baseline, derived from lab/PLANTED_VULNS.md Section 5 and the committed lab/captures/*.findings.json. A re-run with the same pins (nmap 7.93, nuclei v3.11.1, templates v10.5.1) must reproduce these open ports, service strings and matched template-id sets. Do not hand-edit without re-reconciling against a real run.",
+  "pins": {
+    "nmap_version": "7.93",
+    "nuclei_version": "v3.11.1",
+    "templates_pin": "v10.5.1"
+  },
+  "dns_pinned": {
+    "dvwa.lab": ["172.31.77.11"],
+    "juice-shop.lab": ["172.31.77.10"]
+  },
+  "runs": {
+    "nmap_juice-shop_service": {
+      "tool": "nmap",
+      "open_ports": [3000],
+      "service_strings": {}
+    },
+    "nmap_dvwa_service": {
+      "tool": "nmap",
+      "open_ports": [80],
+      "service_strings": {"80": "Apache httpd 2.4.25"}
+    },
+    "nmap_dvwa_default": {
+      "tool": "nmap",
+      "open_ports": [80],
+      "service_strings": {}
+    },
+    "nmap_dvwa_safe_scripts": {
+      "tool": "nmap",
+      "open_ports": [80],
+      "service_strings": {"80": "Apache httpd 2.4.25"}
+    },
+    "nuclei_dvwa_default": {
+      "tool": "nuclei",
+      "hostname_target": "dvwa.lab",
+      "template_ids": ["php-detect", "waf-detect", "tech-detect"]
+    },
+    "nuclei_dvwa_exposure": {
+      "tool": "nuclei",
+      "hostname_target": "dvwa.lab",
+      "template_ids": ["php-detect", "waf-detect", "tech-detect"]
+    },
+    "nuclei_juice-shop_3000": {
+      "tool": "nuclei",
+      "hostname_target": "juice-shop.lab",
+      "template_ids": ["swagger-api", "owasp-juice-shop-detect", "fingerprinthub-web-fingerprints", "tech-detect"]
+    }
+  }
+}
