@@ -157,9 +157,9 @@ def test_blank_authorization_fields(field):
 # AuditLog re-checks it with the same shared rule as a second line of defense.
 
 BAD_IDS = [
-    "../x", "../../etc/passwd", "a/b", "a\b", ".hidden", ".", "..", "-lead", "_lead",
-    "a b", "acme\nx", "acme\tx", "x" * 129, "id\x00", "acme∕x", "acme⁄x",
-    "acme／x", "аcme", "acme:x", "acme*", "CON", "con", "nul", "Prn", "AUX",
+    "../x", "../../etc/passwd", "a/b", "a\\b", ".hidden", ".", "..", "-lead", "_lead",
+    "a b", "acme\nx", "acme\tx", "x" * 129, "id\x00", "acme\u2215x", "acme\u2044x",
+    "acme\uff0fx", "\u0430cme", "acme:x", "acme*", "CON", "con", "nul", "Prn", "AUX",
     "COM1", "lpt9", "COM0", "NUL.txt", "con.audit",
 ]
 GOOD_IDS = [
