@@ -134,6 +134,36 @@ with the host list. That is a tool error, so it is visible to the loop and in
 the audit log; the raw JSONL keeps everything as evidence. Note the request to
 that host has already happened by then, so this is a tripwire, not prevention.
 
+### 4. The ambient `~/.config/nuclei` config is never read (RC-35)
+nuclei reads `~/.config/nuclei/config.yaml` (and `~/.config/nuclei/.nuclei-ignore`)
+by default. Confirmed live in the RC-19 lab (RUNBOOK Step 11): a stray or
+hostile one is a real problem for the controls above - a conflicting
+`follow-redirects: true` makes nuclei **fatal** on every scan (fail-closed only
+by accident), while a non-conflicting setting (an injected `header:`, nothing
+in `build_argv` conflicts with it) would silently take effect, and a hostile
+`.nuclei-ignore` could silently drop templates (the RC-26 coverage blind spot).
+
+Two independent layers now close this:
+
+- `-config` is **always** passed - a wrapper-owned file, never the ambient
+  one. If the operator set `config_path`, that file is used as-is (unchanged
+  behavior); otherwise the wrapper writes a fresh, empty config into a
+  per-run temporary directory (validated safe against the lab's hostile
+  config - RUNBOOK Step 11 run C).
+- `run` executes nuclei with `HOME` and `XDG_CONFIG_HOME` pointed at that same
+  per-run temporary directory instead of the real ones, so nuclei cannot find
+  the ambient config or ignore-file even if `-config` were somehow bypassed.
+  `redcell.tools.run_subprocess` gained an `env=` parameter for this; it
+  defaults to `None` (inherit), so nmap's call path is unchanged.
+
+The directory is created fresh for each `run()` call and removed afterward
+(`tempfile.TemporaryDirectory`, cleaned up even on a timeout or exec error) -
+nothing persists or leaks between runs. A hostile `HTTP_PROXY`/`HTTPS_PROXY`
+in the ambient environment was also tested (lab run D/E): nuclei does not
+honor a proxy variable on its own, so scrubbing `HOME`, not the whole
+environment, is the targeted fix - `PATH` is still passed through unchanged
+so nuclei itself can be found and executed.
+
 ## Carried over from RC-13
 
 | Property | In nuclei |

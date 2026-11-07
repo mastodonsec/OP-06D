@@ -601,10 +601,20 @@ run("E. variant C with the same hostile proxy (does scrubbing help?)", argv_c, d
 | C controlled config | clean | shows what the wrapper must do (always pass its own `-config`, run with a scrubbed environment) |
 | D hostile proxy env | probably traffic goes via the proxy | the wrapper does not scrub the environment today: a real gap if it does |
 
-I expect B or D to show a gap: the wrapper currently passes `-config` only when
-`config_path` is set, and it does not scrub the environment. If so, the fix
-(always pass a controlled `-config`, scrub env, `-disable-redirects` check) is
-mine to write once I see your output.
+**RESOLVED (RC-35, 2026-11-07).** Run B did show the gap exactly as expected:
+the wrapper passed `-config` only when `config_path` was set, and did not
+scrub the environment, so the ambient `follow-redirects: true` fataled the
+scan (fail-closed only by accident) and a non-conflicting setting would have
+silently taken effect. Run D confirmed a hostile `HTTP_PROXY`/`HTTPS_PROXY`
+is NOT honored by nuclei on its own, so run E's conclusion - scrubbing `HOME`,
+not the whole environment, is the actual fix - held. The wrapper now always
+passes its own `-config` (an empty file when the operator configured none)
+and runs with `HOME`/`XDG_CONFIG_HOME` pointed at a fresh, per-run, always-
+cleaned-up temporary directory. Re-run live against the real pinned nuclei
+with the exact hostile config from 11b: no redirect followed, no hostile
+header sent, no OAST contact, `status=ok` (no crash) -
+`tests/integration/test_lab_rc35.py` automates this replay going forward
+(gated, skips cleanly by default).
 
 **11d. Clean up** (important: the hostile config must not linger):
 
