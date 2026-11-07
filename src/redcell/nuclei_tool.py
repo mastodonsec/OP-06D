@@ -54,6 +54,29 @@ gate approved, but is addressed, and TLS-negotiated, as the right site.
 
 Flag names follow nuclei v3; verify them against the pinned nuclei version in the
 lab (RC-19).
+
+RC-26 (template-coverage instrumentation): the first real lab run (RC-19/RC-20)
+advertised ``exposure``/``misconfig``/``config`` in ``selection.tags`` but the
+capture had no way to say how many templates actually loaded - "loaded and
+matched nothing" and "never loaded" looked identical. This wrapper now always
+passes ``-stats -stats-json -si 1`` (stats go to stderr as periodic JSON lines;
+stdout stays pure JSONL, so ``parse_nuclei_jsonl`` is unaffected) and records
+the templates-loaded count nuclei itself reports as ``summary.templates_loaded``.
+A `0` or unavailable count sets ``coverage_warning`` in the result, so a scan
+that quietly loaded nothing can never be mistaken for a clean "no findings" run.
+
+Investigated in the lab against the pinned v10.5.1 template set: the default
+tag selection (``tech, detect, panel, exposure, misconfig, config``) genuinely
+excludes ``http-missing-security-headers`` and ``cors-misconfig`` - both are
+tagged ``misconfig``/``exposure`` upstream AND also ``vuln``, and this wrapper's
+``-exclude-tags`` (every intrusive/exploit tag not explicitly selected, incl.
+``vuln``) always wins over ``-tags`` in nuclei, regardless of a template's other
+tags. Dropping ``vuln`` from the exclude list to recover those two was tested
+and rejected: it pulls in ~1,479 additional templates in the pinned set,
+including malware C2-panel fingerprints and ~100 templates using POST/fuzzing/
+redirects - an unreviewed, unacceptable widening of what "low-impact default"
+means. This is a documented, intentional coverage limit, not fixed by widening
+the selection - see docs/nuclei-tool.md and lab/PLANTED_VULNS.md correction C-2.
 """
 
 from __future__ import annotations
@@ -159,6 +182,47 @@ def parse_nuclei_jsonl(text: str) -> tuple[list[dict[str, Any]], int]:
             "timestamp": _clip(d.get("timestamp"), 50),
         })
     return findings, bad
+
+
+_STATS_TEMPLATES_RE = re.compile(r"[Tt]emplates loaded for scan:\s*(\d+)")
+
+
+def parse_templates_loaded(stderr: str) -> int | None:
+    """Extract nuclei's own templates-loaded count from its ``-stats``/
+    ``-stats-json`` stderr output (never from stdout - findings stay pure
+    JSONL there). Tries every ``-stats-json`` line first: each is a JSON
+    object with a ``"templates"`` field (nuclei emits it as a numeric
+    *string*, e.g. ``"templates":"2820"`` - handled either way); the LAST
+    such line wins, though the count is stable for the whole run since
+    templates load once at the start. Falls back to the plain-text
+    "Templates loaded for scan: N" line nuclei prints when ``-stats-json``
+    never got to tick (a very short scan, or an older/newer nuclei that
+    does not support it). Missing or garbled stats -> ``None``, never a
+    crash - a quiet nuclei is exactly the case this exists to catch, not to
+    choke on."""
+    count: int | None = None
+    for line in stderr.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        if line.startswith("{"):
+            try:
+                obj = json.loads(line)
+            except ValueError:
+                continue
+            if not isinstance(obj, dict):
+                continue
+            raw = obj.get("templates")
+            try:
+                if raw is not None:
+                    count = int(str(raw).strip())
+            except (ValueError, TypeError):
+                pass
+            continue
+        m = _STATS_TEMPLATES_RE.search(line)
+        if m:
+            count = int(m.group(1))
+    return count
 
 
 def _hostname_of(value: str) -> str:
@@ -372,6 +436,7 @@ class NucleiTool:
             "-timeout", str(self._request_timeout),
             "-retries", "1",
             "-disable-redirects",
+            "-stats", "-stats-json", "-si", "1",  # RC-26: templates-loaded instrumentation, stderr only
         ]
         if hostname:
             # RC-23: ``target`` is the gate-pinned IP, never a hostname (the
@@ -439,6 +504,7 @@ class NucleiTool:
 
         kept = [f for f in findings if on_target(f, target)]
         off = sorted({f["matched_at"] or f["host"] for f in findings if not on_target(f, target)})
+        templates_loaded = parse_templates_loaded(stderr)
         result: dict[str, Any] = {
             "scanner": "nuclei",
             "templates_pin": self._pin,
@@ -450,10 +516,21 @@ class NucleiTool:
             "out_of_band": "self-hosted" if self._interactsh else "off",
             "findings": kept,
             "summary": {"findings": len(kept), "off_target": len(findings) - len(kept),
-                        "unparsed_lines": bad},
+                        "unparsed_lines": bad, "templates_loaded": templates_loaded},
         }
         if hostname:
             result["target_hostname"] = hostname  # RC-23: which name this pinned IP was
+        if not templates_loaded:
+            # RC-26: a scan that loaded zero templates (or whose stats we
+            # could not read at all) must never look like a clean "no
+            # findings" result - that is exactly the blind spot this field
+            # closes. Loud, but not a tool error: findings (if any; there
+            # should be none) are still reported as-is.
+            result["coverage_warning"] = (
+                "nuclei reported no templates loaded for this scan"
+                if templates_loaded == 0
+                else "templates-loaded count was unavailable for this scan (stats could not be read)"
+            ) + " - any 'no findings' result here is NOT evidence of a clean scan."
         if off:
             result["status"] = "error"
             result["error"] = {

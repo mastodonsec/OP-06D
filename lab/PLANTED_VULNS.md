@@ -132,14 +132,39 @@ crypto issues, unvalidated redirects. None are MVP goals.)
   identity (Juice Shop, Swagger) came only from nuclei. The report/normalization
   layer (RC-15) must treat nmap's service name on non-standard ports as low
   confidence and corroborate with nuclei before asserting a service.
-- **C-2 — misconfig/exposure templates advertised but not observed.** Both nuclei
+- **C-2 — RESOLVED (RC-26, 2026-11-07): root cause identified, coverage limit
+  confirmed intentional, not fixed by widening the selection.** Both nuclei
   runs listed `exposure`/`misconfig`/`config` in `selection.tags`, yet no
-  CORS / missing-security-headers / metrics / `/ftp` findings surfaced — including
-  `http-missing-security-headers`, which should match an HTTP-only app. The
-  capture does **not** record how many templates nuclei loaded, so we cannot tell
-  "loaded and matched nothing" from "never loaded." Open item (see RC-26): capture
-  nuclei's "templates loaded" count and confirm the curated default set actually
-  includes the misconfig/exposure templates the tags imply.
+  CORS / missing-security-headers / metrics / `/ftp` findings surfaced. RC-26
+  added `summary.templates_loaded` instrumentation (`-stats -stats-json`) and
+  used it, plus a live lab investigation against the pinned v10.5.1 template
+  set, to resolve the blind spot:
+  - The default selection loaded **2,820** templates against DVWA (confirmed
+    via `summary.templates_loaded`, not a guess) — so the gap was never
+    "nothing loaded," it was specific exclusions.
+  - `http-missing-security-headers` (`tags: misconfig,headers,generic,vuln`)
+    and `cors-misconfig` (`tags: cors,generic,misconfig,vuln`) are both
+    legitimately `misconfig`/`exposure`-class checks, but BOTH also carry
+    `vuln`, and the wrapper's `-exclude-tags` (every intrusive/exploit tag
+    not explicitly selected, including `vuln`) always wins over `-tags` in
+    nuclei regardless of a template's other tags — so they are excluded by
+    design, not by accident.
+  - Fix considered and **rejected**: dropping `vuln` from the exclude list
+    would recover these two but pulls in **~1,479** additional templates
+    from the pinned set, including malware C2-panel fingerprinting templates
+    (Caldera, Empire, Covenant, Mythic, etc.) and **~102** templates that use
+    POST requests, fuzzing/payloads, or follow redirects — an unreviewed,
+    unacceptable widening of what "low-impact default" is supposed to mean.
+  - `/ftp`, `/metrics`, J-6/J-7/J-8/D-6/D-7/D-9 etc. remain genuinely
+    unmatched for a different reason: no template in the pinned set targets
+    those specific paths/behaviors at all (confirmed by the same `-tl`
+    listing — this is template-set coverage, not a selection-logic bug).
+  - **Decision: document, don't widen** (see `docs/nuclei-tool.md`'s Known
+    Limits). J-9/J-10/D-8 stay **not found** in Section 5/1, now with a
+    precise, confirmed reason instead of an open question. An operator who
+    wants these two specific checks can add them via `curated_ids` +
+    `template_ids` (bypasses the default tag selection entirely, no change
+    to default behavior).
 - **C-3 — `aggressive` degrades, it does not fail, when unprivileged** (RUNBOOK
   Step 12 / RC-25). Not a Section-row change; noted for the nmap privilege
   baseline.

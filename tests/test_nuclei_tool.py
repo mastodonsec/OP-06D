@@ -19,6 +19,7 @@ from redcell.nuclei_tool import (
     NucleiTool,
     on_target,
     parse_nuclei_jsonl,
+    parse_templates_loaded,
 )
 from redcell.orchestrator import Orchestrator, Termination
 from redcell.sanitize import sha256_of
@@ -545,7 +546,7 @@ def test_a_result_from_a_redirect_to_an_out_of_scope_host_is_not_accepted():
     out = tool(runner=Runner(stdout=OFF_TARGET)).run(HOST, {})
     assert out.status == "off_target_activity"
     f = out.findings
-    assert f["summary"] == {"findings": 3, "off_target": 1, "unparsed_lines": 0}
+    assert f["summary"] == {"findings": 3, "off_target": 1, "unparsed_lines": 0, "templates_loaded": None}
     assert all("evil.example.net" not in x["matched_at"] for x in f["findings"])
     assert f["off_target_hosts"] == ["https://evil.example.net/landing"]
     assert f["error"]["code"] == "off_target_activity"
@@ -788,3 +789,74 @@ def test_default_tools_registers_nuclei_only_when_templates_are_configured():
     nuclei = tools[1]
     assert isinstance(nuclei, NucleiTool) and nuclei.max_rps == 9
     assert nuclei._interactsh == "oast.lab.acme-redteam.net" and nuclei._pin == "pin-1"
+
+
+# --- RC-26: templates-loaded instrumentation --------------------------------
+
+REAL_STATS_LINE = (
+    '{"duration":"0:00:01","errors":"2","hosts":"1","matched":"0","percent":"5",'
+    '"requests":"143","rps":"113","startedAt":"2026-11-07T17:34:07.432336133Z",'
+    '"templates":"2820","total":"2537"}'
+)
+REAL_STATS_LINE_LATER = REAL_STATS_LINE.replace('"duration":"0:00:01"', '"duration":"0:00:09"')
+BANNER = (
+    "\n\t ____  __  _______/ /__  (_)\n"
+    r"  / __ \/ / / / ___/ / _ \/ /" "\n"
+    " / / / / /_/ / /__/ /  __/ /\n"
+    r"/_/ /_/\__,_/\___/_/\___/_/   v3.11.1" "\n\n\t\tprojectdiscovery.io\n\n"
+    "[ERR] Could not read nuclei-ignore file: open /root/.config/nuclei/.nuclei-ignore: no such file or directory\n"
+)
+
+
+def test_build_argv_always_passes_stats_instrumentation_flags():
+    argv = tool().build_argv("nuclei", IP, {})
+    assert "-stats" in argv and "-stats-json" in argv
+    assert argv[argv.index("-si") + 1] == "1"
+
+
+@pytest.mark.parametrize("stderr,expected", [
+    (REAL_STATS_LINE, 2820),
+    (BANNER + REAL_STATS_LINE + "\n" + REAL_STATS_LINE_LATER, 2820),  # last tick wins (same count)
+    ('{"templates": 2820}', 2820),  # tolerate a real (non-string) integer too
+    ("Templates loaded for scan: 2820", 2820),  # plain-text fallback form
+    (BANNER, None),  # banner/error noise only, no stats line at all
+    ("", None),  # no output at all
+    ('{"templates": "not-a-number"}', None),  # garbled stats value, never a crash
+    ("not json at all {{{", None),
+    ('{"hosts": "1"}', None),  # a stats-shaped line missing the templates field
+])
+def test_parse_templates_loaded(stderr, expected):
+    assert parse_templates_loaded(stderr) == expected
+
+
+def test_normal_run_populates_templates_loaded_and_no_coverage_warning():
+    out = tool(runner=Runner(stdout=FIXTURE, stderr=REAL_STATS_LINE)).run(HOST, {})
+    assert out.findings["summary"]["templates_loaded"] == 2820
+    assert "coverage_warning" not in out.findings
+
+
+def test_zero_templates_loaded_produces_a_loud_coverage_warning():
+    out = tool(runner=Runner(stdout="", stderr='{"templates": "0"}')).run(HOST, {})
+    assert out.findings["summary"]["templates_loaded"] == 0
+    assert "coverage_warning" in out.findings
+    assert "no templates loaded" in out.findings["coverage_warning"]
+    # status stays ok: this is a loud signal, not a tool failure in itself
+    assert out.status == "ok"
+
+
+def test_unavailable_stats_produces_a_loud_coverage_warning():
+    out = tool(runner=Runner(stdout="", stderr=BANNER)).run(HOST, {})
+    assert out.findings["summary"]["templates_loaded"] is None
+    assert "coverage_warning" in out.findings
+    assert "unavailable" in out.findings["coverage_warning"]
+    assert out.status == "ok"
+
+
+def test_coverage_warning_does_not_mask_off_target_activity_status():
+    # a scan can be both "reported no templates" AND carry an off-target hit;
+    # the existing off_target_activity status (and its own fields) must still win.
+    out = tool(runner=Runner(stdout=OFF_TARGET, stderr='{"templates": "0"}')).run(HOST, {})
+    assert out.status == "off_target_activity"
+    assert out.findings["summary"]["templates_loaded"] == 0
+    assert "coverage_warning" in out.findings
+    assert out.findings["error"]["code"] == "off_target_activity"

@@ -195,12 +195,39 @@ sees, after sanitization):
                "tags": ["config","git","exposure"], "host": "app.acme.com",
                "matched_at": "https://app.acme.com/.git/config", "ip": "203.0.113.5",
                "extracted": ["[core]"], "references": ["..."], "cve": "", "cvss_score": 5.3, "timestamp": "..."}],
- "summary": {"findings": 1, "off_target": 0, "unparsed_lines": 0}}
+ "summary": {"findings": 1, "off_target": 0, "unparsed_lines": 0, "templates_loaded": 2820}}
 ```
 
 `raw` is the unmodified JSONL, kept in `ExecutionResult.raw_output`; the
 execution audit record carries `raw_sha256`. Request and response bodies are not
 requested from nuclei and are not copied into the findings.
+
+### Template-coverage instrumentation (RC-26)
+
+`summary.templates_loaded` is nuclei's own count of how many templates it
+actually loaded for the scan, captured from `-stats -stats-json -si 1`
+(always passed; stats are emitted as periodic JSON lines on **stderr** only -
+findings on stdout stay pure JSONL, so `parse_nuclei_jsonl` is unaffected).
+`parse_templates_loaded` reads the last such line (nuclei reports `templates`
+as a numeric string, e.g. `"templates":"2820"`; both that and a real integer
+are accepted) and falls back to the plain-text `Templates loaded for scan: N`
+line nuclei prints if `-stats-json` never ticked (a very short scan). Missing
+or garbled stats parse to `None`, never a crash.
+
+If `templates_loaded` is `0` or `None`, the result also carries
+`coverage_warning`, e.g.:
+
+```json
+"coverage_warning": "nuclei reported no templates loaded for this scan - any 'no findings' result here is NOT evidence of a clean scan."
+```
+
+This exists so a scan that quietly loaded nothing (a bad `-tags`/`-exclude-tags`
+combination, a missing template directory for a given selection, a nuclei
+version mismatch) can never be read as "ran clean, found nothing" - a report
+consumer that ignores it does so in spite of an explicit signal, not for lack
+of one. It does not change `status`/`ToolOutput.status` on its own (a loaded-
+but-empty default scan is not itself a tool failure); `off_target_activity`
+and other existing error statuses still take precedence when they also apply.
 
 ## Usage
 
@@ -225,6 +252,27 @@ uv run --extra dev pytest tests/test_nuclei_tool.py
 
 ## Known limits
 
+- **The default tag selection does not cover every template its tags imply**
+  (RC-26, investigated live in the lab against the pinned v10.5.1 set).
+  `http-missing-security-headers` and `cors-misconfig` - both legitimately
+  `misconfig`/`exposure` checks - are excluded from the default run because
+  they are ALSO tagged `vuln` upstream, and this wrapper's `-exclude-tags`
+  (every intrusive/exploit tag not explicitly selected) always wins over
+  `-tags` in nuclei, regardless of a template's other tags. Dropping `vuln`
+  from the exclude list to recover these two was tested and rejected: against
+  the pinned set it pulls in ~1,479 additional templates, including malware
+  C2-panel fingerprints and ~100 templates that use POST/fuzzing/redirects -
+  an unreviewed, unacceptable widening of what "low-impact default" means.
+  **This is an accepted, documented coverage limit, not a bug to route
+  around with a blanket tag change.** An operator who specifically wants
+  these two (or other individually-audited `vuln`-tagged-but-safe) checks
+  can add them to `curated_ids` and have the planner select them by
+  `template_ids` - that path does not touch the default tag selection at
+  all. See `lab/PLANTED_VULNS.md` correction C-2 for the full investigation.
+- **`summary.templates_loaded` can legitimately be `None`** for a very short
+  scan if nuclei's `-stats-json` never ticks before the scan ends and the
+  plain-text fallback line also wasn't printed (see RC-26 above) - treat a
+  `coverage_warning` as "look closer", not necessarily as "nothing ran."
 - **The JSONL fixture is hand-written** in nuclei v3 format, not captured from a
   live run. Replace it with a real capture in the lab (RC-19).
 - **Flags are unverified against a real binary.** The wrapper passes the nuclei
