@@ -70,7 +70,8 @@ def tool(max_rps=20, runner=None, which=lambda n: NMAP_PATH, **kw):
 def test_fixture_parses_into_structured_findings():
     f = parse_nmap_xml(FIXTURE)
     assert f["scanner"] == "nmap" and f["version"] == "7.94"
-    assert f["summary"] == {"hosts_up": 1, "hosts_down": 0, "hosts_total": 1, "elapsed_seconds": 12.34}
+    assert f["summary"] == {"hosts_up": 1, "hosts_down": 0, "hosts_total": 1,
+                            "elapsed_seconds": 12.34, "scan_types": ["syn"]}
     (host,) = f["hosts"]
     assert host["status"] == "up" and host["addresses"] == [{"address": IP, "type": "ipv4"}]
     assert host["hostnames"] == ["app.acme.com"]
@@ -579,3 +580,130 @@ def test_only_tools_py_imports_the_nmap_wrapper():
             if any(n == "redcell.nmap_tool" or n.startswith("redcell.nmap_tool.") for n in names):
                 importers.append(path.name)
     assert set(importers) == {"tools.py"}
+
+
+# --- RC-25: privilege-degradation surfacing ---------------------------------
+
+UNPRIVILEGED_AGGRESSIVE_XML = (
+    '<?xml version="1.0"?><!DOCTYPE nmaprun><nmaprun scanner="nmap" version="7.93">'
+    '<scaninfo type="connect" protocol="tcp" numservices="1000" services="1-1000"/>'
+    '<host><status state="up" reason="syn-ack"/>'
+    '<address addr="172.31.77.11" addrtype="ipv4"/>'
+    '<ports><port protocol="tcp" portid="80">'
+    '<state state="open" reason="syn-ack"/>'
+    '<service name="http" product="Apache httpd" version="2.4.25"/>'
+    '</port></ports>'
+    '</host>'
+    '<runstats><finished elapsed="8.1"/><hosts up="1" down="0" total="1"/></runstats></nmaprun>'
+)
+
+PRIVILEGED_AGGRESSIVE_XML = (
+    '<?xml version="1.0"?><!DOCTYPE nmaprun><nmaprun scanner="nmap" version="7.93">'
+    '<scaninfo type="syn" protocol="tcp" numservices="1000" services="1-1000"/>'
+    '<host><status state="up" reason="syn-ack"/>'
+    '<address addr="172.31.77.11" addrtype="ipv4"/>'
+    '<ports><port protocol="tcp" portid="80">'
+    '<state state="open" reason="syn-ack"/>'
+    '<service name="http" product="Apache httpd" version="2.4.25"/>'
+    '</port></ports>'
+    '<os><osmatch name="Linux 4.15 - 5.19" accuracy="95"/></os>'
+    '</host>'
+    '<runstats><finished elapsed="9.4"/><hosts up="1" down="0" total="1"/></runstats></nmaprun>'
+)
+
+# nmap printed NOTHING to stderr for this fallback against the pinned lab
+# version (confirmed live, root and unprivileged alike); this constant
+# documents that and is used by the "no stderr at all" test below. A second
+# test covers the defensive stderr-text path for a hypothetical different
+# nmap build that does print something.
+EMPTY_STDERR = ""
+PRIVILEGE_WARNING_STDERR = "WARNING: -O (OS scan) requires root privileges; skipping OS detection.\n"
+
+
+def test_unprivileged_aggressive_scan_is_marked_degraded_with_no_stderr_needed():
+    # Mirrors the real lab finding: nmap exits 0, prints nothing to stderr,
+    # and the only signal is scaninfo type=connect + a missing <os> element.
+    out = tool(runner=Runner(stdout=UNPRIVILEGED_AGGRESSIVE_XML, stderr=EMPTY_STDERR)).run(
+        IP, {"profile": "aggressive"},
+    )
+    assert out.status == "ok"
+    f = out.findings
+    assert f["degraded"] is True
+    assert f["degraded_capabilities"] == ["os_detection"]
+    assert "connect scan" in f["degraded_reason"]
+    assert f["summary"]["scan_types"] == ["connect"]
+    assert "warnings" not in f  # empty stderr: nothing to surface there
+
+
+def test_privileged_aggressive_scan_is_not_degraded():
+    out = tool(runner=Runner(stdout=PRIVILEGED_AGGRESSIVE_XML, stderr=EMPTY_STDERR)).run(
+        IP, {"profile": "aggressive"},
+    )
+    assert out.status == "ok"
+    f = out.findings
+    assert "degraded" not in f
+    assert "degraded_capabilities" not in f
+    assert f["summary"]["scan_types"] == ["syn"]
+    assert f["hosts"][0]["os"][0]["name"] == "Linux 4.15 - 5.19"
+
+
+def test_a_stderr_privilege_warning_alone_also_triggers_degraded():
+    # Defensive path: a hypothetical nmap build that DOES print something,
+    # even without the scaninfo type having changed (e.g. a SYN scan that
+    # still could not perform -O for some other privilege-shaped reason).
+    xml = PRIVILEGED_AGGRESSIVE_XML.replace("<os><osmatch", "<!--no-os--><skip><osmatch").replace(
+        "</os>", "</skip>"
+    )
+    out = tool(runner=Runner(stdout=xml, stderr=PRIVILEGE_WARNING_STDERR)).run(IP, {"profile": "aggressive"})
+    f = out.findings
+    assert f["degraded"] is True
+    assert "root-privilege warning" in f["degraded_reason"]
+    assert f["warnings"] == [PRIVILEGE_WARNING_STDERR.strip()]
+
+
+def test_missing_os_without_aggressive_profile_is_not_flagged_degraded():
+    # A plain service scan never requests OS detection, so a missing <os>
+    # element (which it would never have anyway) must not be misread as
+    # degradation.
+    out = tool(runner=Runner(stdout=UNPRIVILEGED_AGGRESSIVE_XML, stderr=EMPTY_STDERR)).run(
+        IP, {"profile": "service"},
+    )
+    assert "degraded" not in out.findings
+
+
+def test_syn_scan_missing_os_without_a_fallback_or_warning_is_not_flagged():
+    # OS detection can legitimately fail to fingerprint anything even WITH
+    # raw-socket privileges (not enough distinguishing open/closed ports);
+    # that must not be misreported as a privilege problem.
+    xml = PRIVILEGED_AGGRESSIVE_XML.replace('<os><osmatch name="Linux 4.15 - 5.19" accuracy="95"/></os>', "")
+    out = tool(runner=Runner(stdout=xml, stderr=EMPTY_STDERR)).run(IP, {"profile": "aggressive"})
+    assert "degraded" not in out.findings
+    assert out.findings["summary"]["scan_types"] == ["syn"]
+
+
+def test_stderr_warnings_are_captured_on_a_successful_exit_too():
+    # The specific regression this ticket fixes: stderr content used to be
+    # dropped entirely unless the process exited non-zero.
+    out = tool(runner=Runner(stdout=FIXTURE, stderr="Warning: something nmap wanted to say\n")).run(
+        IP, {"profile": "service"},
+    )
+    assert out.status == "ok"
+    assert out.findings["warnings"] == ["Warning: something nmap wanted to say"]
+
+
+def test_no_stderr_content_means_no_warnings_key_on_success():
+    out = tool(runner=Runner(stdout=FIXTURE, stderr="")).run(IP, {"profile": "service"})
+    assert "warnings" not in out.findings
+
+
+def test_degraded_signal_survives_normalization_into_a_limitations_issue():
+    from redcell.normalize import Provenance, normalize_nmap
+
+    out = tool(runner=Runner(stdout=UNPRIVILEGED_AGGRESSIVE_XML, stderr=EMPTY_STDERR)).run(
+        IP, {"profile": "aggressive"},
+    )
+    _, issues = normalize_nmap(out.findings, provenance=Provenance(engagement="e", scanner="nmap"))
+    degraded_issues = [i for i in issues if i.kind == "nmap_degraded"]
+    assert len(degraded_issues) == 1
+    assert "connect scan" in degraded_issues[0].detail
+    assert degraded_issues[0].raw == ["os_detection"]

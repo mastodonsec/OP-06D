@@ -254,6 +254,16 @@ def normalize_nmap(
     for warning in findings.get("warnings") or []:
         issues.append(_malformed("nmap_warning", str(warning), warning))
 
+    if findings.get("degraded"):
+        # RC-25: a reduced-fidelity scan (e.g. OS detection skipped running
+        # unprivileged) must not be invisible just because status stayed
+        # "ok" - this is what turns it into the report's Limitations section.
+        issues.append(_malformed(
+            "nmap_degraded",
+            str(findings.get("degraded_reason") or "scan ran in a reduced/degraded mode"),
+            findings.get("degraded_capabilities"),
+        ))
+
     return out, issues
 
 

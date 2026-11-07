@@ -620,27 +620,34 @@ target, as root and as the unprivileged `scanner` user:
 
 ```powershell
 $privprobe = @'
-import re, os
+import os
 from redcell.nmap_tool import NmapTool, PROFILES
 t = NmapTool(50)
 print("uid:", os.getuid())
 for prof in PROFILES:
     r = t.run("172.31.77.11", {"profile": prof})
-    raw = r.raw if isinstance(r.raw, str) else ""
-    m = re.search(r'<scaninfo type="(\w+)"', raw)
-    err = r.findings.get("error", {}).get("message", "") if isinstance(r.findings, dict) else ""
-    print(f"{prof:11} status={r.status:18} scan-type={m.group(1) if m else '-':8} {err[:150]}")
+    f = r.findings if isinstance(r.findings, dict) else {}
+    err = f.get("error", {}).get("message", "") if f.get("error") else ""
+    scan_types = ",".join(f.get("summary", {}).get("scan_types", [])) or "-"
+    degraded = f.get("degraded_capabilities") if f.get("degraded") else "-"
+    print(f"{prof:11} status={r.status:18} scan-types={scan_types:10} degraded={degraded} {err[:150]}")
 '@
 "=== as root ===";            $privprobe | docker compose -f $LAB exec -T scanner python3 -
 "=== as scanner (unprivileged) ==="; $privprobe | docker compose -f $LAB exec -u scanner -T scanner python3 -
 ```
 
 Record, for each profile, root vs unprivileged: works? `syn` vs `connect` scan
-type? error text? What I expect from nmap's documentation (verify): `ping`,
-`quick`, `default`, `service`, `full` still work unprivileged using a TCP
-connect scan; `aggressive` (`-A`, which includes OS detection) fails without
-root with a "requires root privileges" error and a non-zero exit, which the
-wrapper reports as `nmap_failed`.
+type? degraded? error text? **Confirmed (RC-25), not just expected:** `ping`,
+`quick`, `default`, `service`, `full` work unprivileged using a TCP connect
+scan (none of them request OS detection, so none are ever `degraded`).
+`aggressive` (`-A`, which includes OS detection) does **NOT** fail without
+root - nmap degrades gracefully: connect scan instead of SYN, OS detection
+silently skipped, exit 0, valid XML. Confirmed live: **stderr was completely
+empty** in both privilege modes, so there is no error text to see either way.
+The wrapper surfaces this as `status=ok`, `degraded=['os_detection']`,
+`scan-types=connect` - never `nmap_failed`. The pass criterion for this step
+is "no traceback, a structured, correctly-`degraded`-flagged status on every
+profile in both privilege modes" - met.
 
 Which NSE scripts need raw sockets (read-only, offline):
 
