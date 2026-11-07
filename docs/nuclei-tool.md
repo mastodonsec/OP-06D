@@ -164,6 +164,64 @@ honor a proxy variable on its own, so scrubbing `HOME`, not the whole
 environment, is the targeted fix - `PATH` is still passed through unchanged
 so nuclei itself can be found and executed.
 
+Note: `build_argv` called directly (without going through `run`) points
+`-config` at a deterministic placeholder path that does **not** exist on
+disk - nuclei fatals on a missing `-config` file. That is intentional
+(`build_argv` stays pure, no I/O); anything that wants to execute a
+hand-built argv must pass `config_path=` pointing at a real file, as `run`
+always does.
+
+### 5. Active recon is read-oriented: no HTTP write methods, ever (RC-36)
+The default active-recon pass sends `GET` and **read-only `POST`** only -
+never `PUT`, `DELETE`, `PATCH` or `PURGE`. Against the pinned v10.5.1 set
+(14,104 templates), 52 templates survive `-exclude-tags` and send a non-GET
+request; all are query-style `POST` (GraphQL introspection, JSON-RPC reads,
+SAP SOAP disclosure, API fingerprinting) - `POST` because the query protocol
+needs it, not to change state - and they are deliberately kept.
+
+That used to be true only because every write-method template also happened
+to carry a danger tag `-exclude-tags` drops - safe, but an accident of
+tagging, not a guarantee. A future re-pin adding a write-method template
+without a danger tag would have silently entered the default pass. It is
+now structural:
+
+- **Detection** (`redcell.nuclei_method_audit`): a template declares a write
+  method if an `http`/`requests` block has `method: PUT|DELETE|PATCH|PURGE`,
+  **or** a `raw:` request's request line starts with one of those verbs.
+  Both shapes are covered; `GET` and `POST` never match.
+- **Enforcement**: `build_argv` always passes `-eid`/`-exclude-id` with every
+  write-method template id in the pinned set, **regardless of tags or
+  `template_ids`**. nuclei has no runtime exclude-by-method flag, and
+  `-tc`/`-template-condition` is an *include* expression, so a pinned id list
+  is the mechanism - verified live that `-eid` excludes a write-method
+  template even when it is explicitly `-id`-included.
+- **The list is a pinned artifact**, not a 14k-file scan per construction:
+  `src/redcell/nuclei_write_method_exclusions.json` (69 ids for v10.5.1),
+  tied to `templates_pin`. Regenerate it whenever the template set is
+  re-pinned:
+
+  ```bash
+  python3 scripts/generate_nuclei_write_method_exclusions.py /opt/nuclei-templates <pin>
+  ```
+
+  The script prints the ids added/removed versus the previous file, so a
+  re-pin's effect on the backstop is visible in review. Operators with a
+  custom template set pass `write_method_exclusions_path=` to `NucleiTool`.
+- **Fail-closed**: if the list cannot be loaded (missing, not JSON, wrong
+  shape), every run is refused with status `method_exclusions_unavailable` -
+  never a silent run without the backstop.
+- **Curated `template_ids` cannot bypass it**: a write-method id in
+  `curated_ids` is refused at construction (`ValueError`), and `curated_ids`
+  combined with an unloadable exclusion list also refuses construction - the
+  floor holds for every selection path, not just the tag pass.
+- **Drift guarantee**: `tests/test_nuclei_method_audit.py` (CI, default suite)
+  proves the audit catches a selectable write-method template in a synthetic
+  tree and passes a clean one - so it is not vacuous.
+  `tests/integration/test_lab_rc36.py` (lab-gated) runs the same audit
+  against the real pinned set with the bundled list and fails if any
+  write-method template is uncovered - the check that breaks the day a
+  re-pin introduces one without regenerating the list.
+
 ## Carried over from RC-13
 
 | Property | In nuclei |
@@ -177,7 +235,9 @@ so nuclei itself can be found and executed.
 Statuses: `invalid_input`, `nuclei_not_found`, `templates_not_found`, `timeout`
 (partial output kept), `exec_failed`, `nuclei_failed` (non-zero exit),
 `malformed_output` (only non-JSON lines), `output_too_large` (over 5 MB),
-`off_target_activity`, `wrapper_error`. No findings with exit 0 is a normal `ok`
+`off_target_activity`, `method_exclusions_unavailable` (RC-36: the write-method
+exclusion list could not be loaded - fail-closed), `wrapper_error`. No findings
+with exit 0 is a normal `ok`
 result with an empty list, unlike nmap where a down host is an error.
 
 ## Resolve-once (RC-23)

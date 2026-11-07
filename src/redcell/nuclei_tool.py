@@ -95,6 +95,32 @@ including malware C2-panel fingerprints and ~100 templates using POST/fuzzing/
 redirects - an unreviewed, unacceptable widening of what "low-impact default"
 means. This is a documented, intentional coverage limit, not fixed by widening
 the selection - see docs/nuclei-tool.md and lab/PLANTED_VULNS.md correction C-2.
+
+RC-36 (HTTP write-method backstop): the default active-recon pass is read-
+oriented but not tag-dependently guaranteed to be - against the pinned
+v10.5.1 set (14,104 templates), 52 templates survive ``-exclude-tags`` and
+send a non-GET request, all of them query-style ``POST`` (GraphQL
+introspection, JSON-RPC reads, API fingerprinting - ``POST`` because the
+protocol needs it, not to modify state); zero declare a write method
+(``PUT``/``DELETE``/``PATCH``/``PURGE``), because every template that does
+also carries a danger tag ``-exclude-tags`` already drops. That is safe
+today but tag-dependent, not structural: a future re-pin could add a write-
+method template without a danger tag, and it would silently slip into the
+default pass. ``-eid``/``-exclude-id`` is therefore now ALWAYS passed with
+every id ``redcell.nuclei_method_audit`` finds declaring a write method in
+either shape nuclei templates use (an ``http``/``requests`` block's
+``method:`` field, or a ``raw:`` request whose request line starts with one
+of those verbs) - regardless of tags, and regardless of whether the planner
+selected by tag or by curated ``template_ids`` (a write-method id in the
+curated manifest is refused at construction time, fail-closed, never
+silently run). The id list is a bundled, pinned artifact
+(``nuclei_write_method_exclusions.json``, tied to ``templates_pin``) rather
+than a 14k-file scan on every construction; `tests/test_nuclei_tool.py`'s
+CI-enforced audit is the real guarantee against drift - it fails if any
+write-method template is ever selectable in the default pass, synthetic-tree
+tested so it is not vacuous. Loading the bundled list is fail-closed: if it
+cannot be read/parsed, every run is refused (``method_exclusions_unavailable``)
+rather than silently running without the backstop.
 """
 
 from __future__ import annotations
@@ -144,6 +170,39 @@ DEFAULT_TAGS = ("tech", "detect", "panel", "exposure", "misconfig", "config")
 MAX_RAW_BYTES = 5_000_000
 MAX_FINDINGS = 5_000
 _ID_RE = re.compile(r"[a-z0-9][a-z0-9_.-]{0,100}")
+
+# RC-36: the bundled write-method exclusion list, shipped next to this
+# module so it resolves whether run from the repo or an installed package.
+# Regenerate with scripts/generate_nuclei_write_method_exclusions.py when
+# the pinned template set changes.
+DEFAULT_WRITE_METHOD_EXCLUSIONS_PATH = os.path.join(
+    os.path.dirname(__file__), "nuclei_write_method_exclusions.json",
+)
+
+
+class WriteMethodExclusionsError(Exception):
+    """The write-method exclusion list could not be loaded. Fail-closed:
+    callers must refuse to run rather than proceed without the backstop."""
+
+
+def load_write_method_exclusions(path: str) -> frozenset[str]:
+    """Load the bundled (or operator-overridden) exclusion-id list. Raises
+    ``WriteMethodExclusionsError`` on anything wrong with it - missing,
+    unreadable, not JSON, or the wrong shape - so the caller can fail
+    closed instead of silently running without the backstop."""
+    try:
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, ValueError) as exc:
+        raise WriteMethodExclusionsError(
+            f"could not read the write-method exclusion list {path!r}: {exc}",
+        ) from None
+    ids = data.get("write_method_template_ids") if isinstance(data, dict) else None
+    if not isinstance(ids, list) or not all(isinstance(i, str) for i in ids):
+        raise WriteMethodExclusionsError(
+            f"{path!r} does not have the expected 'write_method_template_ids' list of strings",
+        )
+    return frozenset(ids)
 
 
 def _csv(items: Any) -> str:
@@ -310,6 +369,7 @@ class NucleiTool:
         interactsh_server: str | None = None,
         nuclei_path: str = "nuclei",
         config_path: str | None = None,
+        write_method_exclusions_path: str = DEFAULT_WRITE_METHOD_EXCLUSIONS_PATH,
         run_timeout_s: float = 900.0,
         request_timeout_s: int = 10,
         runner: Callable[..., ProcessResult] = run_subprocess,
@@ -331,6 +391,32 @@ class NucleiTool:
                     or any(host == d or host.endswith("." + d) for d in PUBLIC_INTERACTSH_DOMAINS)):
                 raise ValueError("interactsh_server must be a self-hosted hostname, never a public server")
             interactsh_server = host
+        # RC-36: load once at construction, fail-closed. A missing/corrupt
+        # exclusion list stores None (a per-action structured refusal, not a
+        # constructor crash - every other NucleiTool failure mode works the
+        # same way) UNLESS the operator also supplied curated_ids, in which
+        # case we cannot validate them safely and refuse construction
+        # outright - "refuse it at manifest load", per RC-36's own wording.
+        try:
+            write_method_exclusion_ids: frozenset[str] | None = load_write_method_exclusions(
+                write_method_exclusions_path,
+            )
+        except WriteMethodExclusionsError as exc:
+            if curated_ids:
+                raise ValueError(
+                    f"curated_ids cannot be validated against the write-method backstop: {exc}",
+                ) from None
+            write_method_exclusion_ids = None
+        if write_method_exclusion_ids is not None and curated_ids:
+            blocked = sorted(set(curated_ids) & write_method_exclusion_ids)
+            if blocked:
+                raise ValueError(
+                    f"curated_ids includes write-method template(s), refused by the method "
+                    f"backstop (never silently run): {blocked}",
+                )
+        self._write_method_exclusion_ids = write_method_exclusion_ids
+        self._write_method_exclusions_path = write_method_exclusions_path
+
         self.max_rps = max_rps
         self._template_dir = template_dir
         self._pin = templates_pin
@@ -471,6 +557,11 @@ class NucleiTool:
             "-disable-redirects",
             "-stats", "-stats-json", "-si", "1",  # RC-26: templates-loaded instrumentation, stderr only
         ]
+        if self._write_method_exclusion_ids:
+            # RC-36: structural, regardless of tags or template_ids - a
+            # write-method template is excluded even if it carries no
+            # danger tag at all.
+            argv += ["-eid", _csv(sorted(self._write_method_exclusion_ids))]
         if hostname:
             # RC-23: ``target`` is the gate-pinned IP, never a hostname (the
             # tool performs no DNS of its own), so vhost routing and TLS SNI
@@ -503,6 +594,16 @@ class NucleiTool:
         problem = self.validate_parameters(parameters) or self.target_problem(target)
         if problem:
             return _error("invalid_input", problem)
+        if self._write_method_exclusion_ids is None:
+            # RC-36: fail-closed. Without the exclusion list we cannot
+            # guarantee a write-method template can't run - refuse the
+            # whole action rather than silently proceed without the
+            # backstop, for every selection path (tags or template_ids).
+            return _error(
+                "method_exclusions_unavailable",
+                f"the write-method exclusion list could not be loaded from "
+                f"{self._write_method_exclusions_path!r}; refusing to run without the backstop",
+            )
         try:
             nuclei = self.check_available()
         except FileNotFoundError as exc:
