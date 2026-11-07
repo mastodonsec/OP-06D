@@ -21,6 +21,11 @@ classifiers = [
 
 [project.optional-dependencies]
 dev = ["pytest>=7"]
+# RC-18: enables redcell.report_render.render_pdf via weasyprint. The alternative
+# backend (Playwright + Chromium) is not listed here since it needs a separate
+# `playwright install chromium` step beyond `pip install`; see
+# report_render.NoPdfBackendAvailable for exact instructions for either.
+report-pdf = ["weasyprint"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
