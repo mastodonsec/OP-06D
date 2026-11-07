@@ -150,3 +150,74 @@ def test_blank_authorization_fields(field):
     d["authorization"][field] = "  "
     with pytest.raises(EngagementError, match=field):
         parse(d)
+
+
+# --- engagement id (RC-22) -------------------------------------------------
+# The id becomes "<id>.audit.jsonl", so the schema is the authoritative check;
+# AuditLog re-checks it with the same shared rule as a second line of defense.
+
+BAD_IDS = [
+    "../x", "../../etc/passwd", "a/b", "a\b", ".hidden", ".", "..", "-lead", "_lead",
+    "a b", "acme\nx", "acme\tx", "x" * 129, "id\x00", "acme∕x", "acme⁄x",
+    "acme／x", "аcme", "acme:x", "acme*", "CON", "con", "nul", "Prn", "AUX",
+    "COM1", "lpt9", "COM0", "NUL.txt", "con.audit",
+]
+GOOD_IDS = [
+    "a", "x" * 128, "acme-saas-external-2026-11", "A.b_c-1", "rc-lab-2026-11",
+    "cli-test-2026-11", "9", "a.", "CONSOLE", "nulx", "com10", "lpt", "x.nul", "acme-con",
+]
+
+
+def _with_id(eid) -> dict:
+    d = base()
+    d["engagement"] = eid
+    return d
+
+
+@pytest.mark.parametrize("bad", BAD_IDS)
+def test_malicious_engagement_id_rejected_at_schema(bad):
+    with pytest.raises(EngagementError, match="engagement id must be") as exc:
+        parse(_with_id(bad))
+    assert "engagement" in str(exc.value)
+
+
+@pytest.mark.parametrize("good", GOOD_IDS)
+def test_valid_engagement_id_accepted(good):
+    assert parse(_with_id(good)).engagement == good
+
+
+def test_engagement_id_outer_whitespace_stripped():
+    # Deliberate: NonEmptyStr strips, and the check runs on the stripped value.
+    assert parse(_with_id("  acme \n")).engagement == "acme"
+
+
+@pytest.mark.parametrize("bad", ["", "   "])
+def test_blank_engagement_id_rejected(bad):
+    with pytest.raises(EngagementError, match="engagement"):
+        parse(_with_id(bad))
+
+
+def test_engagement_id_uses_fullmatch_not_dollar():
+    from redcell.engagement import ENGAGEMENT_ID_RE, is_valid_engagement_id
+
+    assert ENGAGEMENT_ID_RE.match("acme\n")  # a raw match() would let this in...
+    assert not is_valid_engagement_id("acme\n")  # ...the shared check does not
+
+
+@pytest.mark.parametrize("eid", BAD_IDS + GOOD_IDS + ["acme\n", "acme\r\n", " acme"])
+def test_schema_and_audit_layers_agree(eid, tmp_path):
+    """The RC-6 schema and the RC-11 AuditLog must accept exactly the same ids
+    (for the value the schema stores, i.e. after outer-whitespace stripping)."""
+    from redcell.audit import AuditError, AuditLog
+
+    try:
+        stored = parse(_with_id(eid)).engagement
+        schema_ok = True
+    except EngagementError:
+        stored, schema_ok = eid.strip(), False
+    try:
+        AuditLog(tmp_path / "x.jsonl", stored)
+        audit_ok = True
+    except AuditError:
+        audit_ok = False
+    assert schema_ok == audit_ok
