@@ -157,7 +157,8 @@ it at startup to fail early.
             "ports": [{"port": 22, "protocol": "tcp", "state": "open", "reason": "syn-ack",
                        "service": {"name": "ssh", "product": "OpenSSH", "version": "8.9p1 Ubuntu 3ubuntu0.4",
                                    "extrainfo": "...", "cpe": ["cpe:/a:openbsd:openssh:8.9p1"]}}]}],
- "summary": {"hosts_up": 1, "hosts_down": 0, "hosts_total": 1, "elapsed_seconds": 12.34}}
+ "summary": {"hosts_up": 1, "hosts_down": 0, "hosts_total": 1, "elapsed_seconds": 12.34,
+             "scan_types": ["syn"]}}
 ```
 
 - `raw` is the unmodified XML, kept in `ExecutionResult.raw_output` for evidence.
@@ -167,6 +168,41 @@ it at startup to fail early.
 The parser uses the standard library after rejecting DTD entities and oversized
 documents. Every string field is clipped (2000 characters; fewer for short
 fields), and host, port and script counts are capped.
+
+### Privilege-degradation surfacing (RC-25)
+
+`summary.scan_types` records every `<scaninfo>` technique nmap actually used
+(`syn`, `connect`, ... - empty for a profile with no port-scan phase, e.g.
+`ping`). `warnings` is now populated whenever stderr has content, not only on
+a non-zero exit - a successful-but-degraded run used to report `status=ok`
+with no signal at all, which is exactly the gap this closes.
+
+The `aggressive` profile implies `-O` (OS detection), which needs root/
+raw-socket privileges. Running unprivileged, nmap does not fail - it falls
+back from a SYN to a connect scan and simply omits OS detection, still
+exiting 0 with valid XML (confirmed live in the lab against the pinned nmap
+7.93: **stderr was completely empty** in both the privileged and
+unprivileged case, so there is no warning text to rely on for this specific
+fallback). When this happens, the result carries:
+
+```json
+{"degraded": true, "degraded_capabilities": ["os_detection"],
+ "degraded_reason": "OS detection (requested via the 'aggressive' profile) was not performed: the scan fell back from a SYN to a connect scan (scaninfo type=connect) - likely running without root/raw-socket privileges."}
+```
+
+`status` stays `"ok"` - a reduced-fidelity scan is not itself a tool failure,
+it is a fidelity signal. The trigger is structural (`aggressive` profile +
+`scaninfo` type fell back to `connect` + no host carries an `os` result) OR a
+literal root-privilege warning on stderr, should some other nmap build print
+one; either is sufficient alone. A missing `os` element that is **not**
+accompanied by either signal (e.g. a privileged SYN scan that simply could
+not fingerprint the OS from the available ports) is left alone - that is not
+a privilege problem and must not be reported as one.
+
+`normalize_nmap` (RC-15) turns `degraded` into a `NormalizationIssue`
+(`kind="nmap_degraded"`), so it reaches the evidence store and the client
+report's Limitations section automatically, with no report-layer change
+needed.
 
 ## Usage
 

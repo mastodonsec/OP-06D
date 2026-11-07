@@ -37,6 +37,27 @@ nmap resolved a hostname target itself, independently of the gate, so a DNS
 change between the gate's check and nmap's own lookup could make it scan an
 address the gate never saw. ``hostname``, when given, is recorded in the
 result for the report; it is never resolved or used to build the command.
+
+RC-25 (privilege-degradation surfacing): running unprivileged, the
+``aggressive`` profile (``-A``, which implies ``-O`` OS detection) does not
+fail - nmap degrades gracefully, falling back from a SYN to a connect scan
+and simply omitting OS detection, still exiting 0 with valid XML. Confirmed
+live in the lab against the pinned nmap 7.93: stderr was completely empty in
+both the privileged and unprivileged case, so the only reliable signal is
+structural, not textual: ``-O`` was requested (profile ``aggressive``) but no
+``os`` element was parsed for any up host, together with the ``<scaninfo>``
+type having fallen back from ``syn`` to ``connect``. A real privilege warning
+on stderr, if a different nmap version ever prints one, is treated as an
+equally valid, independent trigger. Either way this sets ``degraded: true`` +
+``degraded_capabilities`` on the result - status stays ``ok``, since a
+reduced-fidelity scan is not itself a tool failure - and ``normalize_nmap``
+(RC-15) turns it into a ``NormalizationIssue`` so it reaches the evidence
+store and the client report's Limitations section without any report-layer
+change. ``summary.scan_types`` records every ``<scaninfo>`` type nmap
+actually used (``syn``, ``connect``, ...), the structural sibling of RC-26's
+``templates_loaded`` for nuclei. Stderr warnings are now captured whenever
+present, not only on a non-zero exit - the exact gap that let a degraded-but-
+successful run report ``status=ok`` with no signal at all.
 """
 
 from __future__ import annotations
@@ -87,6 +108,16 @@ MAX_FIELD_CHARS = 2_000
 
 _PORT_PART = r"[0-9]{1,5}(?:-[0-9]{1,5})?"
 _PORTS_RE = re.compile(rf"{_PORT_PART}(?:,{_PORT_PART})*")
+
+# RC-25: nmap did not print anything to stderr for an unprivileged -A fallback
+# against the pinned lab version (empty stderr, confirmed live) - this is a
+# defensive secondary signal only, for a different nmap version/build that
+# does. The structural check (requested OS detection, scaninfo fell back to
+# "connect", no <os> element anywhere) is the one actually observed to fire.
+_PRIVILEGE_WARNING_RE = re.compile(
+    r"requires?\s+root\s+privileges|running?\s+as\s+root|need(?:s)?\s+to\s+(?:be|run\s+as)\s+root",
+    re.I,
+)
 
 
 # --- parsing ----------------------------------------------------------------
@@ -192,11 +223,18 @@ def parse_nmap_xml(text: str) -> dict[str, Any]:
         fin = stats.find("finished")
         if fin is not None:
             elapsed = _float(fin.get("elapsed"))
+    # RC-25: which scan technique(s) nmap actually used (e.g. a connect-scan
+    # fallback when unprivileged) - a scan with no port-scan phase at all
+    # (the "ping" profile) legitimately has no <scaninfo> element.
+    scan_types = sorted({
+        _clip(si.get("type"), 20) for si in root.findall("scaninfo") if si.get("type")
+    })
     return {
         "scanner": "nmap",
         "version": _clip(root.get("version"), 30),
         "hosts": hosts,
-        "summary": {"hosts_up": up, "hosts_down": down, "hosts_total": total, "elapsed_seconds": elapsed},
+        "summary": {"hosts_up": up, "hosts_down": down, "hosts_total": total,
+                    "elapsed_seconds": elapsed, "scan_types": scan_types},
     }
 
 
@@ -209,7 +247,10 @@ class NmapTool:
     description = (
         "Port, service and (with safe NSE categories) basic host reconnaissance via nmap. "
         "Profiles: " + ", ".join(PROFILES) + ". 'ports' (e.g. \"22,80,8000-8100\") works with "
-        "profiles default and service. 'scripts' takes NSE categories only."
+        "profiles default and service. 'scripts' takes NSE categories only. "
+        "'aggressive' includes OS detection, which needs root/raw-socket privileges; running "
+        "unprivileged, it silently falls back to a connect scan with OS detection skipped - "
+        "the result reports this as degraded, it does not fail."
     )
     risk = Risk.ACTIVE_RECON  # baseline; risk_for refines it per invocation
     destructive = False
@@ -276,6 +317,13 @@ class NmapTool:
 
     def _categories(self, parameters: Mapping[str, Any]) -> set[str]:
         return set(parameters.get("scripts", []) or [])
+
+    @staticmethod
+    def _requests_os_detection(parameters: Mapping[str, Any]) -> bool:
+        # Only "aggressive" (-A) implies -O today; kept as its own check so a
+        # future profile/parameter that also requests OS detection has one
+        # place to extend, matching degraded_capabilities' own extensibility.
+        return parameters.get("profile", DEFAULT_PROFILE) == "aggressive"
 
     def risk_for(self, parameters: Mapping[str, Any]) -> Risk:
         risk = PROFILES[parameters.get("profile", DEFAULT_PROFILE)][1]
@@ -358,11 +406,47 @@ class NmapTool:
             findings = parse_nmap_xml(stdout)
         except NmapParseError as exc:
             return _error("malformed_output", f"could not parse nmap output: {exc}", raw=stdout)
+
+        # RC-25: capture stderr warnings whenever present, not only on a
+        # non-zero exit - a degraded-but-successful run (exit 0) used to
+        # report status=ok with no signal at all.
+        warnings: list[str] = []
+        stripped_stderr = stderr.strip()
+        if stripped_stderr:
+            warnings.append(_clip(stripped_stderr, 500))
         if proc.returncode != 0:
-            findings["warnings"] = [f"nmap exited with {proc.returncode}: {_clip(stderr, 300)}"]
+            warnings.append(f"nmap exited with {proc.returncode}")
+        if warnings:
+            findings["warnings"] = warnings
+
         if hostname:
             findings["target_hostname"] = hostname  # RC-23: which name this pinned IP was
-        if not any(h["status"] == "up" for h in findings["hosts"]):
+
+        # RC-25: privilege-degradation surfacing. The only case today that
+        # requests OS detection is the aggressive profile; if it was asked
+        # for but no up host carries an "os" result, that is either a
+        # connect-scan fallback (confirmed: nmap prints nothing to stderr for
+        # this on the pinned lab version) or, on some other build, an actual
+        # stderr privilege warning - either is sufficient on its own.
+        up_hosts = [h for h in findings["hosts"] if h["status"] == "up"]
+        if self._requests_os_detection(parameters) and up_hosts and not any("os" in h for h in up_hosts):
+            scan_types = findings["summary"].get("scan_types", [])
+            fell_back_to_connect = "connect" in scan_types and "syn" not in scan_types
+            stderr_signals_privilege = bool(_PRIVILEGE_WARNING_RE.search(stderr))
+            if fell_back_to_connect or stderr_signals_privilege:
+                reasons = []
+                if fell_back_to_connect:
+                    reasons.append("the scan fell back from a SYN to a connect scan (scaninfo type=connect)")
+                if stderr_signals_privilege:
+                    reasons.append("nmap reported a root-privilege warning")
+                findings["degraded"] = True
+                findings["degraded_capabilities"] = ["os_detection"]
+                findings["degraded_reason"] = (
+                    "OS detection (requested via the 'aggressive' profile) was not performed: "
+                    + "; ".join(reasons) + " - likely running without root/raw-socket privileges."
+                )
+
+        if not up_hosts:
             findings["status"] = "error"
             findings["error"] = {"code": "host_unreachable",
                                  "message": "no host responded (down, filtered or unreachable)"}
