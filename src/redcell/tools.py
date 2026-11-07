@@ -246,8 +246,15 @@ class ProcessResult:
     stderr: bytes
 
 
-def run_subprocess(argv: list[str], timeout: float) -> ProcessResult:
-    """The only place a process is started: argv list, no shell, no stdin."""
+def run_subprocess(
+    argv: list[str], timeout: float, *, env: Mapping[str, str] | None = None,
+) -> ProcessResult:
+    """The only place a process is started: argv list, no shell, no stdin.
+
+    ``env=None`` (the default) means inherit the current process environment
+    unchanged - this is exactly nmap's call path (RC-13), untouched. A caller
+    that needs a controlled environment (RC-35: nuclei's ambient
+    ``~/.config/nuclei``) passes an explicit mapping instead."""
     proc = subprocess.run(
         argv,
         capture_output=True,
@@ -255,6 +262,7 @@ def run_subprocess(argv: list[str], timeout: float) -> ProcessResult:
         shell=False,
         stdin=subprocess.DEVNULL,
         check=False,
+        env=env,
     )
     return ProcessResult(proc.returncode, proc.stdout or b"", proc.stderr or b"")
 

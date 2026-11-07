@@ -41,6 +41,24 @@ Reproducibility (RC-20): templates come from the pinned ``template_dir`` and are
 never updated by the tool (``-disable-update-check``); an optional
 ``templates_pin`` label is recorded in every result.
 
+RC-35 (ambient config / HOME): nuclei reads ``~/.config/nuclei/config.yaml``
+(and ``~/.config/nuclei/.nuclei-ignore``) by default. A stray or hostile home
+config is a real problem for the controls above: a conflicting
+``follow-redirects: true`` makes nuclei fatal (``[FTL] both follow redirects
+and disable redirects specified``) on every single scan - fail-closed only by
+accident - while a NON-conflicting setting (an injected ``header:``, nothing
+in ``build_argv`` conflicts with it) would silently take effect, and a
+hostile ``.nuclei-ignore`` could silently drop templates (the RC-26 coverage
+blind spot). Confirmed live in the RC-19 lab (Step 11): a wrapper-owned
+``-config`` is always passed now (an empty file when the operator did not
+configure one - lab run C, clean), and ``run`` executes nuclei with ``HOME``
+and ``XDG_CONFIG_HOME`` pointed at a fresh, per-run, auto-cleaned-up temporary
+directory instead of the real one (lab run E confirmed scrubbing the
+environment, not ignoring a hostile ``HTTP_PROXY``, is what actually matters -
+nuclei does not honor a proxy env var on its own). ``redcell.tools.
+run_subprocess`` gained an ``env=`` parameter for this; nmap's call path does
+not use it and is unaffected.
+
 RC-23 (resolve-once): this wrapper has no header flag to disable nuclei's own
 DNS the way nmap's ``-n`` does, so instead the toolbox never gives it a
 hostname to resolve in the first place - ``target`` is always the gate-pinned
@@ -87,6 +105,7 @@ import os
 import re
 import shutil
 import subprocess
+import tempfile
 from typing import Any, Callable, Mapping
 from urllib.parse import urlsplit
 
@@ -293,7 +312,7 @@ class NucleiTool:
         config_path: str | None = None,
         run_timeout_s: float = 900.0,
         request_timeout_s: int = 10,
-        runner: Callable[[list[str], float], ProcessResult] = run_subprocess,
+        runner: Callable[..., ProcessResult] = run_subprocess,
         which: Callable[[str], str | None] = shutil.which,
         isdir: Callable[[str], bool] = os.path.isdir,
     ) -> None:
@@ -318,10 +337,19 @@ class NucleiTool:
         self._curated = {k: Risk(v) for k, v in (curated_ids or {}).items()}
         self._interactsh = interactsh_server
         self._nuclei_path = nuclei_path
-        self._config = config_path
+        self._config = config_path  # operator-supplied; None means the wrapper owns one (RC-35)
         self._run_timeout = float(run_timeout_s)
         self._request_timeout = int(request_timeout_s)
         self._runner, self._which, self._isdir = runner, which, isdir
+        # RC-35: a deterministic, no-I/O placeholder so build_argv() always
+        # shows a wrapper-owned -config even when called directly, without
+        # ever touching the filesystem itself (build_argv stays pure). The
+        # real run always supplies the actual per-run path explicitly instead
+        # (see _run): a fresh, auto-cleaned-up temp file when the operator
+        # did not configure one, or the operator's own config_path otherwise.
+        self._fallback_config_path = os.path.join(
+            tempfile.gettempdir(), f"redcell-nuclei-config-{id(self):x}.yaml",
+        )
 
     @classmethod
     def from_engagement(cls, engagement: Engagement, *, template_dir: str, **kwargs: Any) -> "NucleiTool":
@@ -420,11 +448,16 @@ class NucleiTool:
 
     def build_argv(
         self, nuclei: str, target: str, parameters: Mapping[str, Any], hostname: str | None = None,
+        *, config_path: str | None = None,
     ) -> list[str]:
+        """Pure: never touches the filesystem. ``config_path``, when given,
+        overrides what ``-config`` points at for this call (``_run`` always
+        passes the real per-run path here); otherwise falls back to the
+        operator's ``config_path`` or, failing that, a deterministic
+        placeholder (RC-35) - either way, ``-config`` is now unconditional."""
+        resolved_config = config_path or self._config or self._fallback_config_path
         concurrency = max(1, min(self.max_rps, 10))
-        argv = [nuclei]
-        if self._config:
-            argv += ["-config", self._config]
+        argv = [nuclei, "-config", resolved_config]
         argv += [
             "-u", self._target_url(target, parameters),
             "-t", self._template_dir,  # the operator's pinned set: the only -t
@@ -476,10 +509,30 @@ class NucleiTool:
             return _error("nuclei_not_found", str(exc))
         except NotADirectoryError as exc:
             return _error("templates_not_found", str(exc))
-        argv = self.build_argv(nuclei, target, parameters, hostname)
 
+        # RC-35: a fresh, per-run, auto-cleaned-up directory stands in for
+        # the ambient $HOME/$XDG_CONFIG_HOME, so nuclei's own
+        # ~/.config/nuclei/config.yaml and .nuclei-ignore are never read -
+        # neutralizing a stray or hostile one (a conflicting setting like
+        # follow-redirects:true used to fatal every scan; a non-conflicting
+        # one, e.g. an injected header, would silently take effect; a
+        # hostile .nuclei-ignore could silently drop templates, the RC-26
+        # coverage blind spot). Cleaned up even on a timeout/exec error: the
+        # context manager's __exit__ still runs on every exception path
+        # below, before it propagates.
         try:
-            proc = self._runner(argv, self._run_timeout)
+            with tempfile.TemporaryDirectory(prefix="redcell-nuclei-home-") as scrubbed_home:
+                if self._config:
+                    config_path = self._config  # the operator's own, unchanged
+                else:
+                    config_path = os.path.join(scrubbed_home, "config.yaml")
+                    with open(config_path, "w", encoding="utf-8"):
+                        pass  # empty: validated safe against a hostile ambient config (lab Step 11 run C)
+
+                argv = self.build_argv(nuclei, target, parameters, hostname, config_path=config_path)
+                env = {"PATH": os.environ.get("PATH", ""), "HOME": scrubbed_home,
+                       "XDG_CONFIG_HOME": scrubbed_home}
+                proc = self._runner(argv, self._run_timeout, env=env)
         except subprocess.TimeoutExpired as exc:
             partial = exc.stdout if isinstance(exc.stdout, bytes) else b""
             return _error("timeout", f"nuclei did not finish within {self._run_timeout:.0f}s",

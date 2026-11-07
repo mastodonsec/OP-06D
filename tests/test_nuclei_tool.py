@@ -1,6 +1,8 @@
 import ast
 import json
+import os
 import subprocess
+import sys
 from datetime import timedelta
 from pathlib import Path
 
@@ -58,10 +60,12 @@ def engagement(max_rps=None, destructive=None, interactsh=None):
 class Runner:
     def __init__(self, stdout=FIXTURE, stderr="", returncode=0, raises=None):
         self.calls = []
+        self.envs = []
         self.stdout, self.stderr, self.returncode, self.raises = stdout, stderr, returncode, raises
 
-    def __call__(self, argv, timeout):
+    def __call__(self, argv, timeout, *, env=None):
         self.calls.append((list(argv), timeout))
+        self.envs.append(env)
         if self.raises:
             raise self.raises
         out = self.stdout.encode() if isinstance(self.stdout, str) else self.stdout
@@ -595,10 +599,19 @@ def test_missing_template_directory_refuses_and_never_runs():
         tool(isdir=lambda p: False).check_available()
 
 
+def _without_config_value(argv):
+    # RC-35: -config now always points at a fresh per-run temp path, which
+    # legitimately differs run to run - everything else about argv
+    # construction must still be deterministic/repeatable.
+    argv = list(argv)
+    argv[argv.index("-config") + 1] = "<config>"
+    return argv
+
+
 def test_argv_is_deterministic_for_repeatability():
     a = argv_of({"tags": ["tech", "cve"], "severity": ["high"]})
     b = argv_of({"severity": ["high"], "tags": ["cve", "tech"]})
-    assert a == b
+    assert _without_config_value(a) == _without_config_value(b)
 
 
 # --- secrets are redacted -------------------------------------------------------------
@@ -860,3 +873,100 @@ def test_coverage_warning_does_not_mask_off_target_activity_status():
     assert out.findings["summary"]["templates_loaded"] == 0
     assert "coverage_warning" in out.findings
     assert out.findings["error"]["code"] == "off_target_activity"
+
+
+# --- RC-35: neutralize nuclei's ambient config + control HOME ---------------
+
+def test_build_argv_always_includes_a_wrapper_owned_config_with_no_config_path_set():
+    t = tool()
+    argv = t.build_argv("nuclei", IP, {})
+    assert "-config" in argv
+    config_value = value_after(argv, "-config")
+    assert config_value
+    # stable across repeated calls, with no filesystem I/O inside build_argv
+    argv2 = t.build_argv("nuclei", IP, {})
+    assert value_after(argv2, "-config") == config_value
+
+
+def test_run_passes_a_controlled_env_with_scrubbed_home_and_xdg(monkeypatch):
+    monkeypatch.setenv("PATH", "/usr/bin:/bin")
+    r = Runner()
+    out = tool(runner=r).run(HOST, {})
+    assert out.status == "ok"
+    (env,) = r.envs
+    assert env["PATH"] == "/usr/bin:/bin"
+    assert env["HOME"] == env["XDG_CONFIG_HOME"]
+    assert "redcell-nuclei-home-" in env["HOME"]  # not the ambient $HOME
+    config_value = value_after(r.calls[0][0], "-config")
+    assert config_value.startswith(env["HOME"])  # the wrapper's own, fresh file
+
+
+def test_operator_supplied_config_path_is_used_as_is_not_replaced(tmp_path):
+    operator_config = tmp_path / "operator-config.yaml"
+    operator_config.write_text("some: value\n", encoding="utf-8")
+    r = Runner()
+    out = tool(runner=r, config_path=str(operator_config)).run(HOST, {})
+    assert out.status == "ok"
+    assert value_after(r.calls[0][0], "-config") == str(operator_config)
+    (env,) = r.envs
+    assert env["HOME"] != str(operator_config.parent)  # HOME is still scrubbed separately
+
+
+def test_temp_home_directory_is_cleaned_up_even_when_the_runner_times_out():
+    captured = {}
+
+    class RaisingRunner:
+        def __call__(self, argv, timeout, *, env=None):
+            captured["home"] = env["HOME"]
+            raise subprocess.TimeoutExpired(cmd=argv, timeout=timeout)
+
+    out = tool(runner=RaisingRunner()).run(HOST, {})
+    assert out.status == "timeout"
+    assert captured["home"] and not os.path.isdir(captured["home"])
+
+
+def test_temp_home_directory_is_cleaned_up_even_when_the_runner_errors():
+    captured = {}
+
+    class RaisingRunner:
+        def __call__(self, argv, timeout, *, env=None):
+            captured["home"] = env["HOME"]
+            raise OSError("boom")
+
+    out = tool(runner=RaisingRunner()).run(HOST, {})
+    assert out.status == "exec_failed"
+    assert captured["home"] and not os.path.isdir(captured["home"])
+
+
+def test_out_of_band_flag_is_independent_of_any_config_and_cannot_be_overridden(tmp_path):
+    # Even an operator config that would ask for interactsh is not enough on
+    # its own: the explicit -no-interactsh/-interactsh-server flag (derived
+    # only from the engagement) always wins - adding -config does not
+    # regress this. The real ambient-config case is covered by the
+    # lab-gated test (tests/integration/test_lab_rc35.py).
+    hostile_operator_config = tmp_path / "op-config.yaml"
+    hostile_operator_config.write_text("interactsh-server: evil.example\nno-interactsh: false\n", encoding="utf-8")
+    r = Runner()
+    out = tool(runner=r, config_path=str(hostile_operator_config)).run(HOST, {})
+    argv = r.calls[0][0]
+    assert "-no-interactsh" in argv
+    assert "-interactsh-server" not in argv
+    assert out.findings["out_of_band"] == "off"
+
+
+def test_run_subprocess_env_none_inherits_the_parent_environment(monkeypatch):
+    monkeypatch.setenv("REDCELL_TEST_INHERIT_PROBE", "yes")
+    result = run_subprocess(
+        [sys.executable, "-c", "import os; print(os.environ.get('REDCELL_TEST_INHERIT_PROBE', 'MISSING'))"],
+        10,
+    )
+    assert result.stdout.decode().strip() == "yes"
+
+
+def test_run_subprocess_explicit_env_replaces_the_parent_environment(monkeypatch):
+    monkeypatch.setenv("REDCELL_TEST_INHERIT_PROBE", "yes")
+    result = run_subprocess(
+        [sys.executable, "-c", "import os; print(os.environ.get('REDCELL_TEST_INHERIT_PROBE', 'MISSING'))"],
+        10, env={"PATH": os.environ.get("PATH", "")},
+    )
+    assert result.stdout.decode().strip() == "MISSING"
