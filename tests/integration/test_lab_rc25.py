@@ -3,10 +3,10 @@
 real nmap binary in both privilege modes (RUNBOOK Step 12).
 
 NOT part of the default suite: excluded via the `lab` marker and skipped
-unless REDCELL_LAB=1 is set, or docker/compose is unavailable - same gating
+unless OP06D_LAB=1 is set, or docker/compose is unavailable - same gating
 as tests/integration/test_lab_rc20.py.
 
-    REDCELL_LAB=1 uv run pytest -m lab tests/integration/test_lab_rc25.py
+    OP06D_LAB=1 uv run pytest -m lab tests/integration/test_lab_rc25.py
 """
 
 from __future__ import annotations
@@ -27,7 +27,7 @@ COMPOSE_FILE = ROOT / "lab" / "docker-compose.yml"
 
 _PROBE = """
 import json
-from redcell.nmap_tool import NmapTool
+from op06d.nmap_tool import NmapTool
 t = NmapTool(50)
 r = t.run("172.31.77.11", {"profile": "aggressive"})
 print(json.dumps({
@@ -41,8 +41,8 @@ print(json.dumps({
 
 
 def _require_lab_enabled() -> None:
-    if os.environ.get("REDCELL_LAB") != "1":
-        pytest.skip("set REDCELL_LAB=1 to run the gated lab check (RC-25)")
+    if os.environ.get("OP06D_LAB") != "1":
+        pytest.skip("set OP06D_LAB=1 to run the gated lab check (RC-25)")
 
 
 def _require_docker() -> None:

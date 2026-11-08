@@ -2,7 +2,7 @@
 """RC-16: the evidence store - a queryable index for one or more runs.
 
 **Role (read this first).** This is NOT a second source of truth. The RC-11
-audit log (``redcell.audit.AuditLog``: append-only, hash-chained JSONL)
+audit log (``op06d.audit.AuditLog``: append-only, hash-chained JSONL)
 remains the tamper-evident liability record. This store only *references*
 that log - ``runs.audit_log_path`` / ``runs.audit_log_sha256`` - and is
 itself rebuildable from the audit log plus the RC-15 normalized findings. Its
@@ -13,10 +13,10 @@ says happened.
 
 Inputs, already built by earlier tickets:
 
-* ``redcell.tools.ExecutionResult`` (RC-7/8) - one action.
-* ``redcell.normalize.NormalizedResult`` / ``Finding`` (RC-15) - the
+* ``op06d.tools.ExecutionResult`` (RC-7/8) - one action.
+* ``op06d.normalize.NormalizedResult`` / ``Finding`` (RC-15) - the
   findings + issues produced from one action's output.
-* ``redcell.engagement.Engagement`` (RC-6) - the run's authorization, scope
+* ``op06d.engagement.Engagement`` (RC-6) - the run's authorization, scope
   and intensity.
 
 Storage: SQLite (stdlib ``sqlite3``), WAL journal mode, ``foreign_keys=ON``,
@@ -24,7 +24,7 @@ every write inside a transaction (``BEGIN IMMEDIATE`` so a writer queues
 rather than racing another writer). No external dependency.
 
 Redaction: action parameters are stored through the same
-``redcell.tools.redact_parameters`` the toolbox and the audit log use - a
+``op06d.tools.redact_parameters`` the toolbox and the audit log use - a
 secret must never reach this database, including for denied/declined
 actions.
 """
@@ -41,10 +41,10 @@ from typing import Any, Iterator
 
 from pydantic import BaseModel, ConfigDict
 
-from redcell.engagement import Engagement
-from redcell.normalize import NormalizedResult
-from redcell.sanitize import sha256_of
-from redcell.tools import ExecutionResult, redact_parameters
+from op06d.engagement import Engagement
+from op06d.normalize import NormalizedResult
+from op06d.sanitize import sha256_of
+from op06d.tools import ExecutionResult, redact_parameters
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS runs (

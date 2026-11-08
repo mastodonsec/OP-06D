@@ -1,4 +1,4 @@
-# Red Cell lab scanner image (RC-19).
+# OP-06D lab scanner image (RC-19).
 #
 # Real nmap and nuclei at PINNED versions, plus the curated nuclei template set
 # pinned to a release tag. Everything downloaded here is verified against a
@@ -22,12 +22,12 @@ ARG NUCLEI_ZIP_SHA256=ea63d4ae232808cd7c6bc00d0142428e231fab59dae01042246097d195
 ARG TEMPLATES_VERSION=v10.5.1
 ARG TEMPLATES_TARBALL_SHA256=30fe1cfaced4635f886e4a2673641bba86998dceec28e468274524e789aa56eb
 
-LABEL org.redcell.lab.nmap="${NMAP_VERSION}" \
-      org.redcell.lab.nuclei="${NUCLEI_VERSION}" \
-      org.redcell.lab.nuclei-templates="${TEMPLATES_VERSION}"
+LABEL org.op06d.lab.nmap="${NMAP_VERSION}" \
+      org.op06d.lab.nuclei="${NUCLEI_VERSION}" \
+      org.op06d.lab.nuclei-templates="${TEMPLATES_VERSION}"
 
 # Tools for the scans plus the isolation checks (curl, ping, ip, getent, nc, bash)
-# and python for running the Red Cell code inside the lab.
+# and python for running the OP-06D code inside the lab.
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
       nmap=${NMAP_VERSION} \
@@ -53,7 +53,7 @@ RUN curl -fsSL -o /tmp/templates.tgz \
  && rm /tmp/templates.tgz \
  && chmod -R a-w /opt/nuclei-templates
 
-# Python environment for the Red Cell code (mounted read-only at /redcell).
+# Python environment for the OP-06D code (mounted read-only at /op06d).
 COPY requirements.txt /tmp/requirements.txt
 RUN python3 -m venv /opt/venv \
  && /opt/venv/bin/pip install --no-cache-dir -r /tmp/requirements.txt \
@@ -69,8 +69,8 @@ RUN printf 'nmap=%s\nnuclei=%s\nnuclei-templates=%s\nbase=debian:bookworm-slim@s
       "${NMAP_VERSION}" "${NUCLEI_VERSION}" "${TEMPLATES_VERSION}" > /opt/lab-versions.txt
 
 ENV PATH="/opt/venv/bin:${PATH}" \
-    PYTHONPATH="/redcell/src" \
+    PYTHONPATH="/op06d/src" \
     PYTHONDONTWRITEBYTECODE=1
 
-WORKDIR /redcell
+WORKDIR /op06d
 CMD ["sleep", "infinity"]

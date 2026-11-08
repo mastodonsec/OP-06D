@@ -1,7 +1,7 @@
 # nmap tool wrapper (RC-13)
 
-Modules: [`src/redcell/nmap_tool.py`](../src/redcell/nmap_tool.py) ·
-[`src/redcell/tools.py`](../src/redcell/tools.py) ·
+Modules: [`src/op06d/nmap_tool.py`](../src/op06d/nmap_tool.py) ·
+[`src/op06d/tools.py`](../src/op06d/tools.py) ·
 Tests: [`tests/test_nmap_tool.py`](../tests/test_nmap_tool.py) ·
 Fixture: [`tests/fixtures/nmap_service_scan.xml`](../tests/fixtures/nmap_service_scan.xml)
 
@@ -11,8 +11,8 @@ The first real tool behind `GatedToolbox` (see [orchestrator.md](orchestrator.md
 It lets the orchestrator run an nmap scan against a **gate-approved** target and
 get **structured findings**, with the raw XML kept separately as evidence.
 
-Nothing outside the toolbox constructs or calls it: `redcell.tools.default_tools`
-is the only place `redcell.nmap_tool` is imported (a test asserts this). By the
+Nothing outside the toolbox constructs or calls it: `op06d.tools.default_tools`
+is the only place `op06d.nmap_tool` is imported (a test asserts this). By the
 time `NmapTool.run` is called the action has already passed
 `validate -> Gate.check -> approval`.
 
@@ -207,7 +207,7 @@ needed.
 ## Usage
 
 ```python
-from redcell.tools import GatedToolbox, default_tools
+from op06d.tools import GatedToolbox, default_tools
 
 toolbox = GatedToolbox(eng, gate, log, default_tools(eng), approver=my_approver)
 ```

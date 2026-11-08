@@ -397,11 +397,11 @@ def normalize(tool: str, findings: object, *, provenance: Provenance) -> Normali
 
 def normalize_execution_result(result: object, *, engagement: str, observed_at: str | None = None) -> NormalizedResult:
     """Convenience: build a ``NormalizedResult`` straight from a
-    ``redcell.tools.ExecutionResult`` (RC-7/RC-8 produce these). Takes
+    ``op06d.tools.ExecutionResult`` (RC-7/RC-8 produce these). Takes
     ``result`` as ``object`` rather than importing ``ExecutionResult`` by
     name to keep this module's import surface minimal; any object with the
     same shape (duck-typed) works, which is what the tests exercise."""
-    from redcell.sanitize import sha256_of
+    from op06d.sanitize import sha256_of
 
     tool = getattr(getattr(result, "action", None), "tool", None)
     tool = tool if isinstance(tool, str) else "unknown"

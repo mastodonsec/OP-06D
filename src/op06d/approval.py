@@ -1,9 +1,9 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """RC-8: the operator approval prompt.
 
-``ConsoleApprover`` implements ``redcell.tools.ApprovalHook`` for an
+``ConsoleApprover`` implements ``op06d.tools.ApprovalHook`` for an
 interactive terminal session. It is used ONLY when a run is actually
-interactive - the approver-selection logic in ``redcell.cli`` falls back to
+interactive - the approver-selection logic in ``op06d.cli`` falls back to
 ``DenyAllApprover`` for every unattended, piped, or ``--non-interactive``
 run, so an intrusive action can never auto-approve itself just because no
 one happened to be watching.
@@ -25,7 +25,7 @@ import queue
 import threading
 from typing import Callable
 
-from redcell.tools import ApprovalHook, ApprovalRequest
+from op06d.tools import ApprovalHook, ApprovalRequest
 
 _YES = {"y", "yes"}
 
@@ -54,7 +54,7 @@ class ConsoleApprover(ApprovalHook):
         # request.parameters is already redacted by GatedToolbox before this
         # is ever called - never a raw secret reaches this prompt.
         return (
-            "\n--- Red Cell: operator approval required ---\n"
+            "\n--- OP-06D: operator approval required ---\n"
             f"iteration : {request.iteration}\n"
             f"tool      : {request.tool}\n"
             f"target    : {request.target}\n"

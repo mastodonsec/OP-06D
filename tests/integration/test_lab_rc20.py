@@ -11,9 +11,9 @@ resolve-once markers. This does not replace the exploratory one-off steps
 
 NOT part of the default suite: excluded via the `lab` marker
 (see pyproject.toml's `addopts = "-m 'not lab'"`) and skipped unless
-REDCELL_LAB=1 is set, or docker/compose is unavailable.
+OP06D_LAB=1 is set, or docker/compose is unavailable.
 
-    REDCELL_LAB=1 uv run pytest -m lab tests/integration/test_lab_rc20.py
+    OP06D_LAB=1 uv run pytest -m lab tests/integration/test_lab_rc20.py
 """
 
 from __future__ import annotations
@@ -37,8 +37,8 @@ EPHEMERAL_SUBDIR = "_rc20_ephemeral"  # under the scanner's /captures mount; wip
 
 
 def _require_lab_enabled() -> None:
-    if os.environ.get("REDCELL_LAB") != "1":
-        pytest.skip("set REDCELL_LAB=1 to run the gated lab integration test (RC-20)")
+    if os.environ.get("OP06D_LAB") != "1":
+        pytest.skip("set OP06D_LAB=1 to run the gated lab integration test (RC-20)")
 
 
 def _require_docker() -> None:
@@ -67,7 +67,7 @@ def _exec(*args: str, timeout: float = 300) -> subprocess.CompletedProcess:
 
 
 def _unrepr(value: object) -> object:
-    """Audit targets are stored as ``repr(value)`` (redcell.audit._safe_repr);
+    """Audit targets are stored as ``repr(value)`` (op06d.audit._safe_repr);
     undo that so assertions compare plain strings."""
     if isinstance(value, str):
         try:

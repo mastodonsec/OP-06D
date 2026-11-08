@@ -1,5 +1,5 @@
 #!/bin/bash
-# Red Cell lab isolation check (RC-19).
+# OP-06D lab isolation check (RC-19).
 #
 # Run INSIDE the scanner container, before any scan:
 #   docker compose -f lab/docker-compose.yml exec -T scanner bash /lab/check_isolation.sh
@@ -64,7 +64,7 @@ expect_works() {
 }
 
 hr
-say "Red Cell lab isolation check"
+say "OP-06D lab isolation check"
 say "Every 'blocked' test below is EXPECTED TO FAIL to connect."
 say "PASS = could not connect (good).  FAIL = connected (lab is NOT isolated)."
 hr

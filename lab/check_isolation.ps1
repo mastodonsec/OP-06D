@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-  Red Cell lab isolation gate (RC-19), Windows/PowerShell. Run BEFORE any scan.
+  OP-06D lab isolation gate (RC-19), Windows/PowerShell. Run BEFORE any scan.
 
 .DESCRIPTION
   Runs two groups of checks and exits non-zero unless ALL pass:
@@ -67,7 +67,7 @@ foreach ($c in $containers) {
 if ($WithInternetControl) {
   Write-Host ""
   Write-Host "--- Control: a throwaway container on the DEFAULT bridge (expected to REACH the internet) ---"
-  $img = "redcell-lab-scanner:nmap-7.93-nuclei-3.11.1-templates-10.5.1"
+  $img = "op06d-lab-scanner:nmap-7.93-nuclei-3.11.1-templates-10.5.1"
   docker run --rm --network bridge $img curl -sS --max-time 10 -o /dev/null -w "HTTP %{http_code}`n" https://example.com
   if ($LASTEXITCODE -eq 0) { Pass "control: default-bridge container reached the internet (so the lab's failures are meaningful)" }
   else { Write-Host "INCONCLUSIVE  control could not reach the internet from the default bridge; the host may be offline. 'Blocked' results are then not proof." -ForegroundColor Yellow; exit 2 }

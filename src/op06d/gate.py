@@ -36,11 +36,11 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Callable
 
-from redcell.audit import AuditSink
-from redcell.engagement import Engagement
-from redcell.limits import RateLimiter, evaluate_window, window_problem
-from redcell.resolve import DnsPinner, PinAuditor, Resolver, system_resolver
-from redcell.scope import check_scope
+from op06d.audit import AuditSink
+from op06d.engagement import Engagement
+from op06d.limits import RateLimiter, evaluate_window, window_problem
+from op06d.resolve import DnsPinner, PinAuditor, Resolver, system_resolver
+from op06d.scope import check_scope
 
 # Which stage produced the decision.
 ALLOWED = "allowed"

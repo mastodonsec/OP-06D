@@ -1,4 +1,4 @@
-# Red Cell lab engagement (RC-19). Scoped ONLY to the two lab targets.
+# OP-06D lab engagement (RC-19). Scoped ONLY to the two lab targets.
 # This is a self-owned lab, not a client: the "authorization" below is the
 # operator authorizing testing of their own isolated containers.
 #
@@ -11,7 +11,7 @@
 # outside it. Times are UTC and must include a timezone.
 engagement: rc-lab-2026-11
 authorization:
-  client: "Red Cell lab (self-owned, isolated)"
+  client: "OP-06D lab (self-owned, isolated)"
   signed_scope_ref: "LAB-INTERNAL-NOT-A-CLIENT"
   authorized_by: "thomas@mastodonsec.com"
   window: ["2026-11-05T00:00Z", "2026-11-10T00:00Z"]
@@ -26,4 +26,4 @@ scope:
 intensity:
   max_rps: 50
   destructive: false
-objective: "Lab validation: external-style recon of the Red Cell lab targets"
+objective: "Lab validation: external-style recon of the OP-06D lab targets"

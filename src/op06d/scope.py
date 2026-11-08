@@ -34,9 +34,9 @@ import ipaddress
 from dataclasses import dataclass
 from typing import Iterable, Sequence
 
-from redcell.audit import AuditSink
-from redcell.engagement import Scope, normalize_target
-from redcell.resolve import Resolver, system_resolver  # re-exported: see below
+from op06d.audit import AuditSink
+from op06d.engagement import Scope, normalize_target
+from op06d.resolve import Resolver, system_resolver  # re-exported: see below
 
 IPNetwork = ipaddress.IPv4Network | ipaddress.IPv6Network
 IPAddress = ipaddress.IPv4Address | ipaddress.IPv6Address
@@ -242,7 +242,7 @@ def _evaluate(
 
 # --- orchestration (DNS + audit) -------------------------------------------
 #
-# RC-23: DNS itself is centralized in ``redcell.resolve`` (``system_resolver``,
+# RC-23: DNS itself is centralized in ``op06d.resolve`` (``system_resolver``,
 # re-exported above for compatibility); this module no longer calls it
 # directly. ``Gate`` is the only caller of ``check_scope``/``is_in_scope`` in
 # production, and it passes a ``DnsPinner.resolve`` (resolve-once, pinned for

@@ -3,8 +3,8 @@
 automated lab integration test (tests/integration/test_lab_rc20.py), so the
 two cannot drift apart.
 
-Runs only *inside* the scanner container (it imports ``redcell``, which is on
-``PYTHONPATH`` there). Not a redcell package module on purpose: it is a lab
+Runs only *inside* the scanner container (it imports ``op06d``, which is on
+``PYTHONPATH`` there). Not an op06d package module on purpose: it is a lab
 fixture, read-only-mounted at ``/lab``, not something the product ships.
 
 Usage (inside the scanner):
@@ -67,10 +67,10 @@ def run(
     captures to ``out_dir`` (which must already be empty - callers are
     responsible for that, so the audit log starts empty too). Returns a
     machine-readable summary."""
-    from redcell.audit import AuditLog, read_log, verify_log
-    from redcell.engagement import load_engagement
-    from redcell.gate import Gate
-    from redcell.tools import GatedToolbox, ToolAction, default_tools
+    from op06d.audit import AuditLog, read_log, verify_log
+    from op06d.engagement import load_engagement
+    from op06d.gate import Gate
+    from op06d.tools import GatedToolbox, ToolAction, default_tools
 
     out_dir.mkdir(parents=True, exist_ok=True)
     eng = load_engagement(engagement_path)

@@ -1,4 +1,4 @@
-# Red Cell lab (RC-19): two intentionally vulnerable targets plus a scanner,
+# OP-06D lab (RC-19): two intentionally vulnerable targets plus a scanner,
 # all on ONE internal Docker network with no route to the internet.
 #
 #   scanner (172.31.77.20)  --->  juice-shop (172.31.77.10, port 3000)
@@ -70,7 +70,7 @@ services:
         NUCLEI_ZIP_SHA256: "ea63d4ae232808cd7c6bc00d0142428e231fab59dae01042246097d195835ab6"
         TEMPLATES_VERSION: "v10.5.1"
         TEMPLATES_TARBALL_SHA256: "30fe1cfaced4635f886e4a2673641bba86998dceec28e468274524e789aa56eb"
-    image: redcell-lab-scanner:nmap-7.93-nuclei-3.11.1-templates-10.5.1
+    image: op06d-lab-scanner:nmap-7.93-nuclei-3.11.1-templates-10.5.1
     restart: "no"
     init: true
     command: ["sleep", "infinity"]
@@ -80,7 +80,7 @@ services:
     # NET_RAW, so nmap's raw-socket scans can be compared with unprivileged runs
     # (`exec -u scanner`). Nothing is added (no NET_ADMIN, not privileged).
     volumes:
-      - ..:/redcell:ro          # the Red Cell code, read-only
+      - ..:/op06d:ro            # the OP-06D code, read-only
       - .:/lab:ro               # these lab files (scripts, engagement), read-only
       - ./captures:/captures    # the ONLY writable mount: real tool outputs
     networks:

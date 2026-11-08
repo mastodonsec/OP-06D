@@ -1,4 +1,4 @@
-Red Cell
+OP-06D
 Copyright (c) 2026 Thomas Pavan / Mastodon Security (mastodonsec)
 
 This program is free software: you can redistribute it and/or modify it under
@@ -21,7 +21,7 @@ copyright holder. Contact: thomas@mastodonsec.com
 ------------------------------------------------------------------------------
 Authorized-use notice (read before running)
 ------------------------------------------------------------------------------
-Red Cell drives active security tools (network and web reconnaissance) against
+OP-06D drives active security tools (network and web reconnaissance) against
 targets. It is intended ONLY for systems you own or for which you hold explicit,
 written authorization to test.
 
@@ -39,11 +39,11 @@ is a statement of intended use and is not part of the license grant.
 ------------------------------------------------------------------------------
 Third-party components
 ------------------------------------------------------------------------------
-Red Cell invokes, but does not include or link, external tools that are licensed
+OP-06D invokes, but does not include or link, external tools that are licensed
 separately by their respective authors, including:
   - nmap            (https://nmap.org/)
   - nuclei          (https://github.com/projectdiscovery/nuclei)
   - nuclei-templates
 Python dependencies (pydantic, PyYAML, and others) are distributed under their
 own licenses. These components are used as separate programs or libraries under
-their own terms; their licenses are not altered by Red Cell's license.
+their own terms; their licenses are not altered by OP-06D's license.

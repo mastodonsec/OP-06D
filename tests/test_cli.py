@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Tests for RC-29 (the `redcell` CLI) + RC-8 (operator approval wiring).
+"""Tests for RC-29 (the `op06d` CLI) + RC-8 (operator approval wiring).
 
 Uses fake nmap/nuclei tools (no real subprocess, no real network) and a
 fake DNS resolver (no real DNS lookup) injected into ``run_engagement``, so
@@ -15,10 +15,10 @@ from pathlib import Path
 import pytest
 import yaml
 
-from redcell.audit import read_log, verify_log
-from redcell.cli import RunSummary, build_parser, main, run_engagement
-from redcell.evidence import EvidenceStore
-from redcell.tools import Outcome, Risk, ToolAction, ToolOutput
+from op06d.audit import read_log, verify_log
+from op06d.cli import RunSummary, build_parser, main, run_engagement
+from op06d.evidence import EvidenceStore
+from op06d.tools import Outcome, Risk, ToolAction, ToolOutput
 
 # --- fakes: no subprocess, no network ----------------------------------------
 

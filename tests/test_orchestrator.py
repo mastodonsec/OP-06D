@@ -5,11 +5,11 @@ from pathlib import Path
 import pytest
 import yaml
 
-import redcell.audit as audit_mod
-from redcell.audit import AuditError, AuditLog, read_log
-from redcell.engagement import Engagement, Intensity, Authorization, load_engagement, parse_engagement
-from redcell.gate import Gate
-from redcell.orchestrator import (
+import op06d.audit as audit_mod
+from op06d.audit import AuditError, AuditLog, read_log
+from op06d.engagement import Engagement, Intensity, Authorization, load_engagement, parse_engagement
+from op06d.gate import Gate
+from op06d.orchestrator import (
     Orchestrator,
     PlannerDone,
     PlannerInvalid,
@@ -17,7 +17,7 @@ from redcell.orchestrator import (
     build_system_prompt,
     parse_planner_reply,
 )
-from redcell.tools import ApprovalRequest, GatedToolbox, Outcome, Risk, ToolAction
+from op06d.tools import ApprovalRequest, GatedToolbox, Outcome, Risk, ToolAction
 
 EXAMPLE = Path(__file__).parent.parent / "examples" / "engagement.yaml"
 ENG = load_engagement(EXAMPLE)

@@ -24,12 +24,12 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent / "fixtures"))
 from injection_payloads import PAYLOADS  # noqa: E402
 
-from redcell.audit import AuditLog, read_log
-from redcell.engagement import load_engagement
-from redcell.gate import Gate
-from redcell.orchestrator import Orchestrator
-from redcell.sanitize import BLOCK_NAME, sanitize_tool_output
-from redcell.tools import GatedToolbox, Risk
+from op06d.audit import AuditLog, read_log
+from op06d.engagement import load_engagement
+from op06d.gate import Gate
+from op06d.orchestrator import Orchestrator
+from op06d.sanitize import BLOCK_NAME, sanitize_tool_output
+from op06d.tools import GatedToolbox, Risk
 
 ROOT = Path(__file__).parent.parent
 EXAMPLE = ROOT / "examples" / "engagement.yaml"

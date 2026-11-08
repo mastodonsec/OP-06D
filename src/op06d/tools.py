@@ -9,7 +9,7 @@ There is no accessor that returns a tool, and the tools live in a name-mangled
 private attribute, so code holding a toolbox (the orchestrator loop) cannot
 invoke a tool without passing the gate. Python cannot make this absolute, so
 the property is also asserted by tests (a denied action's tool is never run).
-Concrete tools (e.g. ``redcell.nmap_tool``) are constructed only by
+Concrete tools (e.g. ``op06d.nmap_tool``) are constructed only by
 ``default_tools`` below; nothing else imports them.
 
 Sanitization happens here too: ``execute`` returns the raw output (for
@@ -45,7 +45,7 @@ itself sends using the engagement's ``max_rps``.
 
 RC-23 (resolve-once): ``__execute`` never hands a tool the hostname it was
 given. If ``action.target`` was a hostname, the gate already resolved and
-pinned it (``redcell.resolve.DnsPinner``) to decide scope, and
+pinned it (``op06d.resolve.DnsPinner``) to decide scope, and
 ``GateDecision.resolved_ips`` carries that pinned address; ``__execute`` scans
 *that* address, passing the original hostname separately only as the
 ``hostname=`` keyword (for vhost/SNI correctness - nuclei). A tool must never
@@ -63,15 +63,15 @@ from dataclasses import dataclass, field
 from enum import Enum, IntEnum
 from typing import Any, Iterable, Mapping, Protocol
 
-from redcell.audit import (
+from op06d.audit import (
     EVENT_APPROVAL,
     EVENT_INJECTION_FLAG,
     AuditError,
     AuditLog,
 )
-from redcell.engagement import Engagement
-from redcell.gate import ALLOWED, DENIED_AUDIT, DENIED_RATE, Gate, GateDecision
-from redcell.sanitize import SanitizedOutput, sanitize_tool_output, sha256_of
+from op06d.engagement import Engagement
+from op06d.gate import ALLOWED, DENIED_AUDIT, DENIED_RATE, Gate, GateDecision
+from op06d.sanitize import SanitizedOutput, sanitize_tool_output, sha256_of
 
 STAGE_TOOL = "tool"  # denied before the gate: unknown tool, bad parameters, destructive
 STAGE_APPROVAL = "approval"
@@ -505,16 +505,16 @@ def default_tools(
     nuclei_templates_pin: str = "",
     nuclei_curated_ids: Mapping[str, Risk] | None = None,
 ) -> list[Tool]:
-    """The tools Red Cell ships with, configured from the engagement (rate
+    """The tools OP-06D ships with, configured from the engagement (rate
     limits come from ``intensity.max_rps``, the out-of-band server from
     ``interactsh_server``). This is the only place concrete tool modules are
     imported and constructed. nuclei is registered only when a pinned template
     directory is supplied."""
-    from redcell.nmap_tool import NmapTool
+    from op06d.nmap_tool import NmapTool
 
     tools: list[Tool] = [NmapTool.from_engagement(engagement)]
     if nuclei_template_dir:
-        from redcell.nuclei_tool import NucleiTool
+        from op06d.nuclei_tool import NucleiTool
 
         tools.append(
             NucleiTool.from_engagement(

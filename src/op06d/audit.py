@@ -30,7 +30,7 @@ from typing import Any, Callable
 
 from pydantic import BaseModel, ConfigDict, ValidationError
 
-from redcell.engagement import Engagement, is_valid_engagement_id
+from op06d.engagement import Engagement, is_valid_engagement_id
 
 # (target, allowed, reason) -> None. The scope gate depends only on this.
 AuditSink = Callable[[str, bool, str], None]

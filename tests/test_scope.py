@@ -1,7 +1,7 @@
 import pytest
 
-from redcell.engagement import Scope
-from redcell.scope import check_scope, evaluate_scope, is_in_scope
+from op06d.engagement import Scope
+from op06d.scope import check_scope, evaluate_scope, is_in_scope
 
 
 def scope(inn, out=()):
