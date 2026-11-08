@@ -1,9 +1,9 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """RC-21 suite 3: the chokepoint architectural test.
 
-Statically asserts (AST scan of ``src/redcell/*.py``) that NOTHING except
+Statically asserts (AST scan of ``src/op06d/*.py``) that NOTHING except
 ``tools.py`` imports the concrete ``Tool`` implementations
-(``redcell.nmap_tool`` / ``redcell.nuclei_tool``, including ``NmapTool`` /
+(``op06d.nmap_tool`` / ``op06d.nuclei_tool``, including ``NmapTool`` /
 ``NucleiTool`` by name). ``default_tools()`` in ``tools.py`` is the only
 sanctioned constructor for either.
 
@@ -27,7 +27,7 @@ import ast
 import tempfile
 from pathlib import Path
 
-SRC = Path(__file__).parent.parent / "src" / "redcell"
+SRC = Path(__file__).parent.parent / "src" / "op06d"
 CONCRETE_TOOL_MODULES = ("nmap_tool", "nuclei_tool")
 SANCTIONED_IMPORTER = "tools.py"
 
@@ -35,8 +35,8 @@ SANCTIONED_IMPORTER = "tools.py"
 def _importers_of_concrete_tools(src_dir: Path) -> dict[str, set[str]]:
     """For each concrete tool module, the set of ``.py`` filenames (direct
     children of ``src_dir``) that import it, in any form: ``import
-    redcell.nmap_tool``, ``from redcell import nmap_tool``, ``from
-    redcell.nmap_tool import NmapTool``, or a relative ``from . import
+    op06d.nmap_tool``, ``from op06d import nmap_tool``, ``from
+    op06d.nmap_tool import NmapTool``, or a relative ``from . import
     nmap_tool``."""
     importers: dict[str, set[str]] = {m: set() for m in CONCRETE_TOOL_MODULES}
     for path in sorted(src_dir.glob("*.py")):
@@ -52,7 +52,7 @@ def _importers_of_concrete_tools(src_dir: Path) -> dict[str, set[str]]:
                     candidates += [a.name for a in node.names]
             for candidate in candidates:
                 for concrete in CONCRETE_TOOL_MODULES:
-                    if candidate in (concrete, f"redcell.{concrete}") or candidate.endswith(f".{concrete}"):
+                    if candidate in (concrete, f"op06d.{concrete}") or candidate.endswith(f".{concrete}"):
                         importers[concrete].add(path.name)
     return importers
 
@@ -77,15 +77,15 @@ def test_the_detector_actually_catches_a_violation():
     with tempfile.TemporaryDirectory() as d:
         src_dir = Path(d)
         (src_dir / "tools.py").write_text(
-            "from redcell.nmap_tool import NmapTool\nfrom redcell.nuclei_tool import NucleiTool\n",
+            "from op06d.nmap_tool import NmapTool\nfrom op06d.nuclei_tool import NucleiTool\n",
             encoding="utf-8",
         )
         (src_dir / "sneaky_from_import.py").write_text(
-            "from redcell.nmap_tool import NmapTool\n\ndef run_it():\n    return NmapTool(10)\n",
+            "from op06d.nmap_tool import NmapTool\n\ndef run_it():\n    return NmapTool(10)\n",
             encoding="utf-8",
         )
         (src_dir / "sneaky_plain_import.py").write_text(
-            "import redcell.nuclei_tool\n", encoding="utf-8",
+            "import op06d.nuclei_tool\n", encoding="utf-8",
         )
 
         importers = _importers_of_concrete_tools(src_dir)
@@ -110,10 +110,10 @@ def test_a_clean_tree_with_only_tools_py_importing_passes():
     with tempfile.TemporaryDirectory() as d:
         src_dir = Path(d)
         (src_dir / "tools.py").write_text(
-            "from redcell.nmap_tool import NmapTool\nfrom redcell.nuclei_tool import NucleiTool\n",
+            "from op06d.nmap_tool import NmapTool\nfrom op06d.nuclei_tool import NucleiTool\n",
             encoding="utf-8",
         )
-        (src_dir / "report.py").write_text("from redcell.evidence import ReconstructedRun\n", encoding="utf-8")
+        (src_dir / "report.py").write_text("from op06d.evidence import ReconstructedRun\n", encoding="utf-8")
         importers = _importers_of_concrete_tools(src_dir)
         for module, who in importers.items():
             assert who == {SANCTIONED_IMPORTER}

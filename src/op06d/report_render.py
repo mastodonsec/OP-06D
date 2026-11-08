@@ -3,7 +3,7 @@
 document, and (optionally) to PDF.
 
 **Builds on the model, not the Markdown.** RC-17 split the report into a
-pure ``Report`` model (``redcell.report.build_report``) and
+pure ``Report`` model (``op06d.report.build_report``) and
 ``render_markdown``. This module renders that SAME model to HTML -
 ``render_html`` never reparses or depends on the Markdown text, so the two
 renderers can never drift from each other in a way that isn't also a drift
@@ -20,11 +20,11 @@ paginates correctly when printed or converted to PDF.
 backend is importable, in order: `weasyprint`, then `playwright` (+
 Chromium). Neither import happens unless ``render_pdf`` is actually called,
 so the HTML path (and the default test suite) never needs either installed.
-Enable PDF with ``pip install 'redcell[report-pdf]'`` (weasyprint) or by
+Enable PDF with ``pip install 'op06d[report-pdf]'`` (weasyprint) or by
 installing Playwright and its Chromium browser yourself - see
 ``NoPdfBackendAvailable``'s message for exact instructions.
 
-**CLI.** ``python -m redcell.report_render --db <evidence.db> --run <run_id>
+**CLI.** ``python -m op06d.report_render --db <evidence.db> --run <run_id>
 --out <dir> --format html|pdf|both`` - one repeatable command, no manual
 editing of generated output.
 """
@@ -36,8 +36,8 @@ import html as _html
 import sys
 from pathlib import Path
 
-from redcell.evidence import EvidenceStore
-from redcell.report import (
+from op06d.evidence import EvidenceStore
+from op06d.report import (
     ActionView,
     FindingView,
     MethodologySection,
@@ -366,7 +366,7 @@ def _render_limitations(report: Report) -> str:
 def render_html(report: Report) -> str:
     """``Report`` -> a single self-contained HTML document. Deterministic
     for a given ``Report`` (which is itself deterministic for a given
-    ``ReconstructedRun`` - see ``redcell.report.build_report``). No external
+    ``ReconstructedRun`` - see ``op06d.report.build_report``). No external
     reference of any kind: every style is inlined, nothing points at a URL."""
     body = "".join([
         _render_header(report),
@@ -394,7 +394,7 @@ class NoPdfBackendAvailable(RuntimeError):
     def __init__(self) -> None:
         super().__init__(
             "No PDF rendering backend is available. Enable one of:\n"
-            "  pip install 'redcell[report-pdf]'   # weasyprint (recommended, pure Python deps)\n"
+            "  pip install 'op06d[report-pdf]'   # weasyprint (recommended, pure Python deps)\n"
             "  pip install playwright && playwright install chromium   # alternative backend\n"
             "The HTML report (render_html) needs neither and always works."
         )
@@ -451,7 +451,7 @@ def render_pdf(report: Report, out_path: str | Path) -> Path:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="Render a stored Red Cell run to a client report (RC-17/18)."
+        description="Render a stored OP-06D run to a client report (RC-17/18)."
     )
     parser.add_argument("--db", required=True, help="path to the evidence store (.db)")
     parser.add_argument("--run", required=True, help="run_id to render")

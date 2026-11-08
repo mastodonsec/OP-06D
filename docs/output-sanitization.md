@@ -1,7 +1,7 @@
 # Tool-output sanitization (RC-12)
 
-Module: [`src/redcell/sanitize.py`](../src/redcell/sanitize.py) ·
-Audit event: [`src/redcell/audit.py`](../src/redcell/audit.py) ·
+Module: [`src/op06d/sanitize.py`](../src/op06d/sanitize.py) ·
+Audit event: [`src/op06d/audit.py`](../src/op06d/audit.py) ·
 Tests: [`tests/test_sanitize.py`](../tests/test_sanitize.py)
 
 ## Purpose
@@ -135,9 +135,9 @@ internal sanitizer error does the same. `sanitize_tool_output` never raises, and
 ## Usage
 
 ```python
-from redcell.audit import AuditLog, EVENT_INJECTION_FLAG
-from redcell.engagement import load_engagement
-from redcell.sanitize import sanitize_tool_output, UNTRUSTED_DATA_NOTICE
+from op06d.audit import AuditLog, EVENT_INJECTION_FLAG
+from op06d.engagement import load_engagement
+from op06d.sanitize import sanitize_tool_output, UNTRUSTED_DATA_NOTICE
 
 eng = load_engagement("examples/engagement.yaml")
 log = AuditLog.for_engagement(eng, "logs/")

@@ -2,6 +2,8 @@
 
 What a correct Red Cell run against the lab should (and should not) find.
 
+> **Naming note (RC-37):** this file and everything under `lab/captures/` were recorded before the RC-37 rename of Red Cell to OP-06D and may contain the old name; they are frozen and intentionally not updated.
+
 > **Status: FROZEN (2026-11-05).** This list was originally written from the
 > public documentation of OWASP Juice Shop (20.3.0) and DVWA, **before** any run.
 > It has now been reconciled against the **first real capture set** (RUNBOOK

@@ -4,10 +4,10 @@ from pathlib import Path
 
 import pytest
 
-from redcell.audit import EVENT_INJECTION_FLAG, AuditLog, read_log
-from redcell.engagement import load_engagement
-from redcell.gate import DENIED_SCOPE, DENIED_WINDOW, Gate
-from redcell.sanitize import BLOCK_NAME, sanitize_tool_output
+from op06d.audit import EVENT_INJECTION_FLAG, AuditLog, read_log
+from op06d.engagement import load_engagement
+from op06d.gate import DENIED_SCOPE, DENIED_WINDOW, Gate
+from op06d.sanitize import BLOCK_NAME, sanitize_tool_output
 
 EXAMPLE = Path(__file__).parent.parent / "examples" / "engagement.yaml"
 ENG = load_engagement(EXAMPLE)

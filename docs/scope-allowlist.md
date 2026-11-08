@@ -1,7 +1,7 @@
 # Scope allowlist enforcement (RC-9)
 
-Module: [`src/redcell/scope.py`](../src/redcell/scope.py) ·
-Audit stub: [`src/redcell/audit.py`](../src/redcell/audit.py) ·
+Module: [`src/op06d/scope.py`](../src/op06d/scope.py) ·
+Audit stub: [`src/op06d/audit.py`](../src/op06d/audit.py) ·
 Tests: [`tests/test_scope.py`](../tests/test_scope.py)
 
 ## Purpose
@@ -93,8 +93,8 @@ Ambiguous targets are denied, for example `127.1`, `2130706433`, `0x7f.0.0.1`,
 ## Usage
 
 ```python
-from redcell.engagement import load_engagement
-from redcell.scope import check_scope, is_in_scope
+from op06d.engagement import load_engagement
+from op06d.scope import check_scope, is_in_scope
 
 eng = load_engagement("examples/engagement.yaml")
 
@@ -124,7 +124,7 @@ uv run --extra dev pytest tests/test_scope.py
 The scope code depends only on `AuditSink = Callable[[str, bool, str], None]`
 and takes it as the **required** keyword argument `audit=` (there is no
 unaudited path). The real implementation is `AuditLog` in
-[`src/redcell/audit.py`](../src/redcell/audit.py):
+[`src/op06d/audit.py`](../src/op06d/audit.py):
 
 ```python
 log = AuditLog.for_engagement(eng, "logs/")
@@ -142,9 +142,9 @@ recorded must not proceed.
   the one production caller, `Gate`, no longer calls a fresh resolver per
   check - it resolves each hostname once per engagement and reuses that pin
   for every later check, and `GatedToolbox` scans that pinned address, never
-  the hostname. See [`resolve.py`](../src/redcell/resolve.py) and
+  the hostname. See [`resolve.py`](../src/op06d/resolve.py) and
   [gate-rate-and-window.md](gate-rate-and-window.md#resolve-once-rc-23).
-- `system_resolver` ([`resolve.py`](../src/redcell/resolve.py), re-exported
+- `system_resolver` ([`resolve.py`](../src/op06d/resolve.py), re-exported
   here for compatibility) uses the OS resolver with no timeout control.
 - Redirects, CNAME chains and URLs returned by tools are new targets and must
   go through the gate again.

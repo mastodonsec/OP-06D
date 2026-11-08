@@ -1,5 +1,5 @@
 ![alt text](Redcell2-1.png)
-# Red Cell
+# OP-06D
 
 An AI-driven security validation tool. An LLM plans reconnaissance actions and drives
 real security tools against **authorized** targets, with every action forced through a
@@ -14,7 +14,7 @@ hard guardrail layer, and produces a client-grade report.
 
 ## ⚠️ Authorized use only
 
-Red Cell runs reconnaissance tooling against networks and applications. Run it **only**
+OP-06D runs reconnaissance tooling against networks and applications. Run it **only**
 against systems you own or have **explicit, written authorization** to test.
 
 - Every engagement requires a scope file naming the authorized targets and referencing
@@ -29,9 +29,9 @@ against systems you own or have **explicit, written authorization** to test.
 
 ## What it is
 
-Red Cell's design principle is **own the orchestration, rent the attack content.** The
+OP-06D's design principle is **own the orchestration, rent the attack content.** The
 LLM is a *planner* that decides what to do next; the actual work is done by established,
-community-maintained tools (nmap, nuclei). The parts that are uniquely Red Cell's — and
+community-maintained tools (nmap, nuclei). The parts that are uniquely OP-06D's — and
 the parts that matter for safety — are the orchestration loop and the guardrail gate.
 
 The guarantee the tool is built around: **the model proposes, the gate disposes.** Nothing
@@ -90,19 +90,19 @@ tool runs:
 ## Install
 
 ```bash
-git clone <your-repo-url> RedCell
-cd RedCell
+git clone <your-repo-url> OP-06D
+cd OP-06D
 uv sync
 ```
 
 ## Usage
 
-Red Cell is driven by a single declarative **engagement file** and one command. The
+OP-06D is driven by a single declarative **engagement file** and one command. The
 engagement file *is* the authorization boundary — it names the authorized targets, the
 rate cap, and the window, and the gate enforces exactly what it says.
 
 ```bash
-uv run redcell run --engagement engagement.yaml
+uv run op06d run --engagement engagement.yaml
 ```
 
 ### Engagement file
@@ -143,7 +143,7 @@ reason.
 ```python
 # examples/demo_gate.py
 """
-Red Cell — guardrail gate demo.
+OP-06D — guardrail gate demo.
 
 Shows the scope gate allowing and denying targets against an engagement scope,
 with the reason for each decision. Runs NO real scan and touches NO network beyond
@@ -151,9 +151,9 @@ the DNS resolution the gate itself performs. Safe to run anywhere.
 
     uv run python examples/demo_gate.py
 """
-from redcell.engagement import load_engagement
-from redcell.gate import Gate
-from redcell.audit import open_audit_log   # per-engagement audit sink
+from op06d.engagement import load_engagement
+from op06d.gate import Gate
+from op06d.audit import open_audit_log   # per-engagement audit sink
 
 # A tiny inline engagement for the demo (normally this is your engagement.yaml).
 DEMO_ENGAGEMENT = {
@@ -211,7 +211,7 @@ Running it looks like this (reasons abbreviated):
 ```
 
 > The exact import paths and function signatures above mirror the current module layout
-> (`redcell.engagement`, `redcell.gate`, `redcell.audit`). Adjust them if your local API
+> (`op06d.engagement`, `op06d.gate`, `op06d.audit`). Adjust them if your local API
 > differs — the demo's purpose is to show the gate's decisions, not a fixed API.
 
 ## Running the tests
@@ -226,7 +226,7 @@ host.** Real-tool behavior is validated separately in the isolated lab.
 ## Project layout
 
 ```
-src/redcell/
+src/op06d/
   engagement.py     engagement-file schema and loader (the authorization boundary)
   gate.py           the single enforcement point (scope · rate · window)
   scope.py          scope decision logic (deny-wins, fail-closed)
@@ -259,15 +259,15 @@ sanitize), orchestrator loop, nmap wrapper, nuclei wrapper.
 
 **Deliberately out of the MVP** (later iterations): exploitation tier (Metasploit),
 breach-and-attack simulation (CALDERA), cloud posture auditing, authenticated app testing,
-and any web UI. Red Cell is config-file + CLI for now.
+and any web UI. OP-06D is config-file + CLI for now.
 
 ## License
 
-Red Cell is licensed under the **GNU Affero General Public License v3.0 or later
+OP-06D is licensed under the **GNU Affero General Public License v3.0 or later
 (AGPL-3.0-or-later)** — see [`LICENSE`](LICENSE). In short: you are free to use,
 study, modify, and redistribute it, but any modified version you distribute **or
 run as a network service** must be made available under the same license. If you
-run a modified Red Cell as a service for others, you must offer them its source.
+run a modified OP-06D as a service for others, you must offer them its source.
 
 Copyright (c) 2026 Thomas Pavan / Mastodon Security. The copyright holder also
 offers **commercial licenses** without the AGPL's source-disclosure obligations —

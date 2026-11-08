@@ -1,14 +1,14 @@
-"""Unit tests for the RC-23 resolve-once pin (``redcell.resolve.DnsPinner``)."""
+"""Unit tests for the RC-23 resolve-once pin (``op06d.resolve.DnsPinner``)."""
 
 import ast
 from pathlib import Path
 
 import pytest
 
-from redcell.resolve import DnsPinner
+from op06d.resolve import DnsPinner
 
 ROOT = Path(__file__).parent.parent
-SRC = ROOT / "src" / "redcell"
+SRC = ROOT / "src" / "op06d"
 
 
 class CountingResolver:
@@ -128,7 +128,7 @@ def test_nothing_outside_resolve_py_imports_socket():
     assert offenders == []
 
 
-def test_only_gate_and_scope_import_redcell_resolve():
+def test_only_gate_and_scope_import_op06d_resolve():
     importers = set()
     for path in SRC.glob("*.py"):
         if path.name == "resolve.py":
@@ -140,7 +140,7 @@ def test_only_gate_and_scope_import_redcell_resolve():
                 names = [node.module or ""]
             elif isinstance(node, ast.Import):
                 names = [a.name for a in node.names]
-            if any(n == "redcell.resolve" for n in names):
+            if any(n == "op06d.resolve" for n in names):
                 importers.add(path.name)
     # cli.py (RC-29) is the run wiring that constructs the Gate: it imports
     # Resolver/system_resolver only to plumb a resolver through to Gate(...)

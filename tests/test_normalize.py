@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Tests for RC-15 (redcell.normalize), exercised against the frozen RC-20
+"""Tests for RC-15 (op06d.normalize), exercised against the frozen RC-20
 real captures in lab/captures/*.findings.json so the schema is proven
 against actual tool output, not just hand-written samples."""
 
@@ -10,7 +10,7 @@ import pathlib
 
 import pytest
 
-from redcell.normalize import (
+from op06d.normalize import (
     Category,
     NormalizedResult,
     Provenance,

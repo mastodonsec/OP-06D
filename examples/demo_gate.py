@@ -5,9 +5,9 @@ No network needed: DNS is faked.
 """
 import tempfile
 
-from redcell.audit import AuditLog, read_log, verify_log
-from redcell.engagement import Scope, load_engagement
-from redcell.scope import check_scope
+from op06d.audit import AuditLog, read_log, verify_log
+from op06d.engagement import Scope, load_engagement
+from op06d.scope import check_scope
 
 eng = load_engagement("examples/engagement.yaml")  # RC-6
 

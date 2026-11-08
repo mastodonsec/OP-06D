@@ -6,10 +6,10 @@ verified when the set is re-pinned" half of RC-36), and the read-oriented
 survivors (query-style POST, GET) are untouched.
 
 NOT part of the default suite: excluded via the `lab` marker and skipped
-unless REDCELL_LAB=1 is set, or docker/compose is unavailable - same gating
+unless OP06D_LAB=1 is set, or docker/compose is unavailable - same gating
 as the other tests/integration/test_lab_rc*.py files.
 
-    REDCELL_LAB=1 uv run pytest -m lab tests/integration/test_lab_rc36.py
+    OP06D_LAB=1 uv run pytest -m lab tests/integration/test_lab_rc36.py
 """
 
 from __future__ import annotations
@@ -27,11 +27,11 @@ pytestmark = pytest.mark.lab
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent.parent
 COMPOSE_FILE = ROOT / "lab" / "docker-compose.yml"
-BUNDLED_EXCLUSIONS = ROOT / "src" / "redcell" / "nuclei_write_method_exclusions.json"
+BUNDLED_EXCLUSIONS = ROOT / "src" / "op06d" / "nuclei_write_method_exclusions.json"
 
 _AUDIT_PROBE = """
 import json
-from redcell.nuclei_method_audit import find_unexcluded_write_method_templates
+from op06d.nuclei_method_audit import find_unexcluded_write_method_templates
 
 with open({exclusions_path!r}, encoding="utf-8") as f:
     excluded = set(json.load(f)["write_method_template_ids"])
@@ -42,8 +42,8 @@ print(json.dumps({{"offenders": offenders, "excluded_count": len(excluded)}}))
 
 
 def _require_lab_enabled() -> None:
-    if os.environ.get("REDCELL_LAB") != "1":
-        pytest.skip("set REDCELL_LAB=1 to run the gated lab check (RC-36)")
+    if os.environ.get("OP06D_LAB") != "1":
+        pytest.skip("set OP06D_LAB=1 to run the gated lab check (RC-36)")
 
 
 def _require_docker() -> None:
@@ -90,7 +90,7 @@ def test_bundled_exclusion_list_covers_every_write_method_template_in_the_pinned
     if this ever fails, the bundled nuclei_write_method_exclusions.json is
     stale against the lab's pinned template set and must be regenerated
     (scripts/generate_nuclei_write_method_exclusions.py)."""
-    probe = _AUDIT_PROBE.format(exclusions_path="/redcell/src/redcell/nuclei_write_method_exclusions.json")
+    probe = _AUDIT_PROBE.format(exclusions_path="/op06d/src/op06d/nuclei_write_method_exclusions.json")
     r = _exec("scanner", "python3", "-c", probe, timeout=120)
     assert r.returncode == 0, f"probe failed:\n{r.stdout}\n{r.stderr}"
     result = json.loads(r.stdout.strip().splitlines()[-1])
@@ -111,7 +111,7 @@ def test_bundled_exclusion_list_covers_every_write_method_template_in_the_pinned
 # can only mean "excluded", never "nuclei refused to start".
 _LIST_PROBE = """
 import json, subprocess, tempfile, os
-from redcell.nuclei_tool import NucleiTool
+from op06d.nuclei_tool import NucleiTool
 
 extra = json.loads({extra!r})
 strip = set(json.loads({strip!r}))  # flags to drop together with their value

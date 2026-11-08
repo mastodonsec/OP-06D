@@ -4,10 +4,10 @@ from pathlib import Path
 
 import pytest
 
-import redcell.audit as audit_mod
-from redcell.audit import AuditError, AuditLog, read_log, verify_log
-from redcell.engagement import load_engagement
-from redcell.scope import check_scope, is_in_scope
+import op06d.audit as audit_mod
+from op06d.audit import AuditError, AuditLog, read_log, verify_log
+from op06d.engagement import load_engagement
+from op06d.scope import check_scope, is_in_scope
 
 EXAMPLE = Path(__file__).parent.parent / "examples" / "engagement.yaml"
 ENG = load_engagement(EXAMPLE)

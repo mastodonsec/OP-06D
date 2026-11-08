@@ -1,8 +1,8 @@
 # Orchestrator loop (RC-7) and approval hook (RC-8)
 
-Modules: [`src/redcell/orchestrator.py`](../src/redcell/orchestrator.py) ·
-[`src/redcell/tools.py`](../src/redcell/tools.py) ·
-Audit events: [`src/redcell/audit.py`](../src/redcell/audit.py) ·
+Modules: [`src/op06d/orchestrator.py`](../src/op06d/orchestrator.py) ·
+[`src/op06d/tools.py`](../src/op06d/tools.py) ·
+Audit events: [`src/op06d/audit.py`](../src/op06d/audit.py) ·
 Tests: [`tests/test_orchestrator.py`](../tests/test_orchestrator.py)
 
 ## Purpose
@@ -171,11 +171,11 @@ action_executed`; a refused one reads `iteration -> gate_decision`.
 ## Usage
 
 ```python
-from redcell.audit import AuditLog
-from redcell.engagement import load_engagement
-from redcell.gate import Gate
-from redcell.orchestrator import Orchestrator
-from redcell.tools import GatedToolbox, Risk
+from op06d.audit import AuditLog
+from op06d.engagement import load_engagement
+from op06d.gate import Gate
+from op06d.orchestrator import Orchestrator
+from op06d.tools import GatedToolbox, Risk
 
 eng = load_engagement("examples/engagement.yaml")
 log = AuditLog.for_engagement(eng, "logs/")

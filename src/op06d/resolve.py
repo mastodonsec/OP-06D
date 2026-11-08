@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """Centralized DNS resolution and the resolve-once pin (RC-23).
 
-**The only place in Red Cell that may perform a DNS lookup.** The gap this
+**The only place in OP-06D that may perform a DNS lookup.** The gap this
 closes: the gate (RC-9) used to resolve a hostname once to decide scope, and
 the tool (nmap/nuclei) re-resolved the same hostname independently when it
 ran. If DNS changed in between - attacker-controlled rebinding, a short-TTL

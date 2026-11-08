@@ -1,12 +1,12 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Tests for redcell.nuclei_method_audit (RC-36): the write-method
+"""Tests for op06d.nuclei_method_audit (RC-36): the write-method
 detection shared by NucleiTool, the exclusion-list generator, and the
 CI-enforced audit test (the real "drift" guarantee) below.
 """
 
 from __future__ import annotations
 
-from redcell.nuclei_method_audit import (
+from op06d.nuclei_method_audit import (
     find_unexcluded_write_method_templates,
     scan_template_dir_for_write_methods,
     template_declares_write_method,

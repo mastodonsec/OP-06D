@@ -227,7 +227,7 @@ __marimo__/
 .streamlit/secrets.toml
 
 # ---------------------------------------------------------------------------
-# Red Cell — local-only, do NOT commit (internal ops / sensitive run data)
+# OP-06D — local-only, do NOT commit (internal ops / sensitive run data)
 # ---------------------------------------------------------------------------
 # Internal handoff primer: commercial strategy, the unfixed-gap roadmap, Jira
 # keys, local paths. Keep it on disk in your working copy (fresh dev sessions

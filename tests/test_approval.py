@@ -1,13 +1,13 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Tests for RC-8 (redcell.approval.ConsoleApprover): default-deny behavior,
+"""Tests for RC-8 (op06d.approval.ConsoleApprover): default-deny behavior,
 explicit yes/no, EOF, and the cross-platform timeout path."""
 
 from __future__ import annotations
 
 import time
 
-from redcell.approval import ConsoleApprover
-from redcell.tools import ApprovalRequest, Risk
+from op06d.approval import ConsoleApprover
+from op06d.tools import ApprovalRequest, Risk
 
 
 def _request(**overrides) -> ApprovalRequest:

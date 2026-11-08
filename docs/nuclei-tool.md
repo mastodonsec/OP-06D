@@ -1,8 +1,8 @@
 # nuclei tool wrapper (RC-14)
 
-Modules: [`src/redcell/nuclei_tool.py`](../src/redcell/nuclei_tool.py) ·
-[`src/redcell/tools.py`](../src/redcell/tools.py) ·
-[`src/redcell/engagement.py`](../src/redcell/engagement.py) ·
+Modules: [`src/op06d/nuclei_tool.py`](../src/op06d/nuclei_tool.py) ·
+[`src/op06d/tools.py`](../src/op06d/tools.py) ·
+[`src/op06d/engagement.py`](../src/op06d/engagement.py) ·
 Tests: [`tests/test_nuclei_tool.py`](../tests/test_nuclei_tool.py) ·
 Fixture: [`tests/fixtures/nuclei_findings.jsonl`](../tests/fixtures/nuclei_findings.jsonl)
 
@@ -14,7 +14,7 @@ returns **structured findings**, with nuclei's raw JSONL kept separately as
 evidence. It reuses the toolbox scaffolding built for RC-13: `ToolOutput`,
 per-invocation risk, the parameter-validation hook and secret redaction.
 
-Like nmap, it is imported only by `redcell.tools.default_tools` (a test asserts
+Like nmap, it is imported only by `op06d.tools.default_tools` (a test asserts
 this), so nothing outside the toolbox can construct or call it.
 
 ## Scope of RC-14
@@ -153,7 +153,7 @@ Two independent layers now close this:
 - `run` executes nuclei with `HOME` and `XDG_CONFIG_HOME` pointed at that same
   per-run temporary directory instead of the real ones, so nuclei cannot find
   the ambient config or ignore-file even if `-config` were somehow bypassed.
-  `redcell.tools.run_subprocess` gained an `env=` parameter for this; it
+  `op06d.tools.run_subprocess` gained an `env=` parameter for this; it
   defaults to `None` (inherit), so nmap's call path is unchanged.
 
 The directory is created fresh for each `run()` call and removed afterward
@@ -185,7 +185,7 @@ tagging, not a guarantee. A future re-pin adding a write-method template
 without a danger tag would have silently entered the default pass. It is
 now structural:
 
-- **Detection** (`redcell.nuclei_method_audit`): a template declares a write
+- **Detection** (`op06d.nuclei_method_audit`): a template declares a write
   method if an `http`/`requests` block has `method: PUT|DELETE|PATCH|PURGE`,
   **or** a `raw:` request's request line starts with one of those verbs.
   Both shapes are covered; `GET` and `POST` never match.
@@ -196,7 +196,7 @@ now structural:
   is the mechanism - verified live that `-eid` excludes a write-method
   template even when it is explicitly `-id`-included.
 - **The list is a pinned artifact**, not a 14k-file scan per construction:
-  `src/redcell/nuclei_write_method_exclusions.json` (69 ids for v10.5.1),
+  `src/op06d/nuclei_write_method_exclusions.json` (69 ids for v10.5.1),
   tied to `templates_pin`. Regenerate it whenever the template set is
   re-pinned:
 
@@ -322,11 +322,11 @@ and other existing error statuses still take precedence when they also apply.
 ## Usage
 
 ```python
-from redcell.tools import GatedToolbox, default_tools
+from op06d.tools import GatedToolbox, default_tools
 
 tools = default_tools(
     eng,
-    nuclei_template_dir="/opt/redcell/nuclei-templates",   # pinned, curated set
+    nuclei_template_dir="/opt/op06d/nuclei-templates",   # pinned, curated set
     nuclei_templates_pin="templates-2026-11-01",
     nuclei_curated_ids=None,                                # or {"my-check": Risk.ACTIVE_RECON}
 )

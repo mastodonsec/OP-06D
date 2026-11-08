@@ -1,12 +1,12 @@
 # Engagement-file parser (RC-6)
 
-Module: [`src/redcell/engagement.py`](../src/redcell/engagement.py) ·
+Module: [`src/op06d/engagement.py`](../src/op06d/engagement.py) ·
 Tests: [`tests/test_engagement.py`](../tests/test_engagement.py) ·
 Example: [`examples/engagement.yaml`](../examples/engagement.yaml)
 
 ## Purpose
 
-The engagement file is the **safety boundary** of Red Cell. It states who
+The engagement file is the **safety boundary** of OP-06D. It states who
 authorized the work, what may be touched, when, and how hard. Everything
 downstream (the guardrail gate, the orchestrator, the report) reads from it.
 
@@ -79,7 +79,7 @@ pip install -e ".[dev]"
 Load a file:
 
 ```python
-from redcell.engagement import load_engagement, EngagementError
+from op06d.engagement import load_engagement, EngagementError
 
 try:
     eng = load_engagement("examples/engagement.yaml")

@@ -34,12 +34,12 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Callable, Protocol, Sequence
 
-from redcell.audit import EVENT_ITERATION, EVENT_LOOP_END, AuditError, AuditLog
-from redcell.engagement import Engagement
-from redcell.gate import DENIED_AUDIT, DENIED_LIMITS, DENIED_WINDOW
-from redcell.limits import evaluate_window
-from redcell.sanitize import BLOCK_NAME, UNTRUSTED_DATA_NOTICE
-from redcell.tools import ExecutionResult, GatedToolbox, Outcome, ToolAction
+from op06d.audit import EVENT_ITERATION, EVENT_LOOP_END, AuditError, AuditLog
+from op06d.engagement import Engagement
+from op06d.gate import DENIED_AUDIT, DENIED_LIMITS, DENIED_WINDOW
+from op06d.limits import evaluate_window
+from op06d.sanitize import BLOCK_NAME, UNTRUSTED_DATA_NOTICE
+from op06d.tools import ExecutionResult, GatedToolbox, Outcome, ToolAction
 
 MAX_ITERATIONS_HARD_LIMIT = 1_000
 MAX_REPLY_CHARS = 20_000
@@ -136,7 +136,7 @@ def parse_planner_reply(reply: object) -> ToolAction | PlannerDone | PlannerInva
 def build_system_prompt(engagement: Engagement, tools: list[dict[str, Any]], max_iterations: int) -> str:
     scope = engagement.scope
     lines = [
-        "You are the planner for Red Cell, an authorized security validation tool. "
+        "You are the planner for OP-06D, an authorized security validation tool. "
         "You propose ONE reconnaissance action at a time; an external guardrail gate "
         "decides whether it runs.",
         "",

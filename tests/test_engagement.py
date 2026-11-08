@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from redcell.engagement import EngagementError, load_engagement, parse_engagement
+from op06d.engagement import EngagementError, load_engagement, parse_engagement
 
 EXAMPLE = Path(__file__).parent.parent / "examples" / "engagement.yaml"
 
@@ -198,7 +198,7 @@ def test_blank_engagement_id_rejected(bad):
 
 
 def test_engagement_id_uses_fullmatch_not_dollar():
-    from redcell.engagement import ENGAGEMENT_ID_RE, is_valid_engagement_id
+    from op06d.engagement import ENGAGEMENT_ID_RE, is_valid_engagement_id
 
     assert ENGAGEMENT_ID_RE.match("acme\n")  # a raw match() would let this in...
     assert not is_valid_engagement_id("acme\n")  # ...the shared check does not
@@ -208,7 +208,7 @@ def test_engagement_id_uses_fullmatch_not_dollar():
 def test_schema_and_audit_layers_agree(eid, tmp_path):
     """The RC-6 schema and the RC-11 AuditLog must accept exactly the same ids
     (for the value the schema stores, i.e. after outer-whitespace stripping)."""
-    from redcell.audit import AuditError, AuditLog
+    from op06d.audit import AuditError, AuditLog
 
     try:
         stored = parse(_with_id(eid)).engagement

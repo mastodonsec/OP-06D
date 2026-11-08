@@ -9,11 +9,11 @@ from pathlib import Path
 import pytest
 import yaml
 
-import redcell.nuclei_tool as nuclei_mod
-from redcell.audit import AuditLog, read_log
-from redcell.engagement import EngagementError, load_engagement, parse_engagement
-from redcell.gate import Gate
-from redcell.nuclei_tool import (
+import op06d.nuclei_tool as nuclei_mod
+from op06d.audit import AuditLog, read_log
+from op06d.engagement import EngagementError, load_engagement, parse_engagement
+from op06d.gate import Gate
+from op06d.nuclei_tool import (
     ACTIVE_TAGS,
     ALL_TAGS,
     EXPLOIT_TAGS,
@@ -23,9 +23,9 @@ from redcell.nuclei_tool import (
     parse_nuclei_jsonl,
     parse_templates_loaded,
 )
-from redcell.orchestrator import Orchestrator, Termination
-from redcell.sanitize import sha256_of
-from redcell.tools import (
+from op06d.orchestrator import Orchestrator, Termination
+from op06d.sanitize import sha256_of
+from op06d.tools import (
     GatedToolbox,
     Outcome,
     ProcessResult,
@@ -780,7 +780,7 @@ def test_planner_sees_sanitized_structured_findings_and_evidence_keeps_the_raw_j
 
 def test_only_tools_py_imports_the_tool_wrappers():
     importers = {"nmap_tool": set(), "nuclei_tool": set()}
-    for path in (ROOT / "src" / "redcell").glob("*.py"):
+    for path in (ROOT / "src" / "op06d").glob("*.py"):
         tree = ast.parse(path.read_text(encoding="utf-8"))
         for node in ast.walk(tree):
             names = []
@@ -789,7 +789,7 @@ def test_only_tools_py_imports_the_tool_wrappers():
             elif isinstance(node, ast.Import):
                 names = [a.name for a in node.names]
             for mod in importers:
-                if any(n == f"redcell.{mod}" or n.startswith(f"redcell.{mod}.") for n in names):
+                if any(n == f"op06d.{mod}" or n.startswith(f"op06d.{mod}.") for n in names):
                     importers[mod].add(path.name)
     assert importers == {"nmap_tool": {"tools.py"}, "nuclei_tool": {"tools.py"}}
 
@@ -896,7 +896,7 @@ def test_run_passes_a_controlled_env_with_scrubbed_home_and_xdg(monkeypatch):
     (env,) = r.envs
     assert env["PATH"] == "/usr/bin:/bin"
     assert env["HOME"] == env["XDG_CONFIG_HOME"]
-    assert "redcell-nuclei-home-" in env["HOME"]  # not the ambient $HOME
+    assert "op06d-nuclei-home-" in env["HOME"]  # not the ambient $HOME
     config_value = value_after(r.calls[0][0], "-config")
     assert config_value.startswith(env["HOME"])  # the wrapper's own, fresh file
 
@@ -955,18 +955,18 @@ def test_out_of_band_flag_is_independent_of_any_config_and_cannot_be_overridden(
 
 
 def test_run_subprocess_env_none_inherits_the_parent_environment(monkeypatch):
-    monkeypatch.setenv("REDCELL_TEST_INHERIT_PROBE", "yes")
+    monkeypatch.setenv("OP06D_TEST_INHERIT_PROBE", "yes")
     result = run_subprocess(
-        [sys.executable, "-c", "import os; print(os.environ.get('REDCELL_TEST_INHERIT_PROBE', 'MISSING'))"],
+        [sys.executable, "-c", "import os; print(os.environ.get('OP06D_TEST_INHERIT_PROBE', 'MISSING'))"],
         10,
     )
     assert result.stdout.decode().strip() == "yes"
 
 
 def test_run_subprocess_explicit_env_replaces_the_parent_environment(monkeypatch):
-    monkeypatch.setenv("REDCELL_TEST_INHERIT_PROBE", "yes")
+    monkeypatch.setenv("OP06D_TEST_INHERIT_PROBE", "yes")
     result = run_subprocess(
-        [sys.executable, "-c", "import os; print(os.environ.get('REDCELL_TEST_INHERIT_PROBE', 'MISSING'))"],
+        [sys.executable, "-c", "import os; print(os.environ.get('OP06D_TEST_INHERIT_PROBE', 'MISSING'))"],
         10, env={"PATH": os.environ.get("PATH", "")},
     )
     assert result.stdout.decode().strip() == "MISSING"

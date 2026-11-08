@@ -5,10 +5,10 @@ a header, re-enable out-of-band, or crash the scan, now that the wrapper
 always passes its own -config and scrubs HOME/XDG_CONFIG_HOME.
 
 NOT part of the default suite: excluded via the `lab` marker and skipped
-unless REDCELL_LAB=1 is set, or docker/compose is unavailable - same gating
+unless OP06D_LAB=1 is set, or docker/compose is unavailable - same gating
 as the other tests/integration/test_lab_rc*.py files.
 
-    REDCELL_LAB=1 uv run pytest -m lab tests/integration/test_lab_rc35.py
+    OP06D_LAB=1 uv run pytest -m lab tests/integration/test_lab_rc35.py
 """
 
 from __future__ import annotations
@@ -83,7 +83,7 @@ with open(f"{HOSTILE_CONFIG_DIR}/config.yaml", "w") as f:
     )
 
 try:
-    from redcell.nuclei_tool import NucleiTool
+    from op06d.nuclei_tool import NucleiTool
     tool = NucleiTool(50, template_dir=TEMPLATES)
     result = tool.run("127.0.0.1", {"port": 18091, "scheme": "http"})
     seen_who = {entry[0] for entry in LOG}
@@ -102,8 +102,8 @@ finally:
 
 
 def _require_lab_enabled() -> None:
-    if os.environ.get("REDCELL_LAB") != "1":
-        pytest.skip("set REDCELL_LAB=1 to run the gated lab check (RC-35)")
+    if os.environ.get("OP06D_LAB") != "1":
+        pytest.skip("set OP06D_LAB=1 to run the gated lab check (RC-35)")
 
 
 def _require_docker() -> None:

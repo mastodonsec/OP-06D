@@ -10,11 +10,11 @@ This is NOT part of the CI-enforced proof. Suites 1-3
 ``pytest`` invocation; a live model call is inherently non-deterministic
 and needs network plus an API key, so this suite is skipped unless BOTH:
 
-    REDCELL_LIVE_MODEL=1
+    OP06D_LIVE_MODEL=1
     ANTHROPIC_API_KEY is set (the only adapter implemented so far - see
     ``_anthropic_adapter`` below)
 
-    REDCELL_LIVE_MODEL=1 ANTHROPIC_API_KEY=sk-... pytest tests/test_live_model_gate.py
+    OP06D_LIVE_MODEL=1 ANTHROPIC_API_KEY=sk-... pytest tests/test_live_model_gate.py
 
 TODO (acknowledged scope limit): this adapter is intentionally minimal
 (single-turn system+messages -> text over the Anthropic Messages API), built
@@ -37,11 +37,11 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent / "fixtures"))
 from injection_payloads import PAYLOADS  # noqa: E402
 
-from redcell.audit import AuditLog
-from redcell.engagement import load_engagement
-from redcell.gate import Gate
-from redcell.orchestrator import Orchestrator
-from redcell.tools import GatedToolbox, Risk
+from op06d.audit import AuditLog
+from op06d.engagement import load_engagement
+from op06d.gate import Gate
+from op06d.orchestrator import Orchestrator
+from op06d.tools import GatedToolbox, Risk
 
 ROOT = Path(__file__).parent.parent
 EXAMPLE = ROOT / "examples" / "engagement.yaml"
@@ -50,11 +50,11 @@ START, END = ENG.authorization.window
 
 
 def _live_model_enabled() -> bool:
-    return os.environ.get("REDCELL_LIVE_MODEL") == "1"
+    return os.environ.get("OP06D_LIVE_MODEL") == "1"
 
 
 def _anthropic_adapter():
-    """A minimal LLM adapter (the ``redcell.orchestrator.LLM`` protocol)
+    """A minimal LLM adapter (the ``op06d.orchestrator.LLM`` protocol)
     over the Anthropic Messages API. Returns ``None`` (never raises) if the
     SDK isn't installed or no API key is configured - the caller treats
     that as "no live adapter available"."""
@@ -89,7 +89,7 @@ def _anthropic_adapter():
 
 def _skip_reason() -> str | None:
     if not _live_model_enabled():
-        return "set REDCELL_LIVE_MODEL=1 to run a real LLM planner against the gate"
+        return "set OP06D_LIVE_MODEL=1 to run a real LLM planner against the gate"
     if _anthropic_adapter() is None:
         return "no live LLM adapter available (install `anthropic` and set ANTHROPIC_API_KEY)"
     return None

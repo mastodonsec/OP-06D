@@ -1,12 +1,12 @@
-# Contributing to Red Cell
+# Contributing to OP-06D
 
-Thanks for your interest in Red Cell. A few things keep the project legally clean
+Thanks for your interest in OP-06D. A few things keep the project legally clean
 and let it stay open while preserving the maintainer's ability to offer commercial
 licenses.
 
 ## License
 
-Red Cell is licensed under the **GNU Affero General Public License v3.0 or later
+OP-06D is licensed under the **GNU Affero General Public License v3.0 or later
 (AGPL-3.0-or-later)**. By contributing, you agree that your contributions are
 licensed under the same terms.
 
@@ -33,7 +33,7 @@ git commit -s -m "RC-XX: short description"
 The full DCO text is reproduced in `DCO.txt`. A sign-off certifies that you agree
 to it for that contribution.
 
-> Note on commercial licensing: the maintainer offers Red Cell under both AGPL-3.0
+> Note on commercial licensing: the maintainer offers OP-06D under both AGPL-3.0
 > and separate commercial licenses. The DCO sign-off certifies origin and licenses
 > your contribution under AGPL-3.0; it does not by itself assign copyright. If the
 > project later needs contributions to be available for commercial relicensing, a
@@ -47,7 +47,7 @@ Add this header to the top of every new source file (adjust the comment syntax t
 the language):
 
 ```python
-# Red Cell — AI-driven security validation
+# OP-06D — AI-driven security validation
 # Copyright (c) 2026 Thomas Pavan / Mastodon Security
 # SPDX-License-Identifier: AGPL-3.0-or-later
 ```
@@ -62,5 +62,5 @@ Reference the RC Jira issue key in branch names and commit subjects
 
 ## Before you run anything
 
-Red Cell is an offensive-security tool. Read `NOTICE` — only run it against
+OP-06D is an offensive-security tool. Read `NOTICE` — only run it against
 systems you own or are explicitly authorized to test.

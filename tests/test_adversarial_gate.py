@@ -28,13 +28,13 @@ from pathlib import Path
 import pytest
 import yaml
 
-from redcell.audit import AuditLog, read_log
-from redcell.engagement import load_engagement, parse_engagement
-from redcell.gate import DENIED_RATE, DENIED_SCOPE, DENIED_WINDOW, Gate
-from redcell.nmap_tool import NmapTool
-from redcell.nuclei_tool import NucleiTool
-from redcell.orchestrator import Orchestrator, Termination
-from redcell.tools import GatedToolbox, Outcome, ProcessResult, Risk, ToolAction
+from op06d.audit import AuditLog, read_log
+from op06d.engagement import load_engagement, parse_engagement
+from op06d.gate import DENIED_RATE, DENIED_SCOPE, DENIED_WINDOW, Gate
+from op06d.nmap_tool import NmapTool
+from op06d.nuclei_tool import NucleiTool
+from op06d.orchestrator import Orchestrator, Termination
+from op06d.tools import GatedToolbox, Outcome, ProcessResult, Risk, ToolAction
 
 ROOT = Path(__file__).parent.parent
 EXAMPLE = ROOT / "examples" / "engagement.yaml"

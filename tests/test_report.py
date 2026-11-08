@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Tests for RC-17 (redcell.report): build_report + render_markdown against
+"""Tests for RC-17 (op06d.report): build_report + render_markdown against
 a real evidence store, covering the empty-run, determinism, redaction and
 severity-ordering acceptance criteria."""
 
@@ -10,12 +10,12 @@ from pathlib import Path
 
 import pytest
 
-from redcell.engagement import load_engagement
-from redcell.evidence import EvidenceStore
-from redcell.gate import ALLOWED, DENIED_SCOPE, GateDecision
-from redcell.normalize import NormalizedResult, Provenance, normalize_nuclei
-from redcell.report import SEVERITY_ORDER, build_report, render_markdown
-from redcell.tools import ExecutionResult, Outcome, Risk, ToolAction
+from op06d.engagement import load_engagement
+from op06d.evidence import EvidenceStore
+from op06d.gate import ALLOWED, DENIED_SCOPE, GateDecision
+from op06d.normalize import NormalizedResult, Provenance, normalize_nuclei
+from op06d.report import SEVERITY_ORDER, build_report, render_markdown
+from op06d.tools import ExecutionResult, Outcome, Risk, ToolAction
 
 EXAMPLE = Path(__file__).parent.parent / "examples" / "engagement.yaml"
 ENG = load_engagement(EXAMPLE)

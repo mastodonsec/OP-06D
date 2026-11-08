@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Tests for RC-16 (redcell.evidence): round-trip reconstruction, redaction,
+"""Tests for RC-16 (op06d.evidence): round-trip reconstruction, redaction,
 concurrency, schema idempotency, and foreign-key cascade."""
 
 from __future__ import annotations
@@ -10,11 +10,11 @@ from pathlib import Path
 
 import pytest
 
-from redcell.engagement import load_engagement
-from redcell.evidence import EvidenceError, EvidenceStore
-from redcell.gate import ALLOWED, DENIED_SCOPE, GateDecision
-from redcell.normalize import Provenance, normalize_nuclei
-from redcell.tools import ExecutionResult, Outcome, Risk, ToolAction
+from op06d.engagement import load_engagement
+from op06d.evidence import EvidenceError, EvidenceStore
+from op06d.gate import ALLOWED, DENIED_SCOPE, GateDecision
+from op06d.normalize import Provenance, normalize_nuclei
+from op06d.tools import ExecutionResult, Outcome, Risk, ToolAction
 
 EXAMPLE = Path(__file__).parent.parent / "examples" / "engagement.yaml"
 ENG = load_engagement(EXAMPLE)
@@ -71,7 +71,7 @@ def test_reconstruct_run_round_trips_allowed_denied_and_declined_actions(tmp_pat
         found, issues = normalize_nuclei(
             nuclei_findings, provenance=Provenance(engagement=ENG.engagement, scanner="nuclei"),
         )
-        from redcell.normalize import NormalizedResult
+        from op06d.normalize import NormalizedResult
         store.record_findings(run_id, allowed_id, NormalizedResult(findings=found, issues=issues, provenance=found[0].provenance))
 
         store.finish_run(run_id, status="completed", audit_log_sha256="deadbeef")
@@ -112,7 +112,7 @@ def test_findings_from_real_rc15_output_are_queryable_by_severity_and_category(t
 
         raw = json.loads((CAPTURES / "nuclei_juice-shop_3000.findings.json").read_text())
         found, issues = normalize_nuclei(raw, provenance=Provenance(engagement=ENG.engagement, scanner="nuclei"))
-        from redcell.normalize import NormalizedResult
+        from op06d.normalize import NormalizedResult
         store.record_findings(run_id, action_id, NormalizedResult(findings=found, issues=issues, provenance=found[0].provenance))
 
         all_findings = store.list_findings(run_id)
@@ -221,7 +221,7 @@ def test_deleting_a_run_cascades_to_actions_findings_and_issues(tmp_path):
         action_id = store.record_action(run_id, _executed_result("nuclei", "dvwa.lab"))
         raw = json.loads((CAPTURES / "nuclei_dvwa_default.findings.json").read_text())
         found, issues = normalize_nuclei(raw, provenance=Provenance(engagement=ENG.engagement, scanner="nuclei"))
-        from redcell.normalize import NormalizedResult
+        from op06d.normalize import NormalizedResult
         store.record_findings(run_id, action_id, NormalizedResult(findings=found, issues=issues, provenance=found[0].provenance))
 
         with store._connect() as conn:
@@ -250,7 +250,7 @@ def test_record_findings_upserts_on_run_and_finding_id_not_duplicate(tmp_path):
         action_id = store.record_action(run_id, _executed_result("nuclei", "dvwa.lab"))
         raw = json.loads((CAPTURES / "nuclei_dvwa_default.findings.json").read_text())
         found, issues = normalize_nuclei(raw, provenance=Provenance(engagement=ENG.engagement, scanner="nuclei"))
-        from redcell.normalize import NormalizedResult
+        from op06d.normalize import NormalizedResult
         normalized = NormalizedResult(findings=found, issues=issues, provenance=found[0].provenance)
 
         store.record_findings(run_id, action_id, normalized)

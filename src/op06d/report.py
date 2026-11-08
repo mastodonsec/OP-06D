@@ -3,7 +3,7 @@
 
 **Role.** This is where the methodology becomes the product: the document a
 paying client reads, authored on behalf of Mastodon Security. Everything in
-it comes FROM ``redcell.evidence.ReconstructedRun`` (RC-16) - there is no
+it comes FROM ``op06d.evidence.ReconstructedRun`` (RC-16) - there is no
 hand-assembled content, no invented finding, and no re-scored severity. If a
 fact is not in the reconstructed run, it is not in the report.
 
@@ -33,7 +33,7 @@ nothing Markdown-specific belongs in ``build_report``.
   using the real clock would make two renders of the same run differ by
   whenever each render happened to run.
 * No secrets: action parameters are already redacted in the store
-  (``redcell.tools.redact_parameters``); nothing here reaches into or
+  (``op06d.tools.redact_parameters``); nothing here reaches into or
   surfaces anything beyond what the store already holds.
 * Refused actions (denied/declined) are shown, with their gate reason -
   refusing to exceed scope is evidence of the guardrail working, not
@@ -46,7 +46,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from redcell.evidence import ActionRow, IssueRow, ReconstructedRun
+from op06d.evidence import ActionRow, IssueRow, ReconstructedRun
 
 __all__ = [
     "SEVERITY_ORDER",

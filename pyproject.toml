@@ -3,7 +3,7 @@ requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "redcell"
+name = "op06d"
 version = "0.0.1"
 description = "AI-driven security validation — the model proposes, the gate disposes."
 requires-python = ">=3.11"
@@ -20,11 +20,11 @@ classifiers = [
 ]
 
 [project.scripts]
-redcell = "redcell.cli:main"
+op06d = "op06d.cli:main"
 
 [project.optional-dependencies]
 dev = ["pytest>=7"]
-# RC-18: enables redcell.report_render.render_pdf via weasyprint. The alternative
+# RC-18: enables op06d.report_render.render_pdf via weasyprint. The alternative
 # backend (Playwright + Chromium) is not listed here since it needs a separate
 # `playwright install chromium` step beyond `pip install`; see
 # report_render.NoPdfBackendAvailable for exact instructions for either.
@@ -36,12 +36,12 @@ where = ["src"]
 [tool.setuptools.package-data]
 # RC-36: the bundled write-method exclusion list must ship with the package,
 # or every nuclei run fails closed (method_exclusions_unavailable).
-redcell = ["nuclei_write_method_exclusions.json"]
+op06d = ["nuclei_write_method_exclusions.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
 addopts = "-m 'not lab'"
 markers = [
-    "lab: gated lab integration test (RC-20) - needs Docker/compose and REDCELL_LAB=1; excluded by default",
+    "lab: gated lab integration test (RC-20) - needs Docker/compose and OP06D_LAB=1; excluded by default",
 ]

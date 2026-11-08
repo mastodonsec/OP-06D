@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Tests for RC-18 (redcell.report_render): HTML rendering (self-contained,
+"""Tests for RC-18 (op06d.report_render): HTML rendering (self-contained,
 deterministic, print/pagination CSS contract, redaction) and the gated PDF
 path (skips cleanly with no backend installed)."""
 
@@ -11,13 +11,13 @@ from pathlib import Path
 
 import pytest
 
-from redcell.engagement import load_engagement
-from redcell.evidence import EvidenceStore
-from redcell.gate import ALLOWED, GateDecision
-from redcell.normalize import NormalizedResult, Provenance, normalize_nuclei
-from redcell.report import build_report
-from redcell.report_render import NoPdfBackendAvailable, main, render_html, render_pdf
-from redcell.tools import ExecutionResult, Outcome, Risk, ToolAction
+from op06d.engagement import load_engagement
+from op06d.evidence import EvidenceStore
+from op06d.gate import ALLOWED, GateDecision
+from op06d.normalize import NormalizedResult, Provenance, normalize_nuclei
+from op06d.report import build_report
+from op06d.report_render import NoPdfBackendAvailable, main, render_html, render_pdf
+from op06d.tools import ExecutionResult, Outcome, Risk, ToolAction
 
 EXAMPLE = Path(__file__).parent.parent / "examples" / "engagement.yaml"
 ENG = load_engagement(EXAMPLE)

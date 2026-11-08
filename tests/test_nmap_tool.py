@@ -7,11 +7,11 @@ from pathlib import Path
 import pytest
 import yaml
 
-import redcell.nmap_tool as nmap_mod
-from redcell.audit import AuditLog, read_log
-from redcell.engagement import load_engagement, parse_engagement
-from redcell.gate import Gate
-from redcell.nmap_tool import (
+import op06d.nmap_tool as nmap_mod
+from op06d.audit import AuditLog, read_log
+from op06d.engagement import load_engagement, parse_engagement
+from op06d.gate import Gate
+from op06d.nmap_tool import (
     ALL_CATEGORIES,
     NmapParseError,
     NmapTool,
@@ -19,9 +19,9 @@ from redcell.nmap_tool import (
     parse_nmap_xml,
     run_subprocess,
 )
-from redcell.orchestrator import Orchestrator, Termination
-from redcell.sanitize import sha256_of
-from redcell.tools import GatedToolbox, Outcome, Risk, ToolAction, default_tools
+from op06d.orchestrator import Orchestrator, Termination
+from op06d.sanitize import sha256_of
+from op06d.tools import GatedToolbox, Outcome, Risk, ToolAction, default_tools
 
 ROOT = Path(__file__).parent.parent
 EXAMPLE = ROOT / "examples" / "engagement.yaml"
@@ -569,7 +569,7 @@ def test_planner_sees_structured_findings_and_evidence_keeps_the_raw_xml(rig):
 
 def test_only_tools_py_imports_the_nmap_wrapper():
     importers = []
-    for path in (ROOT / "src" / "redcell").glob("*.py"):
+    for path in (ROOT / "src" / "op06d").glob("*.py"):
         tree = ast.parse(path.read_text(encoding="utf-8"))
         for node in ast.walk(tree):
             names = []
@@ -577,7 +577,7 @@ def test_only_tools_py_imports_the_nmap_wrapper():
                 names = [node.module or ""] + [f"{node.module}.{a.name}" for a in node.names]
             elif isinstance(node, ast.Import):
                 names = [a.name for a in node.names]
-            if any(n == "redcell.nmap_tool" or n.startswith("redcell.nmap_tool.") for n in names):
+            if any(n == "op06d.nmap_tool" or n.startswith("op06d.nmap_tool.") for n in names):
                 importers.append(path.name)
     assert set(importers) == {"tools.py"}
 
@@ -697,7 +697,7 @@ def test_no_stderr_content_means_no_warnings_key_on_success():
 
 
 def test_degraded_signal_survives_normalization_into_a_limitations_issue():
-    from redcell.normalize import Provenance, normalize_nmap
+    from op06d.normalize import Provenance, normalize_nmap
 
     out = tool(runner=Runner(stdout=UNPRIVILEGED_AGGRESSIVE_XML, stderr=EMPTY_STDERR)).run(
         IP, {"profile": "aggressive"},

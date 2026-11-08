@@ -1,7 +1,7 @@
 """nmap tool wrapper (RC-13).
 
 A ``Tool`` for ``GatedToolbox``. Construct it only through
-``redcell.tools.default_tools`` (nothing else imports this module): the
+``op06d.tools.default_tools`` (nothing else imports this module): the
 toolbox runs it strictly behind validate -> Gate.check -> approval -> sanitize
 -> record, so by the time ``run`` is called the target has been gate-approved.
 
@@ -68,8 +68,8 @@ import subprocess
 import xml.etree.ElementTree as ET
 from typing import Any, Callable, Mapping
 
-from redcell.engagement import Engagement
-from redcell.tools import (
+from op06d.engagement import Engagement
+from op06d.tools import (
     ProcessResult,
     Risk,
     ToolOutput,

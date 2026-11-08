@@ -1,7 +1,7 @@
 # Gate: rate cap and time window (RC-10)
 
-Modules: [`src/redcell/gate.py`](../src/redcell/gate.py) ·
-[`src/redcell/limits.py`](../src/redcell/limits.py) ·
+Modules: [`src/op06d/gate.py`](../src/op06d/gate.py) ·
+[`src/op06d/limits.py`](../src/op06d/limits.py) ·
 Tests: [`tests/test_gate.py`](../tests/test_gate.py)
 
 ## Purpose
@@ -57,17 +57,17 @@ ran. If DNS changed in between - attacker-controlled rebinding, a short-TTL
 failover, ordinary drift - the tool could scan an address the gate never saw,
 let alone approved: a time-of-check/time-of-use bypass of the scope control.
 
-**The fix.** Each `Gate` owns one `DnsPinner` ([`src/redcell/resolve.py`](../src/redcell/resolve.py))
+**The fix.** Each `Gate` owns one `DnsPinner` ([`src/op06d/resolve.py`](../src/op06d/resolve.py))
 for its whole life - one `Gate` per engagement run, so one pinner per
 engagement. The first scope check of a hostname resolves and pins it; every
 later check of that same hostname, no matter how much later or how many other
 actions ran in between, reuses the identical address(es) without touching DNS
 again. `nmap_tool.py`/`nuclei_tool.py` never resolve anything themselves -
-`resolve.py` is the only place in Red Cell DNS happens.
+`resolve.py` is the only place in OP-06D DNS happens.
 
 `GateDecision.resolved_ips` carries the pinned address(es); `GatedToolbox`
 (RC-7/RC-13/RC-14) hands the tool that address to scan, not the hostname -
-see [`tools.py`](../src/redcell/tools.py), `__execute`. A multi-address
+see [`tools.py`](../src/op06d/tools.py), `__execute`. A multi-address
 hostname where *any* address is out of scope denies the whole action (no
 "scan the in-scope subset" fallback); a resolution failure denies, fail-closed,
 same as any other scope error.
@@ -131,9 +131,9 @@ bypassed or hand-built model cannot open it.
 ## Usage
 
 ```python
-from redcell.audit import AuditLog
-from redcell.engagement import load_engagement
-from redcell.gate import Gate
+from op06d.audit import AuditLog
+from op06d.engagement import load_engagement
+from op06d.gate import Gate
 
 eng = load_engagement("examples/engagement.yaml")
 log = AuditLog.for_engagement(eng, "logs/")

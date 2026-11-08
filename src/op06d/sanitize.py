@@ -37,7 +37,7 @@ import secrets
 import unicodedata
 from dataclasses import dataclass
 
-from redcell.audit import AuditSink
+from op06d.audit import AuditSink
 
 MAX_OUTPUT_CHARS = 20_000
 MAX_FINDINGS = 10

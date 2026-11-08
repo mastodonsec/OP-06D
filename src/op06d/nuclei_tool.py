@@ -1,7 +1,7 @@
 """nuclei tool wrapper (RC-14).
 
 A ``Tool`` for ``GatedToolbox``. Construct it only through
-``redcell.tools.default_tools`` (nothing else imports this module). By the time
+``op06d.tools.default_tools`` (nothing else imports this module). By the time
 ``run`` is called the action has passed validate -> Gate.check -> approval.
 
 Carried over from RC-13 (each tested): argv with ``shell=False``; a parameter
@@ -55,7 +55,7 @@ configure one - lab run C, clean), and ``run`` executes nuclei with ``HOME``
 and ``XDG_CONFIG_HOME`` pointed at a fresh, per-run, auto-cleaned-up temporary
 directory instead of the real one (lab run E confirmed scrubbing the
 environment, not ignoring a hostile ``HTTP_PROXY``, is what actually matters -
-nuclei does not honor a proxy env var on its own). ``redcell.tools.
+nuclei does not honor a proxy env var on its own). ``op06d.tools.
 run_subprocess`` gained an ``env=`` parameter for this; nmap's call path does
 not use it and is unaffected.
 
@@ -107,7 +107,7 @@ also carries a danger tag ``-exclude-tags`` already drops. That is safe
 today but tag-dependent, not structural: a future re-pin could add a write-
 method template without a danger tag, and it would silently slip into the
 default pass. ``-eid``/``-exclude-id`` is therefore now ALWAYS passed with
-every id ``redcell.nuclei_method_audit`` finds declaring a write method in
+every id ``op06d.nuclei_method_audit`` finds declaring a write method in
 either shape nuclei templates use (an ``http``/``requests`` block's
 ``method:`` field, or a ``raw:`` request whose request line starts with one
 of those verbs) - regardless of tags, and regardless of whether the planner
@@ -135,8 +135,8 @@ import tempfile
 from typing import Any, Callable, Mapping
 from urllib.parse import urlsplit
 
-from redcell.engagement import PUBLIC_INTERACTSH_DOMAINS, Engagement
-from redcell.tools import (
+from op06d.engagement import PUBLIC_INTERACTSH_DOMAINS, Engagement
+from op06d.tools import (
     ProcessResult,
     Risk,
     ToolOutput,
@@ -434,7 +434,7 @@ class NucleiTool:
         # (see _run): a fresh, auto-cleaned-up temp file when the operator
         # did not configure one, or the operator's own config_path otherwise.
         self._fallback_config_path = os.path.join(
-            tempfile.gettempdir(), f"redcell-nuclei-config-{id(self):x}.yaml",
+            tempfile.gettempdir(), f"op06d-nuclei-config-{id(self):x}.yaml",
         )
 
     @classmethod
@@ -622,7 +622,7 @@ class NucleiTool:
         # context manager's __exit__ still runs on every exception path
         # below, before it propagates.
         try:
-            with tempfile.TemporaryDirectory(prefix="redcell-nuclei-home-") as scrubbed_home:
+            with tempfile.TemporaryDirectory(prefix="op06d-nuclei-home-") as scrubbed_home:
                 if self._config:
                     config_path = self._config  # the operator's own, unchanged
                 else:

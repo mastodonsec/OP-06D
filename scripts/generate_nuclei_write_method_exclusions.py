@@ -11,7 +11,7 @@ Usage (inside the scanner, where the pinned template set actually lives):
 
     python3 scripts/generate_nuclei_write_method_exclusions.py \
         /opt/nuclei-templates v10.5.1 \
-        --out src/redcell/nuclei_write_method_exclusions.json
+        --out src/op06d/nuclei_write_method_exclusions.json
 
 Prints a short diff summary against the previous bundled file (ids added /
 removed) so a re-pin's effect on the exclusion list is visible in review,
@@ -28,9 +28,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
-from redcell.nuclei_method_audit import scan_template_dir_for_write_methods  # noqa: E402
+from op06d.nuclei_method_audit import scan_template_dir_for_write_methods  # noqa: E402
 
-DEFAULT_OUT = ROOT / "src" / "redcell" / "nuclei_write_method_exclusions.json"
+DEFAULT_OUT = ROOT / "src" / "op06d" / "nuclei_write_method_exclusions.json"
 
 
 def main(argv: list[str] | None = None) -> int:

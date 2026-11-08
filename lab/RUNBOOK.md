@@ -1,4 +1,4 @@
-# Red Cell lab runbook (RC-19)
+# OP-06D lab runbook (RC-19)
 
 The ordered steps **you** perform to stand up the lab, **prove it is isolated**,
 validate the nmap and nuclei wrappers against the real tools, and run the whole
@@ -8,7 +8,7 @@ chain once. Nothing in this repository executes any of this for you.
 > below is unverified. If something differs, that is a finding: send me the output
 > and I will adapt the code, the fixtures and these docs.
 
-Run all commands from the repository root (`Z:\git\RedCell`) in
+Run all commands from the repository root (`Z:\git\OP-06D`) in
 **PowerShell 7** (`pwsh`). Snippets are piped into the container, which needs
 UTF-8 handling that Windows PowerShell 5.1 does not do reliably.
 
@@ -16,8 +16,8 @@ UTF-8 handling that Windows PowerShell 5.1 does not do reliably.
 > precondition, the real scan set, and a repeatability check), driven by
 > `tests/integration/test_lab_rc20.py` against the frozen baseline in
 > `tests/integration/baseline.json`. It is excluded from the default test
-> suite and needs `REDCELL_LAB=1`:
-> `REDCELL_LAB=1 pytest -m lab tests/integration/test_lab_rc20.py`.
+> suite and needs `OP06D_LAB=1`:
+> `OP06D_LAB=1 pytest -m lab tests/integration/test_lab_rc20.py`.
 > It does not replace the exploratory one-off steps below (10/11/12) or the
 > scripted-orchestrator end-to-end in Step 13.
 
@@ -64,7 +64,7 @@ The `latest` tag is not used anywhere. Step 5 records what is actually installed
         |                                                                           |
         |   scanner  172.31.77.20  ----->  juice-shop 172.31.77.10  :3000           |
         |   (nmap, nuclei,         ----->  dvwa        172.31.77.11  :80            |
-        |    red cell code)                                                         |
+        |    OP-06D code)                                                           |
         +---------------------------------------------------------------------------+
               |  no gateway, no NAT, no published ports, no other network
               X  nothing reaches the internet, the host, or any other network
@@ -157,7 +157,7 @@ port); do it with curl from the scanner: fetch `/setup.php`, read the
 `user_token` hidden field, then POST `create_db=Create / Reset Database` with
 that token and the same session cookie. If the page changes, skip this step.
 
-This is lab SETUP, not a scan — it is run directly, not through Red Cell.
+This is lab SETUP, not a scan — it is run directly, not through OP-06D.
 Without it, DVWA's / redirects to /setup.php; after it, / redirects to /login.php
 (its normal deployed state, which the PLANTED_VULNS baseline assumes). Record "DVWA DB initialized" as a baseline precondition: if the dvwa container
 is ever recreated (down/up), the DB resets and this step must be re-run.
@@ -215,7 +215,7 @@ pwsh -File lab\check_isolation.ps1 -WithInternetControl *>&1 | Tee-Object lab\ca
 docker compose -f $LAB exec -T scanner cat /opt/lab-versions.txt
 docker compose -f $LAB exec -T scanner nmap --version
 docker compose -f $LAB exec -T scanner nuclei -version
-docker image inspect redcell-lab-scanner:nmap-7.93-nuclei-3.11.1-templates-10.5.1 --format '{{.Id}}'
+docker image inspect op06d-lab-scanner:nmap-7.93-nuclei-3.11.1-templates-10.5.1 --format '{{.Id}}'
 docker compose -f $LAB images
 ```
 
@@ -227,7 +227,7 @@ networking.)
 ## Step 6. Run the project's tests inside the scanner (sanity)
 
 ```powershell
-docker compose -f $LAB exec -T scanner python3 -m pytest -q -p no:cacheprovider /redcell/tests
+docker compose -f $LAB exec -T scanner python3 -m pytest -q -p no:cacheprovider /op06d/tests
 ```
 
 This proves the pinned Python packages and Python 3.11 run the existing suite.
@@ -244,9 +244,9 @@ prints exactly what the wrappers build and does a quick `--help` cross-check.
 
 ```powershell
 @'
-from redcell.nmap_tool import NmapTool, PROFILES
-from redcell.nuclei_tool import NucleiTool
-from redcell.tools import ProcessResult
+from op06d.nmap_tool import NmapTool, PROFILES
+from op06d.nuclei_tool import NucleiTool
+from op06d.tools import ProcessResult
 
 seen = []
 def cap(argv, timeout):
@@ -344,8 +344,8 @@ output — it's the bridge from "passes its tests" to "works on reality."
 ```powershell
 @'
 import pathlib, json
-from redcell.nmap_tool import parse_nmap_xml
-from redcell.nuclei_tool import parse_nuclei_jsonl
+from op06d.nmap_tool import parse_nmap_xml
+from op06d.nuclei_tool import parse_nuclei_jsonl
 for p in sorted(pathlib.Path("/captures").glob("nmap_*.xml")):
     try:
         f = parse_nmap_xml(p.read_text(encoding="utf-8"))
@@ -376,7 +376,7 @@ pinned template set:
 ```powershell
 @'
 import pathlib, re, collections, yaml
-from redcell.nuclei_tool import ACTIVE_TAGS, INTRUSIVE_TAGS, EXPLOIT_TAGS, DEFAULT_TAGS
+from op06d.nuclei_tool import ACTIVE_TAGS, INTRUSIVE_TAGS, EXPLOIT_TAGS, DEFAULT_TAGS
 
 ROOT = pathlib.Path("/opt/nuclei-templates")
 DANGER = INTRUSIVE_TAGS | EXPLOIT_TAGS
@@ -468,7 +468,7 @@ structural - a future re-pin could add a write-method template without a
 danger tag. `NucleiTool` now always passes `-eid`/`-exclude-id` with every
 id a full scan of the pinned set found declaring a write method in either
 shape (an `http`/`requests` block's `method:`, or a `raw:` request line) -
-69 ids, bundled as `src/redcell/nuclei_write_method_exclusions.json`,
+69 ids, bundled as `src/op06d/nuclei_write_method_exclusions.json`,
 regenerated with `scripts/generate_nuclei_write_method_exclusions.py` on a
 re-pin. `tests/test_nuclei_method_audit.py` is the CI-enforced,
 synthetic-tree-proven-non-vacuous guarantee against drift;
@@ -574,7 +574,7 @@ and record that.)
 ```powershell
 @'
 import os, subprocess, pathlib, time
-from redcell.nuclei_tool import NucleiTool
+from op06d.nuclei_tool import NucleiTool
 
 LOG = pathlib.Path("/captures/cfgtest-requests.log")
 pathlib.Path("/tmp/cfgtest/empty.yaml").write_text("", encoding="utf-8")
@@ -650,7 +650,7 @@ target, as root and as the unprivileged `scanner` user:
 ```powershell
 $privprobe = @'
 import os
-from redcell.nmap_tool import NmapTool, PROFILES
+from op06d.nmap_tool import NmapTool, PROFILES
 t = NmapTool(50)
 print("uid:", os.getuid())
 for prof in PROFILES:
@@ -698,11 +698,11 @@ finishes.
 ```powershell
 @'
 import json
-from redcell.engagement import load_engagement
-from redcell.audit import AuditLog, read_log, verify_log
-from redcell.gate import Gate
-from redcell.tools import GatedToolbox, default_tools
-from redcell.orchestrator import Orchestrator
+from op06d.engagement import load_engagement
+from op06d.audit import AuditLog, read_log, verify_log
+from op06d.gate import Gate
+from op06d.tools import GatedToolbox, default_tools
+from op06d.orchestrator import Orchestrator
 
 eng = load_engagement("/lab/engagement.yaml")
 log = AuditLog.for_engagement(eng, "/captures/e2e-audit")

@@ -1,14 +1,14 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""RC-29 + RC-8: the ``redcell`` CLI.
+"""RC-29 + RC-8: the ``op06d`` CLI.
 
-``redcell run --engagement <file> --out <dir>`` takes an engagement file to
+``op06d run --engagement <file> --out <dir>`` takes an engagement file to
 a client report in one command, wiring together every finished piece of the
 pipeline: the RC-6 engagement loader, the RC-9/10/23 guardrail gate, the
 RC-13/14 tool wrappers (via ``GatedToolbox`` only - this module imports no
 concrete tool class), the RC-11 audit log, the RC-15 normalizer, the RC-16
 evidence store, and the RC-17/18 report renderer.
 
-The console entry point (``pyproject.toml``: ``redcell = "redcell.cli:main"``)
+The console entry point (``pyproject.toml``: ``op06d = "op06d.cli:main"``)
 is ``main()`` below.
 
 **Gate is the only door.** Every action here goes through
@@ -29,16 +29,16 @@ from datetime import datetime
 from pathlib import Path
 from typing import Callable, Iterable, Sequence
 
-from redcell.approval import ConsoleApprover
-from redcell.audit import AuditLog
-from redcell.engagement import Engagement, EngagementError, load_engagement
-from redcell.evidence import EvidenceStore
-from redcell.gate import Gate
-from redcell.normalize import normalize_execution_result
-from redcell.report import build_report
-from redcell.resolve import Resolver, system_resolver
-from redcell.report_render import NoPdfBackendAvailable, render_html, render_pdf
-from redcell.tools import (
+from op06d.approval import ConsoleApprover
+from op06d.audit import AuditLog
+from op06d.engagement import Engagement, EngagementError, load_engagement
+from op06d.evidence import EvidenceStore
+from op06d.gate import Gate
+from op06d.normalize import normalize_execution_result
+from op06d.report import build_report
+from op06d.resolve import Resolver, system_resolver
+from op06d.report_render import NoPdfBackendAvailable, render_html, render_pdf
+from op06d.tools import (
     ApprovalHook,
     DenyAllApprover,
     GatedToolbox,
@@ -252,14 +252,14 @@ def _cmd_run(args: argparse.Namespace) -> int:
 
 
 def _cmd_report(args: argparse.Namespace) -> int:
-    from redcell.report_render import main as render_main
+    from op06d.report_render import main as render_main
 
     return render_main(["--db", args.db, "--run", args.run, "--out", args.out, "--format", args.format])
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="redcell", description="Red Cell: the model proposes, the gate disposes.",
+        prog="op06d", description="OP-06D: the model proposes, the gate disposes.",
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -282,7 +282,7 @@ def build_parser() -> argparse.ArgumentParser:
     run_p.set_defaults(func=_cmd_run)
 
     report_p = sub.add_parser(
-        "report", help="render an already-stored run to a report (reuses redcell.report_render)",
+        "report", help="render an already-stored run to a report (reuses op06d.report_render)",
     )
     report_p.add_argument("--db", required=True, help="path to the evidence store (.db)")
     report_p.add_argument("--run", required=True, help="run_id to render")

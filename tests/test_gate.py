@@ -5,15 +5,15 @@ from pathlib import Path
 import pytest
 import yaml
 
-from redcell.audit import AuditLog, read_log
-from redcell.engagement import (
+from op06d.audit import AuditLog, read_log
+from op06d.engagement import (
     Authorization,
     Engagement,
     Intensity,
     load_engagement,
     parse_engagement,
 )
-from redcell.gate import (
+from op06d.gate import (
     ALLOWED,
     DENIED_AUDIT,
     DENIED_LIMITS,
@@ -22,7 +22,7 @@ from redcell.gate import (
     DENIED_WINDOW,
     Gate,
 )
-from redcell.limits import RateLimiter, evaluate_window
+from op06d.limits import RateLimiter, evaluate_window
 
 EXAMPLE = Path(__file__).parent.parent / "examples" / "engagement.yaml"
 ENG = load_engagement(EXAMPLE)  # window 2026-11-10T02:00Z .. 06:00Z, max_rps 20
