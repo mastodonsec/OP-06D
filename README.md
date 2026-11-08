@@ -1,4 +1,4 @@
-![alt text](Redcell2-1.png)
+![alt text](OP-06D-v2.png)
 # OP-06D
 
 An AI-driven security validation tool. An LLM plans reconnaissance actions and drives
