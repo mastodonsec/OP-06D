@@ -3,4 +3,4 @@
 # host), update these to match before trusting lab results.
 pydantic==2.10.6
 PyYAML==6.0.2
-pytest==7.4.0
+pytest==9.0.3
