@@ -92,6 +92,11 @@ tool runs:
 ```bash
 git clone <your-repo-url> OP-06D
 cd OP-06D
+# Optional: install uv in a dedicated venv if it is not already available
+python3 -m venv py-venv
+source py-venv/bin/activate
+pip install --upgrade pip
+pip install --upgrade uv
 uv sync
 ```
 
