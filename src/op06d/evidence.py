@@ -43,6 +43,7 @@ from pydantic import BaseModel, ConfigDict
 
 from op06d.engagement import Engagement
 from op06d.normalize import NormalizedResult
+from op06d.redaction import scrub
 from op06d.sanitize import sha256_of
 from op06d.tools import ExecutionResult, redact_parameters
 
@@ -123,6 +124,11 @@ CREATE TABLE IF NOT EXISTS issues (
     raw_json    TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_issues_run ON issues(run_id);
+
+CREATE TABLE IF NOT EXISTS run_planner (
+    run_id        TEXT PRIMARY KEY REFERENCES runs(run_id) ON DELETE CASCADE,
+    planner_json  TEXT NOT NULL
+);
 """
 
 
@@ -228,6 +234,7 @@ class ReconstructedRun(_Frozen):
     actions: list[ActionRow]
     findings: list[FindingRow]
     issues: list[IssueRow]
+    planner: dict[str, Any] | None = None
 
 
 def _run_row(row: sqlite3.Row) -> RunRow:
@@ -349,7 +356,7 @@ class EvidenceStore:
                 "window_start, window_end, scope_json, intensity_json, objective, started_at, "
                 "ended_at, status, tool_versions_json, audit_log_path, audit_log_sha256) "
                 "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                (
+                scrub((
                     run_id, engagement.engagement, auth.client, auth.signed_scope_ref,
                     auth.authorized_by, _iso(window_start), _iso(window_end),
                     json.dumps(engagement.scope.model_dump(mode="json")),
@@ -357,7 +364,7 @@ class EvidenceStore:
                     engagement.objective, started_at, None, "running",
                     json.dumps(tool_versions or {}), str(audit_log_path) if audit_log_path else None,
                     None,
-                ),
+                )),
             )
         return run_id
 
@@ -383,7 +390,7 @@ class EvidenceStore:
                 "parameters_redacted_json, gate_stage, gate_allowed, gate_reason, risk, outcome, "
                 "status, resolved_ips_json, scanned_ip, raw_sha256, sanitized_sha256, executed, "
                 "observed_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                (
+                scrub((
                     action_id, run_id, iteration, str(tool), str(target),
                     json.dumps(redact_parameters(parameters), default=repr),
                     decision.stage, int(decision.allowed), decision.reason, risk,
@@ -391,7 +398,7 @@ class EvidenceStore:
                     json.dumps(list(decision.resolved_ips)),
                     decision.resolved_ips[0] if decision.resolved_ips else None,
                     raw_sha256, sanitized_sha256, int(result.executed), observed,
-                ),
+                )),
             )
         return action_id
 
@@ -415,24 +422,44 @@ class EvidenceStore:
                     "references_json=excluded.references_json, cve_json=excluded.cve_json, "
                     "cvss_score=excluded.cvss_score, tags_json=excluded.tags_json, "
                     "raw_sha256=excluded.raw_sha256",
-                    (
+                    scrub((
                         run_id, action_id, f.finding_id, f.source_tool, f.category.value, f.title,
                         f.severity.value, f.asset.hostname, f.asset.ip, f.asset.port,
                         f.asset.protocol, f.asset.scheme, f.description,
                         json.dumps(f.evidence, default=repr), json.dumps(f.references),
                         json.dumps(f.cve), f.cvss_score, json.dumps(f.tags),
                         f.provenance.raw_sha256,
-                    ),
+                    )),
                 )
             for issue in normalized.issues:
                 conn.execute(
                     "INSERT INTO issues (run_id, action_id, kind, detail, raw_json) "
                     "VALUES (?,?,?,?,?)",
-                    (
+                    scrub((
                         run_id, action_id, issue.kind, issue.detail,
                         json.dumps(issue.raw, default=repr) if issue.raw is not None else None,
-                    ),
+                    )),
                 )
+
+    def record_planner(self, run_id: str, planner: dict[str, Any]) -> None:
+        """Store (or replace) the planner metadata for a run."""
+        payload = json.dumps(scrub(planner), default=repr, sort_keys=True)
+        with self._write() as conn:
+            conn.execute(
+                "INSERT INTO run_planner (run_id, planner_json) VALUES (?, ?) "
+                "ON CONFLICT(run_id) DO UPDATE SET planner_json=excluded.planner_json",
+                (run_id, payload),
+            )
+
+    def get_planner(self, run_id: str) -> dict[str, Any] | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT planner_json FROM run_planner WHERE run_id=?", (run_id,)
+            ).fetchone()
+        if row is None:
+            return None
+        value = _loads(row["planner_json"], None)
+        return value if isinstance(value, dict) else None
 
     def finish_run(self, run_id: str, *, status: str, audit_log_sha256: str | None = None) -> None:
         ended_at = _iso(_utcnow())
@@ -493,5 +520,5 @@ class EvidenceStore:
             raise EvidenceError(f"no such run {run_id!r}")
         return ReconstructedRun(
             run=run, actions=self.list_actions(run_id), findings=self.list_findings(run_id),
-            issues=self.list_issues(run_id),
+            issues=self.list_issues(run_id), planner=self.get_planner(run_id),
         )
