@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""RC-40 — LLM planner: wire a real model into the orchestrator and `op06d run`
+"""RC-40: LLM planner: wire a real model into the orchestrator and `op06d run`
 
 ``run_engagement(planner_mode="llm")`` end to end with a scripted model and
 fake tools (no subprocess, no network, no real model): engagement policy,
@@ -22,7 +22,7 @@ import yaml
 from op06d.audit import EVENT_LOOP_END, EVENT_PLANNER_CONFIG, read_log
 from op06d.cli import PlannerPolicyError, main, run_engagement
 from op06d.evidence import EvidenceStore
-from op06d.llm import AnthropicLLM, LLMSettings, LLMUnavailable, RetryPolicy, Usage
+from op06d.llm import AnthropicLLM, LLMRefused, LLMSettings, LLMUnavailable, RetryPolicy, Usage
 from op06d.orchestrator import RunLimits
 from op06d.redaction import clear_registered_secrets
 from op06d.sanitize import BLOCK_NAME
@@ -183,6 +183,19 @@ def test_local_only_engagement_refuses_anthropic_before_anything_runs(tmp_path):
     assert not (tmp_path / "out").exists()
 
 
+def test_engagement_without_a_planner_block_refuses_anthropic(tmp_path):
+    with pytest.raises(PlannerPolicyError, match="no planner block"):
+        _run(tmp_path, [DONE], provider="anthropic")
+    assert not (tmp_path / "out").exists()
+
+
+def test_anthropic_runs_when_explicitly_allowed(tmp_path):
+    summary, _, _ = _run(tmp_path, [DONE], provider="anthropic",
+                         planner={"allowed_providers": ["anthropic"]})
+    assert summary.termination == "objective_met"
+    assert _planner_row(summary)["endpoint_class"] == "hosted"
+
+
 def test_local_only_engagement_allows_local(tmp_path):
     summary, _, _ = _run(tmp_path, [DONE], planner={"allowed_providers": ["local"]})
     assert summary.termination == "objective_met"
@@ -210,6 +223,15 @@ def test_cli_refuses_anthropic_for_a_local_only_engagement(tmp_path, capsys, mon
     assert code == 2 and "does not allow" in err and FAKE_KEY not in err
 
 
+def test_cli_refuses_anthropic_when_the_engagement_has_no_planner_block(tmp_path, capsys, monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", FAKE_KEY)
+    code = main(["run", "--engagement", str(_engagement(tmp_path)), "--out", str(tmp_path / "o"),
+                 "--planner", "llm", "--llm-provider", "anthropic"])
+    err = capsys.readouterr().err
+    assert code == 2 and "only 'local' is allowed" in err and FAKE_KEY not in err
+    assert not (tmp_path / "o").exists()
+
+
 def test_cli_llm_options_require_planner_llm(tmp_path, capsys):
     code = main(["run", "--engagement", str(_engagement(tmp_path)), "--out", str(tmp_path / "o"),
                  "--llm-provider", "local"])
@@ -218,7 +240,8 @@ def test_cli_llm_options_require_planner_llm(tmp_path, capsys):
 
 def test_cli_anthropic_without_key_is_refused(tmp_path, capsys, monkeypatch):
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-    code = main(["run", "--engagement", str(_engagement(tmp_path)), "--out", str(tmp_path / "o"),
+    eng = _engagement(tmp_path, {"allowed_providers": ["anthropic"]})
+    code = main(["run", "--engagement", str(eng), "--out", str(tmp_path / "o"),
                  "--planner", "llm", "--llm-provider", "anthropic"])
     assert code == 2 and "ANTHROPIC_API_KEY" in capsys.readouterr().err
 
@@ -263,6 +286,36 @@ def test_token_limit_refuses_a_call_whose_estimate_cannot_fit(tmp_path):
     assert summary.termination == "max_tokens" and llm.calls == []
 
 
+class CapLLM(ScriptLLM):
+    def __init__(self, replies, usage):
+        super().__init__(replies, usage)
+        self.caps: list[int | None] = []
+        self._cap: int | None = None
+
+    def set_output_cap(self, cap):
+        self._cap = cap
+
+    def complete(self, system, messages):
+        self.caps.append(self._cap)
+        return super().complete(system, messages)
+
+
+def test_each_request_is_capped_to_the_remaining_token_budget(tmp_path):
+    llm = CapLLM([act(), act(ports="80"), DONE], Usage(7_000, 100))
+    limits = RunLimits(max_tokens=10_000, max_output_tokens=2_000)
+    summary, _, _ = _run(tmp_path, [], llm=llm, limits=limits)
+    assert llm.caps[0] == 2_000              # plenty of budget: the configured maximum
+    assert 256 <= llm.caps[1] < 2_000        # then what is left after the input estimate
+    assert 7_100 + llm.caps[1] < 10_000
+    assert summary.termination == "max_tokens" and len(llm.calls) == 2
+
+
+def test_no_cap_is_pushed_to_the_adapter_without_a_token_limit(tmp_path):
+    llm = CapLLM([DONE], Usage(10, 10))
+    _run(tmp_path, [], llm=llm, limits=RunLimits(max_actions=5))
+    assert llm.caps == [None]
+
+
 def test_cost_limit_ends_the_run(tmp_path):
     limits = RunLimits(max_cost_usd=0.002, price_input_per_mtok=1.0, price_output_per_mtok=1.0,
                        max_output_tokens=100)
@@ -284,6 +337,32 @@ def test_api_failure_ends_the_run_cleanly_and_nothing_runs(tmp_path):
     reasons = [e.reason or "" for e in _log(summary)]
     assert any("model failure: LLMUnavailable" in r for r in reasons)
     assert summary.report_html_path.exists()
+
+
+def test_refusal_ends_the_run_as_model_refused_in_audit_log_and_report(tmp_path):
+    summary, tool, llm = _run(tmp_path, [act(), LLMRefused("model declined the request (stop_reason=refusal)")])
+    assert summary.termination == "model_refused" and len(tool.calls) == 1 and len(llm.calls) == 2
+    assert _loop_end(summary).reason == "model_refused"
+    reasons = [e.reason or "" for e in _log(summary)]
+    assert any(r.startswith("model refused: LLMRefused") for r in reasons)
+    assert not any(r.startswith("model failure") for r in reasons)
+    assert _planner_row(summary)["termination"] == "model_refused"
+    html = summary.report_html_path.read_text(encoding="utf-8")
+    assert "model_refused" in html and "model_failure" not in html
+
+
+def test_anthropic_refusal_end_to_end_is_model_refused(tmp_path):
+    class Msgs:
+        def create(self, **kw):
+            return SimpleNamespace(content=[], stop_reason="refusal",
+                                   usage=SimpleNamespace(input_tokens=40, output_tokens=0))
+
+    llm = AnthropicLLM(client=SimpleNamespace(messages=Msgs()), environ={},
+                       retry=RetryPolicy(attempts=1, sleep=lambda s: None))
+    summary, tool, _ = _run(tmp_path, [], provider="anthropic", llm=llm,
+                            planner={"allowed_providers": ["anthropic"]})
+    assert summary.termination == "model_refused" and tool.calls == []
+    assert _planner_row(summary)["input_tokens"] == 40
 
 
 def test_malformed_output_is_recorded_retried_bounded_and_never_executed(tmp_path):
@@ -350,11 +429,12 @@ def test_api_key_never_reaches_audit_log_evidence_or_report(tmp_path):
                                    usage=SimpleNamespace(input_tokens=10, output_tokens=5))
 
     msgs = Msgs()
-    client = SimpleNamespace(beta=SimpleNamespace(messages=msgs), messages=msgs)
+    client = SimpleNamespace(messages=msgs)
     llm = AnthropicLLM(client=client, environ={"ANTHROPIC_API_KEY": FAKE_KEY},
                        retry=RetryPolicy(attempts=1, sleep=lambda s: None))
     tool = FakeNmap(banner=f"Server {FAKE_KEY}")
-    summary, _, _ = _run(tmp_path, [], provider="anthropic", llm=llm, tool=tool)
+    summary, _, _ = _run(tmp_path, [], provider="anthropic", llm=llm, tool=tool,
+                         planner={"allowed_providers": ["anthropic"]})
 
     out = tmp_path / "out"
     files = [p for p in out.rglob("*") if p.is_file()]

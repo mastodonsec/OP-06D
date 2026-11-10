@@ -50,7 +50,7 @@ EVENT_LOOP_END = "loop_terminated"  # RC-7: why and when the loop stopped
 # resolve-once pin. Written once per hostname, never again, even if DNS for
 # that name changes later in the same engagement.
 EVENT_DNS_PINNED = "dns_pinned"
-# RC-40 — LLM planner: wire a real model into the orchestrator and `op06d run`
+# RC-40: LLM planner: wire a real model into the orchestrator and `op06d run`
 EVENT_PLANNER_CONFIG = "planner_config"
 # Events whose ``allowed`` flag is meaningful (an allow/deny or approve/decline).
 _ALLOWED_EVENTS = frozenset({EVENT_GATE_DECISION, EVENT_APPROVAL})

@@ -29,7 +29,7 @@ dev = ["pytest>=7"]
 # `playwright install chromium` step beyond `pip install`; see
 # report_render.NoPdfBackendAvailable for exact instructions for either.
 report-pdf = ["weasyprint"]
-# RC-40 — LLM planner: wire a real model into the orchestrator and `op06d run`
+# RC-40: LLM planner: wire a real model into the orchestrator and `op06d run`
 llm-anthropic = ["anthropic>=2.8"]
 
 [tool.setuptools.packages.find]

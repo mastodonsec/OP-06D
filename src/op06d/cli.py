@@ -15,7 +15,7 @@ is ``main()`` below.
 ``GatedToolbox.execute`` - never a tool directly. ``--planner fixed`` (the
 default) runs the deterministic ``plan_recon`` below.
 
-RC-40 — LLM planner: wire a real model into the orchestrator and `op06d run`:
+RC-40: LLM planner: wire a real model into the orchestrator and `op06d run`:
 ``--planner llm`` runs the RC-7 ``Orchestrator`` with a model adapter from
 ``op06d.llm`` against the same gated toolbox, evidence store and report.
 See docs/llm-planner.md.
@@ -178,9 +178,13 @@ def run_engagement(
         if llm_settings is None:
             raise PlannerPolicyError("--planner llm needs an LLM provider (--llm-provider)")
         if not eng.provider_allowed(llm_settings.provider):
+            allowed = (
+                f"planner.allowed_providers: {list(eng.planner.allowed_providers)}" if eng.planner
+                else "no planner block, so only 'local' is allowed; add it to "
+                     "planner.allowed_providers in the engagement file"
+            )
             raise PlannerPolicyError(
-                f"the engagement does not allow the {llm_settings.provider!r} LLM provider "
-                f"(planner.allowed_providers: {list(eng.planner.allowed_providers) if eng.planner else []})"
+                f"the engagement does not allow the {llm_settings.provider!r} LLM provider ({allowed})"
             )
         try:
             settings = llm_settings.resolved()
@@ -277,6 +281,7 @@ def run_engagement(
             **planner_info, "iterations": outcome.iterations, "actions": outcome.actions,
             "termination": termination, "input_tokens": outcome.input_tokens,
             "output_tokens": outcome.output_tokens,
+            **({"output_mode": llm.output_mode} if hasattr(llm, "output_mode") else {}),
         })
 
     audit_sha256 = hashlib.sha256(Path(log.path).read_bytes()).hexdigest()

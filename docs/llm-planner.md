@@ -1,6 +1,6 @@
 # LLM planner (`op06d run --planner llm`)
 
-RC-40 — LLM planner: wire a real model into the orchestrator and `op06d run`
+RC-40: LLM planner: wire a real model into the orchestrator and `op06d run`
 
 `op06d run` has two planners:
 
@@ -17,8 +17,9 @@ can widen scope, extend the window, raise the rate or skip approval.
 
 ## Quick start
 
-Hosted (Anthropic). Install the extra and put the key in the environment. There
-is no flag or config field for the key.
+Hosted (Anthropic). The engagement file must allow it explicitly (see
+[Engagement policy](#engagement-policy)). Install the extra and put the key in
+the environment. There is no flag or config field for the key.
 
 ```sh
 pip install 'op06d[llm-anthropic]'
@@ -72,23 +73,34 @@ evidence store and the report, and the HTML report is still produced.
 |---|---|
 | `objective_met` | the model replied `{"type": "done", ...}` |
 | `max_iterations`, `max_actions`, `max_wall_clock` | that limit was reached |
-| `max_tokens`, `max_cost` | the next call could not fit the remaining budget, by estimate (characters / 3 plus the output cap), or the reported usage crossed it. A reply that crosses the budget is never acted on. |
-| `model_failure` | non-retryable API error, retries exhausted, or a refusal |
+| `max_tokens`, `max_cost` | the next call could not fit the remaining budget, or the reported usage crossed it. A reply that crosses the budget is never acted on. |
+| `model_failure` | non-retryable API error, or retries exhausted |
+| `model_refused` | the model declined the request (`stop_reason: refusal`). Not retried. |
 | `planner_failure` | 3 consecutive malformed replies |
 | `window_expired`, `window_not_open`, `operator_stop`, `gate_unusable`, `audit_failure` | as in [orchestrator.md](orchestrator.md) |
 
+**Token budget per request.** Before each call the input is estimated as
+characters / 3. The request's output cap is then
+`min(--max-output-tokens, max_tokens - used - estimated input)`, and the
+adapter sends that as the request's `max_tokens` (Ollama: `num_predict`). If
+fewer than 256 output tokens would be left, the run ends as `max_tokens`
+without calling the model. The budget can therefore be overshot only by the
+error in the input estimate. The cost cap is checked the same way but does not
+shrink the output cap.
+
 ## Engagement policy
 
-The engagement file can restrict which providers may plan it:
+The engagement file decides which providers may plan it:
 
 ```yaml
 planner:
-  allowed_providers: [local]   # anthropic | local, at least one
+  allowed_providers: [local, anthropic]   # anthropic | local, at least one
 ```
 
-A disallowed provider is refused before anything runs: no output directory,
-no audit log, no evidence. Without a `planner:` block, both providers are
-allowed.
+Without a `planner:` block, only `local` is allowed. The hosted provider sends
+findings to a third party, so `anthropic` must be listed explicitly. A
+disallowed provider is refused before anything runs: no output directory, no
+audit log, no evidence.
 
 ## Egress and data handling
 
@@ -103,12 +115,11 @@ allowed.
   `UNTRUSTED_TOOL_OUTPUT`. **Findings about the client's systems are sent to the
   provider** and handled under the provider's data-retention terms. Raw tool
   output is not sent; it stays local as evidence.
-- Use `planner.allowed_providers: [local]` for any engagement whose
-  authorization does not allow third-party processing.
-- Server-side refusal fallbacks (`fallbacks: "default"`, beta
-  `server-side-fallback-2026-07-01`) are enabled. If the request is declined
-  on policy grounds, the API may answer with a fallback model. A refusal
-  that is not rescued ends the run as `model_failure`.
+- List `anthropic` in `planner.allowed_providers` only when the engagement's
+  authorization allows third-party processing.
+- Refusal fallbacks are not used: only the configured model ever answers. If it
+  declines a request, the run ends as `model_refused`, recorded in the audit
+  log and the report.
 
 ### Local (`--llm-provider local`)
 
@@ -124,6 +135,11 @@ allowed.
   llama.cpp gets an equivalent GBNF grammar, and OpenAI-compatible servers get
   `response_format: json_schema`. The tool name is restricted to the
   registered tools. The reply is still parsed strictly; see below.
+- If an Ollama server rejects the schema `format` (HTTP 400, as older versions
+  do), the adapter switches to plain JSON mode (`format: "json"`) for the rest
+  of the run and relies on strict validation alone. The mode in use is stored
+  with the run's planner record (`output_mode`). The llama.cpp and
+  OpenAI-compatible runtimes do not drop their constraint.
 - Ollama receives `num_ctx = --context-tokens`. For llama.cpp, LM Studio and
   vLLM, the context size is set when the server is launched, so pass the same
   value as `--context-tokens`.

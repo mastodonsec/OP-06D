@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""RC-40 — LLM planner: wire a real model into the orchestrator and `op06d run`
+"""RC-40: LLM planner: wire a real model into the orchestrator and `op06d run`
 
 Unit tests for the production model adapters in ``op06d.llm``: endpoint
 policy, constrained-output request shapes, retry/backoff and key handling.
@@ -14,9 +14,9 @@ from types import SimpleNamespace
 import pytest
 
 from op06d.llm import (
-    ANTHROPIC_FALLBACK_BETA,
     AnthropicLLM,
     LLMConfigError,
+    LLMRefused,
     LLMSettings,
     LLMUnavailable,
     LocalLLM,
@@ -180,7 +180,7 @@ def test_retries_are_bounded_and_end_in_llm_unavailable():
     assert len(t.calls) == 3
 
 
-@pytest.mark.parametrize("response", [(404, b"model not found"), (400, b"bad"), (200, b"<html>"),
+@pytest.mark.parametrize("response", [(404, b"model not found"), (403, b"no"), (200, b"<html>"),
                                       (200, {"unexpected": True})])
 def test_non_retryable_failures_are_not_retried(response):
     t = Recorder([response])
@@ -225,7 +225,7 @@ def _resp(text, stop="end_turn", usage=(100, 20)):
 
 def _client(outcomes):
     msgs = FakeMessages(outcomes)
-    return SimpleNamespace(beta=SimpleNamespace(messages=msgs), messages=msgs), msgs
+    return SimpleNamespace(messages=msgs), msgs  # no .beta: the fallback surface is never touched
 
 
 def test_anthropic_requires_the_key_in_the_environment():
@@ -233,7 +233,7 @@ def test_anthropic_requires_the_key_in_the_environment():
         AnthropicLLM(environ={})
 
 
-def test_anthropic_call_shape_usage_and_fallbacks():
+def test_anthropic_call_shape_and_usage_without_refusal_fallbacks():
     client, msgs = _client([_resp('{"type":"done","summary":"s"}')])
     llm = AnthropicLLM("claude-opus-5-5", client=client, environ={}, retry=NO_SLEEP)
     out = llm.complete("SYS", [{"role": "assistant", "content": "x"}, {"role": "user", "content": "y"},
@@ -241,7 +241,8 @@ def test_anthropic_call_shape_usage_and_fallbacks():
     assert out == '{"type":"done","summary":"s"}'
     kw = msgs.kwargs[0]
     assert kw["model"] == "claude-opus-5-5" and kw["system"] == "SYS"
-    assert kw["betas"] == [ANTHROPIC_FALLBACK_BETA] and kw["fallbacks"] == "default"
+    assert "fallbacks" not in kw and "betas" not in kw
+    assert kw["max_tokens"] == 16_000
     roles = [m["role"] for m in kw["messages"]]
     assert roles[0] == "user" and all(a != b for a, b in zip(roles, roles[1:]))
     assert llm.last_usage == Usage(100, 20)
@@ -272,11 +273,21 @@ def test_anthropic_non_retryable_errors_fail_immediately(exc):
     assert len(msgs.kwargs) == 1
 
 
-def test_anthropic_refusal_is_a_model_failure():
-    client, _ = _client([_resp("", stop="refusal")])
+def test_anthropic_refusal_raises_llm_refused_and_is_not_retried():
+    client, msgs = _client([_resp("", stop="refusal")])
     llm = AnthropicLLM(client=client, environ={}, retry=NO_SLEEP)
-    with pytest.raises(LLMUnavailable, match="refusal"):
+    with pytest.raises(LLMRefused, match="refusal"):
         llm.complete("S", [{"role": "user", "content": "go"}])
+    assert len(msgs.kwargs) == 1 and llm.last_usage == Usage(100, 20)
+
+
+def test_anthropic_output_cap_bounds_max_tokens():
+    client, msgs = _client([_resp("{}"), _resp("{}"), _resp("{}")])
+    llm = AnthropicLLM(client=client, environ={}, max_output_tokens=4_000, retry=NO_SLEEP)
+    for cap in (1_500, 9_000, None):
+        llm.set_output_cap(cap)
+        llm.complete("S", [{"role": "user", "content": "go"}])
+    assert [k["max_tokens"] for k in msgs.kwargs] == [1_500, 4_000, 4_000]
 
 
 def test_the_environment_key_is_registered_for_scrubbing():
@@ -311,3 +322,45 @@ def test_settings_validation(kw):
 def test_build_llm_local_refuses_public_endpoint():
     with pytest.raises(LLMConfigError):
         build_llm(LLMSettings("local", endpoint="http://1.1.1.1:11434"), tool_names=["nmap"])
+
+
+# --- Ollama constrained output: schema first, plain JSON when unsupported ---------
+
+def test_ollama_falls_back_to_plain_json_when_the_schema_format_is_rejected():
+    t = Recorder([(400, b'{"error":"invalid format"}'), OLLAMA_OK, OLLAMA_OK])
+    llm = LocalLLM("m", tool_names=["nmap"], transport=t, retry=NO_SLEEP)
+    assert llm.output_mode == "json_schema"
+    llm.complete("S", [{"role": "user", "content": "go"}])
+    llm.complete("S", [{"role": "user", "content": "go"}])
+    formats = [body["format"] for _, body, _ in t.calls]
+    assert formats == [action_schema(["nmap"]), "json", "json"]
+    assert llm.output_mode == "json"
+
+
+def test_ollama_bad_request_in_plain_json_mode_is_a_failure():
+    t = Recorder([(400, b""), (400, b"")])
+    llm = LocalLLM("m", transport=t, retry=NO_SLEEP)
+    with pytest.raises(LLMUnavailable):
+        llm.complete("S", [{"role": "user", "content": "go"}])
+    assert len(t.calls) == 2
+
+
+def test_other_runtimes_do_not_drop_their_constraint_on_a_bad_request():
+    t = Recorder([(400, b"")])
+    llm = LocalLLM("m", endpoint="http://127.0.0.1:8080", runtime="llamacpp", transport=t, retry=NO_SLEEP)
+    with pytest.raises(LLMUnavailable):
+        llm.complete("S", [{"role": "user", "content": "go"}])
+    assert len(t.calls) == 1
+
+
+def test_local_output_cap_bounds_the_request():
+    t = Recorder([OLLAMA_OK, OPENAI_OK])
+    a = LocalLLM("m", max_output_tokens=1_024, transport=t, retry=NO_SLEEP)
+    b = LocalLLM("m", endpoint="http://127.0.0.1:1234", runtime="openai", max_output_tokens=1_024,
+                 transport=t, retry=NO_SLEEP)
+    a.set_output_cap(300)
+    b.set_output_cap(5_000)
+    a.complete("S", [{"role": "user", "content": "go"}])
+    b.complete("S", [{"role": "user", "content": "go"}])
+    assert t.calls[0][1]["options"]["num_predict"] == 300
+    assert t.calls[1][1]["max_tokens"] == 1_024

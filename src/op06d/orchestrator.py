@@ -20,9 +20,10 @@ Properties this module is built around:
   extend the window or raise the rate; it only proposes.
 * Every iteration, decision, approval, execution and the termination reason is
   written to the same per-engagement audit trail (RC-11).
-* RC-40 — LLM planner: wire a real model into the orchestrator and `op06d run`:
+* RC-40: LLM planner: wire a real model into the orchestrator and `op06d run`:
   ``RunLimits`` (tool actions, wall clock, tokens, cost), ``LLMError`` ends the
-  run as ``model_failure``, replies are checked against the action schema, and
+  run as ``model_failure`` (``LLMRefused`` as ``model_refused``), each request's
+  output is capped to the remaining token budget, replies are checked against the action schema, and
   observations are fitted to the context budget with the wrapper kept intact.
 
 The LLM is injected (``LLM`` protocol); tests drive the loop with a stub.
@@ -42,7 +43,7 @@ from op06d.audit import EVENT_ITERATION, EVENT_LOOP_END, AuditError, AuditLog
 from op06d.engagement import Engagement
 from op06d.gate import DENIED_AUDIT, DENIED_LIMITS, DENIED_WINDOW
 from op06d.limits import evaluate_window
-from op06d.llm import LLMError, Usage
+from op06d.llm import LLMError, LLMRefused, Usage
 from op06d.sanitize import BLOCK_NAME, UNTRUSTED_DATA_NOTICE
 from op06d.tools import ExecutionResult, GatedToolbox, Outcome, ToolAction
 
@@ -52,6 +53,7 @@ MAX_STORED_REPLY_CHARS = 1_000
 MAX_REASON_CHARS = 500
 CHARS_PER_TOKEN = 3
 MIN_MESSAGE_BUDGET_CHARS = 2_000
+MIN_REPLY_TOKENS = 256
 
 _ACTION_KEYS = frozenset({"type", "tool", "target", "parameters", "reason"})
 _DONE_KEYS = frozenset({"type", "summary"})
@@ -77,6 +79,7 @@ class Termination(str, Enum):
     MAX_TOKENS = "max_tokens"
     MAX_COST = "max_cost"
     MODEL_FAILURE = "model_failure"
+    MODEL_REFUSED = "model_refused"
 
 
 @dataclass(frozen=True)
@@ -402,6 +405,18 @@ class Orchestrator:
                 return Termination.MAX_COST
         return None
 
+    def _reply_cap(self, estimated_input: int) -> int | Termination:
+        """Output-token cap for the next request: the configured maximum, or
+        what is left of the token budget if that is smaller."""
+        lim = self._limits
+        cap = lim.max_output_tokens
+        if lim.max_tokens is not None:
+            room = lim.max_tokens - self._in_tokens - self._out_tokens - estimated_input
+            if room < min(cap, MIN_REPLY_TOKENS):
+                return Termination.MAX_TOKENS
+            cap = min(cap, room)
+        return self._over_budget(self._in_tokens + estimated_input, self._out_tokens + cap) or cap
+
     def _account(self, messages: list[dict[str, str]], reply: object) -> Termination | None:
         usage = getattr(self._llm, "last_usage", None)
         if isinstance(usage, Usage):
@@ -438,24 +453,27 @@ class Orchestrator:
                 return self._end(closed, steps, n - 1)
             if self._clock_exceeded():
                 return self._end(Termination.MAX_WALL_CLOCK, steps, n - 1)
-            over = self._over_budget(
-                self._in_tokens + self._estimate_input(messages),
-                self._out_tokens + self._limits.max_output_tokens,
-            )
-            if over:
-                return self._end(over, steps, n - 1)
+            cap = self._reply_cap(self._estimate_input(messages))
+            if isinstance(cap, Termination):
+                return self._end(cap, steps, n - 1)
+            set_cap = getattr(self._llm, "set_output_cap", None)
+            if self._limits.max_tokens is not None and callable(set_cap):
+                set_cap(cap)
 
             try:
                 reply = self._llm.complete(self.system_prompt, [dict(m) for m in messages])
             except LLMError as exc:
                 steps.append(Step(n, "llm_error"))
                 self._account_failed_call()
+                refused = isinstance(exc, LLMRefused)
+                label = "model refused" if refused else "model failure"
                 try:
                     self._note(EVENT_ITERATION, n,
-                               f"model failure: {type(exc).__name__}: {exc}"[:MAX_REASON_CHARS])
+                               f"{label}: {type(exc).__name__}: {exc}"[:MAX_REASON_CHARS])
                 except AuditError:
                     return self._end(Termination.AUDIT_FAILURE, steps, n)
-                return self._end(Termination.MODEL_FAILURE, steps, n)
+                return self._end(
+                    Termination.MODEL_REFUSED if refused else Termination.MODEL_FAILURE, steps, n)
             except Exception as exc:
                 steps.append(Step(n, "llm_error"))
                 try:

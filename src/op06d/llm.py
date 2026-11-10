@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""RC-40 — LLM planner: wire a real model into the orchestrator and `op06d run`
+"""RC-40: LLM planner: wire a real model into the orchestrator and `op06d run`
 
 Production adapters for the ``op06d.orchestrator.LLM`` protocol:
 
@@ -30,7 +30,7 @@ from urllib.parse import urlsplit
 from op06d.redaction import register_secret, scrub_text
 
 __all__ = [
-    "LLMError", "LLMConfigError", "LLMUnavailable", "Usage", "RetryPolicy", "LLMSettings",
+    "LLMError", "LLMConfigError", "LLMUnavailable", "LLMRefused", "Usage", "RetryPolicy", "LLMSettings",
     "AnthropicLLM", "LocalLLM", "action_schema", "action_grammar", "validate_local_endpoint",
     "build_llm", "PROVIDERS", "LOCAL_RUNTIMES", "ANTHROPIC_API_KEY_ENV",
 ]
@@ -39,7 +39,6 @@ PROVIDERS = ("anthropic", "local")
 LOCAL_RUNTIMES = ("ollama", "llamacpp", "openai")
 ANTHROPIC_API_KEY_ENV = "ANTHROPIC_API_KEY"
 ANTHROPIC_ENDPOINT = "https://api.anthropic.com"
-ANTHROPIC_FALLBACK_BETA = "server-side-fallback-2026-07-01"
 
 DEFAULT_ANTHROPIC_MODEL = "claude-opus-5-5"
 DEFAULT_LOCAL_MODEL = "llama3.1:8b-instruct-q5_K_M"
@@ -65,6 +64,18 @@ class LLMConfigError(LLMError):
 
 class LLMUnavailable(LLMError):
     """The model could not produce a reply (non-retryable error or retries exhausted)."""
+
+
+class LLMRefused(LLMError):
+    """The model declined the request."""
+
+
+class _BadRequest(LLMUnavailable):
+    pass
+
+
+def _capped(configured: int, cap: int | None) -> int:
+    return configured if cap is None else max(1, min(configured, cap))
 
 
 @dataclass(frozen=True)
@@ -208,7 +219,6 @@ class AnthropicLLM:
         max_output_tokens: int = 16_000,
         timeout: float = 120.0,
         retry: RetryPolicy | None = None,
-        refusal_fallbacks: bool = True,
     ) -> None:
         if not isinstance(model, str) or not model.strip():
             raise LLMConfigError("a model name is required")
@@ -232,8 +242,12 @@ class AnthropicLLM:
         self.model = model
         self._max_output = max_output_tokens
         self._retry = retry or RetryPolicy()
-        self._fallbacks = refusal_fallbacks
+        self._output_cap: int | None = None
         self.last_usage: Usage | None = None
+
+    def set_output_cap(self, cap: int | None) -> None:
+        """Bound the next requests' ``max_tokens`` to ``min(configured, cap)``."""
+        self._output_cap = cap
 
     def _classify(self, exc: Exception) -> Exception:
         status = getattr(exc, "status_code", None)
@@ -250,14 +264,10 @@ class AnthropicLLM:
 
     def _call(self, system: str, messages: list[dict[str, str]]) -> Any:
         kwargs: dict[str, Any] = {
-            "model": self.model, "max_tokens": self._max_output, "system": system,
-            "messages": messages,
+            "model": self.model, "max_tokens": _capped(self._max_output, self._output_cap),
+            "system": system, "messages": messages,
         }
         try:
-            if self._fallbacks:
-                return self._client.beta.messages.create(
-                    betas=[ANTHROPIC_FALLBACK_BETA], fallbacks="default", **kwargs,
-                )
             return self._client.messages.create(**kwargs)
         except Exception as exc:
             raise self._classify(exc) from None
@@ -272,7 +282,7 @@ class AnthropicLLM:
             int(getattr(usage, "input_tokens", 0) or 0), int(getattr(usage, "output_tokens", 0) or 0),
         )
         if getattr(resp, "stop_reason", None) == "refusal":
-            raise LLMUnavailable("model declined the request (stop_reason=refusal)")
+            raise LLMRefused("model declined the request (stop_reason=refusal)")
         return "".join(
             getattr(b, "text", "") for b in getattr(resp, "content", []) or []
             if getattr(b, "type", None) == "text"
@@ -383,18 +393,26 @@ class LocalLLM:
         self._transport = transport or _local_transport
         self._schema = action_schema(tool_names)
         self._grammar = action_grammar(tool_names) if runtime == "llamacpp" else None
+        self._output_cap: int | None = None
+        self.output_mode = {"ollama": "json_schema", "llamacpp": "grammar", "openai": "json_schema"}[runtime]
         self.last_usage: Usage | None = None
+
+    def set_output_cap(self, cap: int | None) -> None:
+        """Bound the next requests' output tokens to ``min(configured, cap)``."""
+        self._output_cap = cap
 
     def _request(self, system: str, messages: list[dict[str, str]]) -> tuple[str, dict[str, Any]]:
         chat = [{"role": "system", "content": system}, *messages]
+        max_output = _capped(self._max_output, self._output_cap)
         if self.runtime == "ollama":
             return f"{self.base_url}/api/chat", {
-                "model": self.model, "messages": chat, "stream": False, "format": self._schema,
-                "options": {"num_ctx": self.context_tokens, "num_predict": self._max_output,
+                "model": self.model, "messages": chat, "stream": False,
+                "format": self._schema if self.output_mode == "json_schema" else "json",
+                "options": {"num_ctx": self.context_tokens, "num_predict": max_output,
                             "temperature": 0},
             }
         body: dict[str, Any] = {
-            "model": self.model, "messages": chat, "max_tokens": self._max_output,
+            "model": self.model, "messages": chat, "max_tokens": max_output,
             "temperature": 0, "stream": False,
         }
         if self.runtime == "llamacpp":
@@ -417,6 +435,8 @@ class LocalLLM:
             raise LLMUnavailable(
                 f"local endpoint returned 404 (is model {self.model!r} available on the server?)"
             )
+        if status == 400:
+            raise _BadRequest("local endpoint returned HTTP 400")
         if not 200 <= status < 300:
             raise LLMUnavailable(f"local endpoint returned HTTP {status}")
         try:
@@ -429,9 +449,20 @@ class LocalLLM:
 
     def complete(self, system: str, messages: Sequence[Mapping[str, str]]) -> str:
         self.last_usage = None
-        url, body = self._request(system, _alternating(messages))
-        payload = json.dumps(body).encode("utf-8")
-        data = _with_retries(lambda: self._post(url, payload), self._retry, "local model")
+        chat = _alternating(messages)
+
+        def send() -> dict[str, Any]:
+            url, body = self._request(system, chat)
+            payload = json.dumps(body).encode("utf-8")
+            return _with_retries(lambda: self._post(url, payload), self._retry, "local model")
+
+        try:
+            data = send()
+        except _BadRequest:
+            if self.runtime != "ollama" or self.output_mode != "json_schema":
+                raise
+            self.output_mode = "json"
+            data = send()
         try:
             if self.runtime == "ollama":
                 text = data["message"]["content"]

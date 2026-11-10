@@ -135,10 +135,11 @@ class Intensity(_Frozen):
 
 
 LLM_PROVIDERS = ("anthropic", "local")
+DEFAULT_ALLOWED_PROVIDER = "local"
 
 
 class PlannerPolicy(_Frozen):
-    """RC-40 — LLM planner: wire a real model into the orchestrator and `op06d run`"""
+    """RC-40: LLM planner: wire a real model into the orchestrator and `op06d run`"""
 
     allowed_providers: list[Literal["anthropic", "local"]] = Field(min_length=1)
 
@@ -174,7 +175,9 @@ class Engagement(_Frozen):
     def provider_allowed(self, provider: str) -> bool:
         if provider not in LLM_PROVIDERS:
             return False
-        return self.planner is None or provider in self.planner.allowed_providers
+        if self.planner is None:
+            return provider == DEFAULT_ALLOWED_PROVIDER
+        return provider in self.planner.allowed_providers
 
     @field_validator("engagement")
     @classmethod

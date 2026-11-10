@@ -110,9 +110,10 @@ observations are replaced by a one-line elision; the opening message is kept.
 | `audit_failure` | an audit record could not be written |
 | `max_actions` | RC-40: `RunLimits.max_actions` tool invocations reached |
 | `max_wall_clock` | RC-40: `RunLimits.max_wall_clock_seconds` elapsed |
-| `max_tokens` | RC-40: the next call could not fit, or reported usage crossed `RunLimits.max_tokens` |
+| `max_tokens` | RC-40: the next call could not fit, or reported usage crossed `RunLimits.max_tokens`; each request's output is capped to the remaining budget |
 | `max_cost` | RC-40: same, for `RunLimits.max_cost_usd` |
-| `model_failure` | RC-40: the adapter raised `LLMError` (non-retryable API error, retries exhausted, refusal) |
+| `model_failure` | RC-40: the adapter raised `LLMError` (non-retryable API error, retries exhausted) |
+| `model_refused` | RC-40: the adapter raised `LLMRefused` (the model declined the request) |
 
 ### 6. Enforcement stays outside the model
 

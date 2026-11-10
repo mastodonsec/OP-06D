@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""RC-40 — LLM planner: wire a real model into the orchestrator and `op06d run`
+"""RC-40: LLM planner: wire a real model into the orchestrator and `op06d run`
 
 Unit tests for the pieces the LLM planner adds around the loop: value-based
 secret scrubbing, observation fitting, strict reply parsing and the
@@ -101,10 +101,18 @@ def test_planner_policy_parses_and_is_enforced():
     assert eng.provider_allowed("local") and not eng.provider_allowed("anthropic")
 
 
-def test_absent_policy_allows_both_known_providers_only():
+def test_absent_policy_allows_only_local():
     eng = load_engagement(EXAMPLE)
-    assert eng.provider_allowed("anthropic") and eng.provider_allowed("local")
-    assert not eng.provider_allowed("openai")
+    assert eng.planner is None
+    assert eng.provider_allowed("local")
+    assert not eng.provider_allowed("anthropic") and not eng.provider_allowed("openai")
+
+
+def test_anthropic_needs_an_explicit_entry():
+    eng = parse_engagement(_with_planner({"allowed_providers": ["anthropic"]}))
+    assert eng.provider_allowed("anthropic") and not eng.provider_allowed("local")
+    both = parse_engagement(_with_planner({"allowed_providers": ["local", "anthropic"]}))
+    assert both.provider_allowed("anthropic") and both.provider_allowed("local")
 
 
 @pytest.mark.parametrize("planner", [{"allowed_providers": []}, {"allowed_providers": ["openai"]},

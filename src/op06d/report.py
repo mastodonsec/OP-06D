@@ -177,7 +177,7 @@ class LimitationsSection(_Frozen):
 
 
 class PlannerSection(_Frozen):
-    """RC-40 — LLM planner: wire a real model into the orchestrator and `op06d run`"""
+    """RC-40: LLM planner: wire a real model into the orchestrator and `op06d run`"""
 
     planner: str
     provider: str | None = None

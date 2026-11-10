@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""RC-40 — LLM planner: wire a real model into the orchestrator and `op06d run`
+"""RC-40: LLM planner: wire a real model into the orchestrator and `op06d run`
 
 Static checks that the LLM planner adds no path to the tools: the adapter and
 redaction modules import nothing that can start a process or reach a tool,
