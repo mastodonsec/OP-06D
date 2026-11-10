@@ -37,10 +37,14 @@ COMPOSE_FILE = ROOT / "lab" / "docker-compose.yml"
 # lab/validation_harness.py also imports.
 sys.path.insert(0, str(ROOT / "lab"))
 import lab_asserts  # noqa: E402
+import lab_stack as stack  # noqa: E402
 from scan_driver import isolation_failure_reason  # noqa: E402
 
 BASELINE = lab_asserts.load_baseline()
 EPHEMERAL_SUBDIR = "_rc20_ephemeral"  # under the scanner's /captures mount; wiped before every run
+# The engagement with a window around "now", generated once per module run
+# from the lab/engagement.yaml template (lab/make_lab_engagement.py).
+ENGAGEMENT = f"/captures/{EPHEMERAL_SUBDIR}/engagement.yaml"
 
 
 def _require_lab_enabled() -> None:
@@ -80,15 +84,13 @@ def lab_stack():
     #3: never leave containers running)."""
     _require_lab_enabled()
     _require_docker()
-    up = _compose("up", "-d", timeout=180)
-    try:
-        if up.returncode != 0:
-            pytest.fail(f"docker compose up failed:\n{up.stdout}\n{up.stderr}")
+    with stack.lab_stack(_compose):
         _wait_for_targets()
         _assert_isolation_or_abort()
+        gen = stack.generate_engagement(_exec, ENGAGEMENT)
+        if gen.returncode != 0:
+            pytest.fail(f"could not generate the lab engagement:\n{gen.stdout}\n{gen.stderr}")
         yield
-    finally:
-        _compose("down", timeout=120)
 
 
 def _wait_for_targets(attempts: int = 30, delay: float = 2.0) -> None:
@@ -132,7 +134,8 @@ def _fresh_capture_dir(name: str) -> str:
 def _run_scan_set(name: str) -> dict:
     out_dir = _fresh_capture_dir(name)
     summary_path = f"{out_dir}/summary.json"
-    r = _exec("python3", "/lab/scan_driver.py", out_dir, "--json", summary_path, timeout=300)
+    r = _exec("python3", "/lab/scan_driver.py", out_dir, "--json", summary_path,
+              "--engagement", ENGAGEMENT, timeout=300)
     assert r.returncode == 0, f"scan_driver.py failed:\n{r.stdout}\n{r.stderr}"
     read = _exec("cat", summary_path, timeout=30)
     assert read.returncode == 0, f"could not read scan summary: {read.stderr}"

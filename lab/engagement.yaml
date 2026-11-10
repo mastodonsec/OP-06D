@@ -7,8 +7,11 @@
 #   dvwa.lab       / 172.31.77.11   (HTTP on 80)
 # The scanner itself (172.31.77.20) is explicitly OUT of scope.
 #
-# Edit `window` before use: it is deliberately short, and the gate refuses to act
-# outside it. Times are UTC and must include a timezone.
+# This file is a TEMPLATE. Do not hand-edit `window` below: each run generates
+# its own copy with a window around "now" (lab/make_lab_engagement.py, run inside
+# the scanner; see lab/RUNBOOK.md Step 1). Only `window` differs in the generated
+# copy, which still loads through the normal engagement schema, and the gate
+# still refuses to act outside it.
 engagement: rc-lab-2026-11
 authorization:
   client: "OP-06D lab (self-owned, isolated)"

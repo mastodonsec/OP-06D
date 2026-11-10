@@ -46,6 +46,9 @@ lab/captures/_rc20_ephemeral/
 # RC-24 validation-harness evidence bundles — timestamped, one per run, never committed
 lab/captures/validation-*/
 
+# Per-run lab engagements generated from lab/engagement.yaml (hand runs) — never committed
+lab/captures/engagement.now.yaml
+
 # Unit test / coverage reports
 htmlcov/
 .tox/

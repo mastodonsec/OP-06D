@@ -33,6 +33,7 @@ COMPOSE_FILE = ROOT / "lab" / "docker-compose.yml"
 # ambient_config_failures; lab/validation_harness.py uses both too.
 sys.path.insert(0, str(ROOT / "lab"))
 import lab_asserts  # noqa: E402
+import lab_stack as stack  # noqa: E402
 
 
 def _require_lab_enabled() -> None:
@@ -81,17 +82,12 @@ def _wait_for_targets(attempts: int = 30, delay: float = 2.0) -> None:
 def lab_stack():
     _require_lab_enabled()
     _require_docker()
-    up = _compose("up", "-d", timeout=180)
-    try:
-        if up.returncode != 0:
-            pytest.fail(f"docker compose up failed:\n{up.stdout}\n{up.stderr}")
+    with stack.lab_stack(_compose):
         _wait_for_targets()
         iso = _exec("scanner", "bash", "/lab/check_isolation.sh", timeout=120)
         if iso.returncode != 0:
             pytest.fail(f"ABORT: isolation did not PASS, refusing to scan:\n{iso.stdout}\n{iso.stderr}")
         yield
-    finally:
-        _compose("down", timeout=120)
 
 
 def test_hostile_ambient_config_cannot_override_the_wrapper_against_real_nuclei(lab_stack):

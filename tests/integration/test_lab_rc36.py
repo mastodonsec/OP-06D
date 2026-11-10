@@ -19,6 +19,7 @@ import os
 import pathlib
 import shutil
 import subprocess
+import sys
 import time
 
 import pytest
@@ -27,6 +28,9 @@ pytestmark = pytest.mark.lab
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent.parent
 COMPOSE_FILE = ROOT / "lab" / "docker-compose.yml"
+
+sys.path.insert(0, str(ROOT / "lab"))
+import lab_stack as stack  # noqa: E402
 BUNDLED_EXCLUSIONS = ROOT / "src" / "op06d" / "nuclei_write_method_exclusions.json"
 
 _AUDIT_PROBE = """
@@ -75,14 +79,9 @@ def _exec(*args: str, timeout: float = 180) -> subprocess.CompletedProcess:
 def lab_stack():
     _require_lab_enabled()
     _require_docker()
-    up = _compose("up", "-d", timeout=180)
-    try:
-        if up.returncode != 0:
-            pytest.fail(f"docker compose up failed:\n{up.stdout}\n{up.stderr}")
+    with stack.lab_stack(_compose):
         time.sleep(3)  # the scanner container itself needs no app targets for this check
         yield
-    finally:
-        _compose("down", timeout=120)
 
 
 def test_bundled_exclusion_list_covers_every_write_method_template_in_the_pinned_set(lab_stack):
