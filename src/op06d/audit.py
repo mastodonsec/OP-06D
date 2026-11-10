@@ -31,6 +31,7 @@ from typing import Any, Callable
 from pydantic import BaseModel, ConfigDict, ValidationError
 
 from op06d.engagement import Engagement, is_valid_engagement_id
+from op06d.redaction import scrub, scrub_text
 
 # (target, allowed, reason) -> None. The scope gate depends only on this.
 AuditSink = Callable[[str, bool, str], None]
@@ -49,6 +50,8 @@ EVENT_LOOP_END = "loop_terminated"  # RC-7: why and when the loop stopped
 # resolve-once pin. Written once per hostname, never again, even if DNS for
 # that name changes later in the same engagement.
 EVENT_DNS_PINNED = "dns_pinned"
+# RC-40 — LLM planner: wire a real model into the orchestrator and `op06d run`
+EVENT_PLANNER_CONFIG = "planner_config"
 # Events whose ``allowed`` flag is meaningful (an allow/deny or approve/decline).
 _ALLOWED_EVENTS = frozenset({EVENT_GATE_DECISION, EVENT_APPROVAL})
 EVENT_ACTION_EXECUTED = "action_executed"
@@ -205,7 +208,7 @@ class AuditLog:
 
     def _build(self, event, target, tool, parameters, allowed, reason) -> AuditEntry:
         # Round-trip through JSON so what is hashed is exactly what is stored.
-        params = json.loads(json.dumps(parameters or {}, default=repr, sort_keys=True))
+        params = scrub(json.loads(json.dumps(parameters or {}, default=repr, sort_keys=True)))
         ts = self._clock().astimezone(timezone.utc).isoformat(timespec="milliseconds")
         fields: dict[str, Any] = {
             "v": SCHEMA_VERSION,
@@ -213,11 +216,11 @@ class AuditLog:
             "ts": ts.replace("+00:00", "Z"),
             "engagement": self.engagement_id,
             "event": event,
-            "target": None if target is None else _safe_repr(target),
-            "tool": tool,
+            "target": None if target is None else scrub_text(_safe_repr(target)),
+            "tool": scrub_text(tool) if isinstance(tool, str) else tool,
             "parameters": params,
             "allowed": allowed,
-            "reason": reason,
+            "reason": scrub_text(reason) if isinstance(reason, str) else reason,
             "prev_hash": self._prev,
         }
         return AuditEntry(**fields, hash=_digest(fields))

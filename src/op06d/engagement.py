@@ -12,7 +12,7 @@ import ipaddress
 import re
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Literal
 
 import yaml
 from pydantic import (
@@ -134,6 +134,20 @@ class Intensity(_Frozen):
     destructive: bool = False
 
 
+LLM_PROVIDERS = ("anthropic", "local")
+
+
+class PlannerPolicy(_Frozen):
+    """RC-40 — LLM planner: wire a real model into the orchestrator and `op06d run`"""
+
+    allowed_providers: list[Literal["anthropic", "local"]] = Field(min_length=1)
+
+    @field_validator("allowed_providers")
+    @classmethod
+    def _dedupe(cls, v: list[str]) -> list[str]:
+        return sorted(set(v))
+
+
 # Public out-of-band (interactsh) servers: callback data about a client's systems
 # must never go to a third party, so these are refused outright.
 PUBLIC_INTERACTSH_DOMAINS = (
@@ -155,6 +169,12 @@ class Engagement(_Frozen):
     # Optional self-hosted interactsh server for out-of-band checks. Absent means
     # out-of-band detection stays OFF (nuclei is run with -no-interactsh).
     interactsh_server: NonEmptyStr | None = None
+    planner: PlannerPolicy | None = None
+
+    def provider_allowed(self, provider: str) -> bool:
+        if provider not in LLM_PROVIDERS:
+            return False
+        return self.planner is None or provider in self.planner.allowed_providers
 
     @field_validator("engagement")
     @classmethod
