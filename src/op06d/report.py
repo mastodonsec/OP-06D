@@ -62,6 +62,7 @@ __all__ = [
     "AuditTrailSection",
     "IssueView",
     "LimitationsSection",
+    "PlannerSection",
     "Report",
     "build_report",
     "render_markdown",
@@ -175,6 +176,22 @@ class LimitationsSection(_Frozen):
     issues: list[IssueView]
 
 
+class PlannerSection(_Frozen):
+    """RC-40: LLM planner: wire a real model into the orchestrator and `op06d run`"""
+
+    planner: str
+    provider: str | None = None
+    model: str | None = None
+    endpoint_class: str | None = None
+    context_tokens: int | None = None
+    iterations: int | None = None
+    actions: int | None = None
+    termination: str | None = None
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+    limits: dict[str, Any] = Field(default_factory=dict)
+
+
 class Report(_Frozen):
     header: Header
     executive_summary: ExecutiveSummary
@@ -183,6 +200,7 @@ class Report(_Frozen):
     findings: FindingsSection
     audit_trail: AuditTrailSection
     limitations: LimitationsSection
+    planner: PlannerSection | None = None
 
 
 # --- build_report --------------------------------------------------------
@@ -338,8 +356,40 @@ def build_report(run: ReconstructedRun) -> Report:
     return Report(
         header=header, executive_summary=executive_summary, scope=scope,
         methodology=methodology, findings=findings_section, audit_trail=audit_trail,
-        limitations=limitations,
+        limitations=limitations, planner=_planner_section(run.planner),
     )
+
+
+_PLANNER_FIELDS = (
+    "planner", "provider", "model", "endpoint_class", "context_tokens", "iterations",
+    "actions", "termination", "input_tokens", "output_tokens", "limits",
+)
+
+
+def _planner_section(info: dict[str, Any] | None) -> PlannerSection | None:
+    if not isinstance(info, dict) or not isinstance(info.get("planner"), str):
+        return None
+    data = {k: info[k] for k in _PLANNER_FIELDS if info.get(k) is not None}
+    try:
+        return PlannerSection.model_validate(data)
+    except ValueError:
+        return PlannerSection(planner=info["planner"])
+
+
+def planner_rows(p: PlannerSection) -> list[tuple[str, str]]:
+    """(label, value) rows for the planner section, shared by both renderers."""
+    rows = [("Planner", p.planner)]
+    for label, value in (
+        ("Provider", p.provider), ("Model", p.model), ("Endpoint", p.endpoint_class),
+        ("Context size (tokens)", p.context_tokens), ("Iterations", p.iterations),
+        ("Tool actions", p.actions), ("Termination reason", p.termination),
+        ("Input tokens", p.input_tokens), ("Output tokens", p.output_tokens),
+    ):
+        if value is not None:
+            rows.append((label, str(value)))
+    if p.limits:
+        rows.append(("Limits", ", ".join(f"{k}={v}" for k, v in sorted(p.limits.items()))))
+    return rows
 
 
 # --- render_markdown --------------------------------------------------------
@@ -496,6 +546,15 @@ def _render_limitations(section: LimitationsSection) -> list[str]:
     return lines
 
 
+def _render_planner(p: PlannerSection | None) -> list[str]:
+    if p is None:
+        return []
+    lines = ["## Planner", "", "| Field | Value |", "|---|---|"]
+    lines += [f"| {k} | {_md_escape(v)} |" for k, v in planner_rows(p)]
+    lines.append("")
+    return lines
+
+
 def render_markdown(report: Report) -> str:
     """``Report`` -> Markdown text. Deterministic for a given ``Report``
     (which is itself deterministic for a given ``ReconstructedRun`` -
@@ -507,5 +566,6 @@ def render_markdown(report: Report) -> str:
     lines += _render_methodology(report.methodology)
     lines += _render_findings(report.findings)
     lines += _render_audit_trail(report.audit_trail)
+    lines += _render_planner(report.planner)
     lines += _render_limitations(report.limitations)
     return "\n".join(lines).rstrip() + "\n"

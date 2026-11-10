@@ -71,6 +71,7 @@ from op06d.audit import (
 )
 from op06d.engagement import Engagement
 from op06d.gate import ALLOWED, DENIED_AUDIT, DENIED_RATE, Gate, GateDecision
+from op06d.redaction import scrub
 from op06d.sanitize import SanitizedOutput, sanitize_tool_output, sha256_of
 
 STAGE_TOOL = "tool"  # denied before the gate: unknown tool, bad parameters, destructive
@@ -197,7 +198,7 @@ def redact_parameters(
     out: dict[str, Any] = {}
     for k, v in parameters.items():
         key = k if isinstance(k, str) else repr(k)
-        out[key] = REDACTED if (key.lower() in sens or _SECRET_KEY_RE.search(key)) else v
+        out[key] = REDACTED if (key.lower() in sens or _SECRET_KEY_RE.search(key)) else scrub(v)
     return out
 
 

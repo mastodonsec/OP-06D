@@ -44,6 +44,7 @@ from op06d.report import (
     Report,
     ScopeSection,
     build_report,
+    planner_rows,
 )
 
 __all__ = [
@@ -363,6 +364,15 @@ def _render_limitations(report: Report) -> str:
     return f'<div class="section"><h2>Limitations &amp; Notes</h2>{body}</div>'
 
 
+def _render_planner(report: Report) -> str:
+    if report.planner is None:
+        return ""
+    rows = "".join(
+        f"<tr><th>{_e(k)}</th><td>{_e(v)}</td></tr>" for k, v in planner_rows(report.planner)
+    )
+    return f'<div class="section"><h2>Planner</h2><table>{rows}</table></div>'
+
+
 def render_html(report: Report) -> str:
     """``Report`` -> a single self-contained HTML document. Deterministic
     for a given ``Report`` (which is itself deterministic for a given
@@ -375,6 +385,7 @@ def render_html(report: Report) -> str:
         _render_methodology(report.methodology),
         _render_findings(report),
         _render_audit_trail(report),
+        _render_planner(report),
         _render_limitations(report),
     ])
     title = _e(f"Security Assessment Report - {report.header.engagement}")

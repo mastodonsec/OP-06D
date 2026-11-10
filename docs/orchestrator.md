@@ -35,7 +35,7 @@ traceability, tests with a stub LLM.
 |---|---|
 | The interactive CLI approval prompt (implements `ApprovalHook`) | RC-8 |
 | Real nmap / nuclei MCP wrappers | RC-13, RC-14 |
-| A real LLM client | RC-7 follow-up / CLI |
+| A real LLM client | RC-40 (see [llm-planner.md](llm-planner.md)) |
 | Normalizing raw output into findings; evidence store | RC-15, RC-16 |
 | Live-model injection testing | RC-21 |
 
@@ -108,6 +108,12 @@ observations are replaced by a one-line elision; the opening message is kept.
 | `planner_failure` | `max_planner_failures` (default 3) consecutive LLM errors or invalid replies |
 | `gate_unusable` | window/rate config unusable or clock failure |
 | `audit_failure` | an audit record could not be written |
+| `max_actions` | RC-40: `RunLimits.max_actions` tool invocations reached |
+| `max_wall_clock` | RC-40: `RunLimits.max_wall_clock_seconds` elapsed |
+| `max_tokens` | RC-40: the next call could not fit, or reported usage crossed `RunLimits.max_tokens`; each request's output is capped to the remaining budget |
+| `max_cost` | RC-40: same, for `RunLimits.max_cost_usd` |
+| `model_failure` | RC-40: the adapter raised `LLMError` (non-retryable API error, retries exhausted) |
+| `model_refused` | RC-40: the adapter raised `LLMRefused` (the model declined the request) |
 
 ### 6. Enforcement stays outside the model
 
@@ -231,4 +237,4 @@ uv run --extra dev pytest tests/test_orchestrator.py
 - Sanitization and the data contract reduce, but do not eliminate, the chance a
   real model is steered. The guarantee is the gate. Validate with a live model
   and varied/multilingual payloads in RC-21.
-- No real MCP wrapper or LLM client exists yet; both are protocols here.
+- Production LLM adapters live in `op06d.llm` (RC-40); see [llm-planner.md](llm-planner.md).
