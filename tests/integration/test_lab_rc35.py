@@ -18,6 +18,7 @@ import os
 import pathlib
 import shutil
 import subprocess
+import sys
 import time
 
 import pytest
@@ -27,78 +28,12 @@ pytestmark = pytest.mark.lab
 ROOT = pathlib.Path(__file__).resolve().parent.parent.parent
 COMPOSE_FILE = ROOT / "lab" / "docker-compose.yml"
 
-# Three tiny loopback-only servers, as in RUNBOOK Step 11a: PROBE answers 302
-# to CANARY; CANARY and OAST just log. The hostile ambient config (11b) asks
-# nuclei to follow that redirect, send a hostile header, and contact OAST as
-# an interactsh server - none of which must happen once the fix is in place.
-_SETUP_AND_PROBE = r"""
-import http.server, json, os, socketserver, threading, time
-
-LOG = []
-
-def note(who, h):
-    LOG.append((who, h.command, h.path, dict(h.headers)))
-
-class Probe(http.server.BaseHTTPRequestHandler):
-    def do_GET(self):
-        note("PROBE", self)
-        self.send_response(302); self.send_header("Location", "http://127.0.0.1:18092/redirected"); self.end_headers()
-    log_message = lambda *a: None
-
-class Canary(http.server.BaseHTTPRequestHandler):
-    who = "CANARY"
-    def do_GET(self):
-        note(self.who, self); self.send_response(200); self.end_headers(); self.wfile.write(b"ok")
-    do_POST = do_HEAD = do_GET
-    log_message = lambda *a: None
-
-class Oast(Canary):
-    who = "OAST"
-
-class S(socketserver.ThreadingMixIn, http.server.HTTPServer):
-    daemon_threads = True
-
-for port, h in ((18091, Probe), (18092, Canary), (18093, Oast)):
-    threading.Thread(target=S(("127.0.0.1", port), h).serve_forever, daemon=True).start()
-time.sleep(0.5)
-
-TEMPLATES = "/tmp/rc35-templates"
-os.makedirs(TEMPLATES, exist_ok=True)
-with open(f"{TEMPLATES}/probe.yaml", "w") as f:
-    f.write(
-        "id: rc35-probe\n"
-        "info:\n  name: rc35 probe\n  author: lab\n  severity: info\n  tags: tech\n"
-        "http:\n  - method: GET\n    path:\n      - \"{{BaseURL}}/\"\n"
-        "    matchers:\n      - type: status\n        status:\n          - 302\n"
-    )
-
-HOSTILE_CONFIG_DIR = os.path.expanduser("~/.config/nuclei")
-os.makedirs(HOSTILE_CONFIG_DIR, exist_ok=True)
-with open(f"{HOSTILE_CONFIG_DIR}/config.yaml", "w") as f:
-    f.write(
-        "interactsh-server: 127.0.0.1:18093\n"
-        "no-interactsh: false\n"
-        "follow-redirects: true\n"
-        "header:\n  - \"X-Hostile-Config: 1\"\n"
-    )
-
-try:
-    from op06d.nuclei_tool import NucleiTool
-    tool = NucleiTool(50, template_dir=TEMPLATES)
-    result = tool.run("127.0.0.1", {"port": 18091, "scheme": "http"})
-    seen_who = {entry[0] for entry in LOG}
-    seen_headers = {k: v for entry in LOG for k, v in entry[3].items()}
-    print(json.dumps({
-        "status": result.status,
-        "probe_hit": "PROBE" in seen_who,
-        "redirect_followed": "CANARY" in seen_who,
-        "hostile_header_sent": "X-Hostile-Config" in seen_headers,
-        "oast_contacted": "OAST" in seen_who,
-        "out_of_band": result.findings.get("out_of_band") if isinstance(result.findings, dict) else None,
-    }))
-finally:
-    os.remove(f"{HOSTILE_CONFIG_DIR}/config.yaml")
-"""
+# RC-24: the replay itself (loopback servers, hostile config, the run) is
+# lab/ambient_config_probe.py and the judgement is lab_asserts.py's
+# ambient_config_failures - both shared with lab/validation_harness.py, so
+# the test and the harness cannot drift apart.
+sys.path.insert(0, str(ROOT / "lab"))
+import lab_asserts  # noqa: E402
 
 
 def _require_lab_enabled() -> None:
@@ -161,13 +96,11 @@ def lab_stack():
 
 
 def test_hostile_ambient_config_cannot_override_the_wrapper_against_real_nuclei(lab_stack):
-    r = _exec("scanner", "python3", "-c", _SETUP_AND_PROBE, timeout=60)
+    r = _exec("scanner", "python3", "/lab/ambient_config_probe.py", timeout=420)
     assert r.returncode == 0, f"probe failed:\n{r.stdout}\n{r.stderr}"
     result = json.loads(r.stdout.strip().splitlines()[-1])
 
-    assert result["probe_hit"] is True  # the experiment itself reached the target
-    assert result["status"] == "ok"  # no [FTL] redirect-conflict crash
-    assert result["redirect_followed"] is False  # -disable-redirects still holds
-    assert result["hostile_header_sent"] is False  # the ambient header was never merged in
-    assert result["oast_contacted"] is False  # out-of-band stayed off
-    assert result["out_of_band"] == "off"
+    assert result["hostile_config_removed"] is True  # the hostile config must not linger
+    # probe hit, status ok (no [FTL] redirect-conflict crash), no redirect
+    # followed, no hostile header, no OAST contact, out_of_band == "off"
+    lab_asserts.assert_ambient_config_neutralized(result["wrapper"])
