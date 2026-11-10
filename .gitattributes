@@ -3,3 +3,5 @@
 lab/*.sh text eol=lf
 lab/scanner/** text eol=lf
 lab/docker-compose.yml text eol=lf
+lab/relay/** text eol=lf
+lab/model-relay.*.yml text eol=lf

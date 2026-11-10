@@ -1,0 +1,76 @@
+# RC-47: Lab model relay: let the sealed scanner reach the planner model for lab runs
+#
+# OPT-IN overlay, upstream = host Ollama. Never part of the base lab.
+# Start it ONLY through the launcher, which checks the engagement policy and
+# that exactly one overlay is used:
+#   uv run python lab/model_relay.py up local
+#
+#   scanner (172.31.78.20) --relaynet (internal)--> model-relay (172.31.78.2:11434)
+#   model-relay --relay_egress--> host.docker.internal:11434 (host Ollama), nothing else
+#
+# * relaynet is internal and joins ONLY the scanner and the relay. The targets
+#   stay on labnet only; labnet itself is untouched.
+# * relay_egress is the only network with an outbound route, and only the relay
+#   is on it. The relay's own iptables allow just the one upstream address and
+#   port, then HAProxy runs unprivileged with every capability dropped
+#   (lab/relay/relay-entrypoint.sh).
+# * Point op06d at the relay explicitly:
+#     --llm-provider local --llm-endpoint http://172.31.78.2:11434 --llm-allow-private 172.31.78.2
+# * The scanner image here is the RC-19 image plus the anthropic SDK
+#   (lab/relay/scanner-llm.Dockerfile); it is the same image in both modes.
+
+name: rc-lab
+
+services:
+  scanner:
+    image: op06d-lab-scanner-llm:nmap-7.93-nuclei-3.11.1-templates-10.5.1-anthropic-2.8.0
+    build:
+      context: ./relay
+      dockerfile: scanner-llm.Dockerfile
+      args:
+        BASE_IMAGE: op06d-lab-scanner:nmap-7.93-nuclei-3.11.1-templates-10.5.1
+    networks:
+      relaynet:
+        ipv4_address: 172.31.78.20
+
+  model-relay:
+    build:
+      context: ./relay
+    image: op06d-lab-relay:alpine-3.24.4-haproxy-3.4.7
+    command: ["local"]
+    restart: "no"
+    init: true
+    read_only: true
+    tmpfs:
+      - /run
+      - /tmp
+    mem_limit: 64m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    # Held only by the entrypoint (iptables, then setpriv); HAProxy runs with none.
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+      - SETUID
+      - SETGID
+      - SETPCAP
+    environment:
+      RELAY_NET: 172.31.78.0/24
+      RELAY_BIND: 172.31.78.2
+    networks:
+      relaynet:
+        ipv4_address: 172.31.78.2
+      relay_egress: {}
+
+networks:
+  relaynet:
+    driver: bridge
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.31.78.0/24
+  relay_egress:
+    driver: bridge
+    internal: false
