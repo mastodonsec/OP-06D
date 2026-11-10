@@ -1,6 +1,6 @@
 # Python packages for running OP-06D inside the lab scanner. Build-time only.
 # Pinned. If the project's own versions differ (compare with `pip freeze` on the
 # host), update these to match before trusting lab results.
-pydantic==2.10.6
-PyYAML==6.0.2
-pytest==7.4.0
+pydantic==2.14.2
+PyYAML==6.0.3
+pytest==9.2.0
