@@ -74,6 +74,8 @@ session and after any change to `lab/docker-compose.yml` or Docker.
 | **nuclei** | **v3.11.1** | release zip, sha256 `ea63d4ae232808cd7c6bc00d0142428e231fab59dae01042246097d195835ab6` |
 | **nuclei-templates** | **v10.5.1** | tag tarball, sha256 `30fe1cfaced4635f886e4a2673641bba86998dceec28e468274524e789aa56eb` |
 | Python packages (inside the scanner) | pydantic 2.14.2, PyYAML 6.0.3, pytest 9.2.0 | `lab/scanner/requirements.txt` (compare with your host's `pip freeze`) |
+| Model relay image (RC-47 overlay only) | alpine 3.24.4, HAProxy 3.4.7, iptables 1.8.13, socat 1.8.1.3 | digest in `lab/relay/Dockerfile`; package versions recorded in `/opt/relay-versions.txt` |
+| Overlay scanner extras (RC-47 overlay only) | anthropic 2.8.0 + dependencies | `lab/relay/scanner-llm-requirements.txt` (hashes, from `uv.lock`) |
 
 The `latest` tag is not used anywhere. Step 5 records what is actually installed.
 
@@ -951,3 +953,148 @@ docker compose -f $LAB down
 ```
 
 (`down -v` is unnecessary; no volumes are used. Images stay cached.)
+
+
+---
+
+## Model relay (RC-47, OPT-IN): `op06d run --planner llm` in the lab
+
+RC-47: Lab model relay: let the sealed scanner reach the planner model for lab runs
+
+The base lab above never changes. For an LLM-planner run, an overlay adds one
+relay container and one more internal network:
+
+```
+scanner 172.31.77.20 (labnet) + 172.31.78.20 (relaynet)
+   └─ relaynet (internal) ─> model-relay 172.31.78.2  ─ relay_egress ─> ONE upstream
+juice-shop, dvwa: labnet only (never on relaynet)
+```
+
+| Mode | Overlay | Relay listens | Upstream | Scanner points op06d at |
+|---|---|---|---|---|
+| `local` | `lab/model-relay.local.yml` | `172.31.78.2:11434` | `host.docker.internal:11434` (host Ollama) | `--llm-endpoint http://172.31.78.2:11434 --llm-allow-private 172.31.78.2` |
+| `anthropic` | `lab/model-relay.anthropic.yml` | `172.31.78.2:443` | `api.anthropic.com:443`, raw TCP passthrough | the pinned hosted endpoint; inside the scanner `api.anthropic.com` resolves to the relay |
+
+- **One upstream per stack.** The two overlays define the same relay; the
+  launcher refuses to start one mode while the other is running.
+- **The relay** (`lab/relay/`): alpine 3.24.4 pinned by digest, HAProxy in TCP
+  mode. Its entrypoint resolves the one upstream, installs iptables rules that
+  allow only that address and port (IPv6: nothing), then runs HAProxy as an
+  unprivileged user with every capability dropped. In `anthropic` mode it
+  forwards a connection only if the TLS ClientHello's SNI is
+  `api.anthropic.com`; TLS is never terminated, so the certificate is
+  validated end to end by the scanner against the real host.
+- **Why the SNI filter:** the address `api.anthropic.com` resolves to also
+  serves other names (verified while building RC-47: through plain passthrough,
+  valid certificates came back for `example.com`, `claude.ai` and
+  `anthropic.com`). Without the filter the scanner could reach those. A
+  mismatched `Host` header behind the right SNI got `403 Forbidden` from the edge.
+- **The scanner image** in the overlay is the base image plus the anthropic
+  SDK (`lab/relay/scanner-llm.Dockerfile`, pins and hashes from `uv.lock`).
+- **The API key** is never in a compose file, image, `.env` or the container's
+  configuration. `run anthropic` passes it to one `docker compose exec` by
+  name (`-e ANTHROPIC_API_KEY`), and Docker reads the value from your shell.
+- **Engagement policy:** `lab/engagement.yaml` has no `planner:` block, so only
+  `local` is allowed. `anthropic` needs `lab/engagement-llm-hosted.yaml` (the
+  same engagement plus `planner.allowed_providers: [local, anthropic]`), named
+  explicitly; the launcher refuses otherwise, and op06d refuses again inside.
+
+### Ollama on the host (Docker Desktop, Windows)
+
+Measured on Docker Desktop (WSL2 backend, Docker 29.9.3): a container reaches
+a host service bound to **127.0.0.1 only** through `host.docker.internal`
+(192.168.65.254); the host sees the connection as coming from 127.0.0.1. So
+Ollama does **not** need to listen on the network for the relay:
+
+- Leave `OLLAMA_HOST` unset (default `127.0.0.1:11434`), and in the Ollama app
+  turn **off** Settings > "Expose Ollama to the network" (that toggle makes it
+  listen on `0.0.0.0` and `[::]`, i.e. on the LAN). Quit and restart Ollama.
+- Confirm: `Get-NetTCPConnection -LocalPort 11434 -State Listen | Select-Object LocalAddress`
+  must show only `127.0.0.1` (and/or `::1`).
+- Defence in depth if you ever do need it exposed: an inbound block rule for
+  the LAN (elevated PowerShell):
+  `New-NetFirewallRule -DisplayName "Ollama 11434 block inbound" -Direction Inbound -Protocol TCP -LocalPort 11434 -RemoteAddress Any -Action Block`
+  (Docker Desktop's path arrives as loopback, so this does not break the relay.)
+- Pull the RC-40 default local model once: `ollama pull llama3.1:8b-instruct-q5_K_M`
+
+### Commands (PowerShell, repository root)
+
+Build once (internet needed; builds the base scanner if missing, then the
+overlay scanner and the relay):
+
+```powershell
+uv run python lab/model_relay.py build local
+```
+
+**local** (host Ollama):
+
+```powershell
+uv run python lab/model_relay.py up local
+uv run python lab/model_relay.py check local     # must print RESULT: PASS
+uv run python lab/model_relay.py run local       # re-checks isolation, runs op06d, verifies the report
+uv run python lab/model_relay.py down
+```
+
+**anthropic** (egress via the relay only):
+
+```powershell
+$env:ANTHROPIC_API_KEY = Read-Host -MaskInput "Anthropic API key"
+uv run python lab/model_relay.py up anthropic --engagement lab/engagement-llm-hosted.yaml
+uv run python lab/model_relay.py check anthropic # must print RESULT: PASS
+uv run python lab/model_relay.py run anthropic --engagement lab/engagement-llm-hosted.yaml
+uv run python lab/model_relay.py down
+Remove-Item Env:ANTHROPIC_API_KEY
+```
+
+`run` limits the acceptance run (`--max-iterations 12 --max-actions 6
+--max-wall-clock 1800 --max-tokens 300000` by default; each is a flag). The
+report, evidence store and audit log land in
+`lab/captures/_rc47_ephemeral/<mode>/run/` (git-ignored); `run` fails if the
+report has no Planner section, nothing executed through the gate, a target
+was out of scope, the audit log does not verify, or key material appears in
+any file there.
+
+`check` runs three layers and needs all to PASS:
+
+1. host side (`docker inspect`): labnet and relaynet internal, relay_egress the
+   only routable network with only the relay on it; exact network membership
+   of every container; no published ports, privileges or host networking; the
+   relay's command is the one mode; the scanner's name override is exactly
+   `api.anthropic.com -> 172.31.78.2` (anthropic) or none (local); no key in the
+   scanner's container configuration;
+2. inside the scanner (`lab/check_relay_isolation.sh`): every outbound attempt
+   of `lab/check_isolation.sh` (a default-suite test keeps them identical), the
+   relay's other ports, the relay's outward address, name resolution, and in
+   anthropic mode the SNI filter;
+3. inside the relay, as its unprivileged user (`check_relay_egress.sh`): only
+   the upstream is reachable, HAProxy holds no capabilities; plus a probe from
+   the dvwa target to the relay network, which must fail.
+
+With the overlay up, `lab/check_isolation.sh` FAILS by design (the scanner has
+two interfaces). After `down`, rerun Step 4 before any non-relay scan.
+
+### Automated acceptance and the live-model gate
+
+```powershell
+# lab acceptance, one upstream per invocation
+$env:OP06D_LAB = "1"; $env:OP06D_LLM_PROVIDER = "local"
+uv run pytest -m lab tests/integration/test_lab_rc47.py -rs
+$env:OP06D_LLM_PROVIDER = "anthropic"; $env:ANTHROPIC_API_KEY = Read-Host -MaskInput "Anthropic API key"
+uv run pytest -m lab tests/integration/test_lab_rc47.py -rs
+Remove-Item Env:OP06D_LLM_PROVIDER, Env:ANTHROPIC_API_KEY
+
+# RC-21 live-model gate through the relay (overlay up, see above), local:
+docker compose -f lab/docker-compose.yml -f lab/model-relay.local.yml exec -T `
+  -e OP06D_LIVE_MODEL=1 -e OP06D_LIVE_PROVIDER=local `
+  -e OP06D_LLM_ENDPOINT=http://172.31.78.2:11434 -e OP06D_LLM_ALLOW_PRIVATE=172.31.78.2 `
+  scanner python3 -m pytest -p no:cacheprovider --basetemp /tmp/live-gate -rs /op06d/tests/test_live_model_gate.py
+# ... and anthropic (key from your shell, by name):
+docker compose -f lab/docker-compose.yml -f lab/model-relay.anthropic.yml exec -T `
+  -e OP06D_LIVE_MODEL=1 -e OP06D_LIVE_PROVIDER=anthropic -e ANTHROPIC_API_KEY `
+  scanner python3 -m pytest -p no:cacheprovider --basetemp /tmp/live-gate -rs /op06d/tests/test_live_model_gate.py
+```
+
+The integration test brings the stack down at the end; for manual runs,
+always finish with `uv run python lab/model_relay.py down` (it also removes the
+relay and its networks; a plain `docker compose -f lab/docker-compose.yml down`
+would leave the relay running as an orphan).
