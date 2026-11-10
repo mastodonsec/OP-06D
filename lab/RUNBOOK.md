@@ -73,7 +73,7 @@ session and after any change to `lab/docker-compose.yml` or Docker.
 | **nmap** | **7.93+dfsg1-1** (Debian bookworm package) | exact apt version in `lab/scanner/Dockerfile` |
 | **nuclei** | **v3.11.1** | release zip, sha256 `ea63d4ae232808cd7c6bc00d0142428e231fab59dae01042246097d195835ab6` |
 | **nuclei-templates** | **v10.5.1** | tag tarball, sha256 `30fe1cfaced4635f886e4a2673641bba86998dceec28e468274524e789aa56eb` |
-| Python packages (inside the scanner) | pydantic 2.10.6, PyYAML 6.0.2, pytest 7.4.0 | `lab/scanner/requirements.txt` (compare with your host's `pip freeze`) |
+| Python packages (inside the scanner) | pydantic 2.14.2, PyYAML 6.0.3, pytest 9.2.0 | `lab/scanner/requirements.txt` (compare with your host's `pip freeze`) |
 
 The `latest` tag is not used anywhere. Step 5 records what is actually installed.
 
