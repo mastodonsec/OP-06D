@@ -1,9 +1,10 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""RC-24: the ONE copy of the lab-result assertions, shared by the gated
-pytest integration tests (tests/integration/test_lab_rc20.py,
-tests/integration/test_lab_rc35.py) and the one-command validation harness
-(lab/validation_harness.py), so a pass in one means the same thing as a pass
-in the other.
+"""RC-24: Lab runbook polish + validation harness
+RC-20: Functional and repeatability tests against the lab
+RC-35: nuclei: neutralize ambient config + control HOME
+
+The lab-result assertions used by tests/integration/test_lab_rc20.py,
+tests/integration/test_lab_rc35.py and lab/validation_harness.py.
 
 Host-side, stdlib-only, pure: every function takes already-parsed JSON
 (a ``lab/scan_driver.py`` summary, or a ``lab/ambient_config_probe.py``
@@ -49,7 +50,7 @@ def unrepr(value: object) -> object:
     return value
 
 
-# -- RC-20: scan set vs the frozen baseline ----------------------------------
+# -- scan set vs the frozen baseline -----------------------------------------
 
 def open_ports(nmap_findings: dict) -> set:
     return {p["port"] for h in nmap_findings["hosts"] for p in h["ports"] if p["state"] == "open"}
@@ -88,10 +89,10 @@ def assert_runs_against_baseline(summary: dict, baseline: dict) -> None:
             _check(ids == set(expected["template_ids"]), f"{name}: template ids {ids} != {expected['template_ids']}")
             _check(findings["out_of_band"] == "off", f"{name}: out_of_band must be 'off'")
             _check(findings["summary"]["off_target"] == 0, f"{name}: off_target must be 0")
-            # RC-26: the templates-loaded instrumentation must actually report a
-            # real count against the live pinned template set - a regression here
-            # would silently bring back the "loaded nothing vs matched nothing"
-            # blind spot the whole ticket exists to close.
+            # The templates-loaded count must be a real positive number against
+            # the live pinned template set; 0 or missing means nuclei loaded
+            # nothing, which would make a quiet scan indistinguishable from a
+            # clean one.
             loaded = findings["summary"].get("templates_loaded")
             _check(loaded is not None and loaded > 0,
                    f"{name}: templates_loaded is {loaded!r} - coverage instrumentation regressed")
@@ -103,7 +104,7 @@ def assert_runs_against_baseline(summary: dict, baseline: dict) -> None:
 
 
 def assert_dns_pinned(summary: dict, baseline: dict) -> None:
-    """RC-23: exactly one pin per scanned hostname, to the expected IPs."""
+    """Exactly one dns_pinned entry per scanned hostname, to the expected IPs."""
     pinned = {unrepr(h): v for h, v in summary["dns_pinned"].items()}
     _check(pinned == baseline["dns_pinned"], f"dns_pinned {pinned} != {baseline['dns_pinned']}")
 
@@ -120,7 +121,7 @@ def assert_action_executed_carries_scanned_ip(summary: dict, baseline: dict) -> 
 
 
 def assert_scan_summary(summary: dict, baseline: dict) -> None:
-    """Everything RC-20's baseline test asserts about one scan-set run."""
+    """Every baseline assertion for one scan-set run."""
     _check(summary["audit_entries"] > 0, "the audit log has no verified entries")
     assert_runs_against_baseline(summary, baseline)
     assert_dns_pinned(summary, baseline)
@@ -140,12 +141,12 @@ def fingerprint(summary: dict) -> dict:
     return out
 
 
-# -- RC-35: hostile ambient nuclei config ------------------------------------
+# -- hostile ambient nuclei config -------------------------------------------
 
 def ambient_config_failures(wrapper_row: dict[str, Any]) -> list[str]:
-    """What is wrong with the wrapper-as-built run of the RC-35 replay
-    (``lab/ambient_config_probe.py``'s ``wrapper`` row); empty means the fix
-    holds. Returned as a list (not raised) so the harness can print every
+    """What is wrong with the wrapper-as-built run of the ambient-config
+    replay (``lab/ambient_config_probe.py``'s ``wrapper`` row); empty means
+    the hostile config had no effect on the wrapper. Returned as a list (not raised) so the harness can print every
     problem at once; ``assert_ambient_config_neutralized`` raises on it."""
     problems = []
     if wrapper_row.get("probe_hit") is not True:

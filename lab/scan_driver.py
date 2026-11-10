@@ -80,7 +80,7 @@ def run(
 
     runs_summary = []
     for i, (name, tool, target, params, ext) in enumerate(RUNS, 1):
-        # RC-24: progress only. Callers parse the --json summary file, never stdout.
+        # Progress only. Callers parse the --json summary file, never stdout.
         print(f"starting row {i}/{len(RUNS)}: {name}", flush=True)
         r = box.execute(ToolAction(tool, target, params), iteration=i)
         row: dict = {

@@ -33,8 +33,8 @@ pytestmark = pytest.mark.lab
 ROOT = pathlib.Path(__file__).resolve().parent.parent.parent
 COMPOSE_FILE = ROOT / "lab" / "docker-compose.yml"
 
-# RC-24: the baseline assertions live in lab/lab_asserts.py, shared with the
-# one-command validation harness (lab/validation_harness.py) so they can't drift.
+# The baseline assertions live in lab/lab_asserts.py, which
+# lab/validation_harness.py also imports.
 sys.path.insert(0, str(ROOT / "lab"))
 import lab_asserts  # noqa: E402
 from scan_driver import isolation_failure_reason  # noqa: E402

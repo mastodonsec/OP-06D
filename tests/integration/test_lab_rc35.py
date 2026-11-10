@@ -28,10 +28,9 @@ pytestmark = pytest.mark.lab
 ROOT = pathlib.Path(__file__).resolve().parent.parent.parent
 COMPOSE_FILE = ROOT / "lab" / "docker-compose.yml"
 
-# RC-24: the replay itself (loopback servers, hostile config, the run) is
+# The replay itself (loopback servers, hostile config, the run) is
 # lab/ambient_config_probe.py and the judgement is lab_asserts.py's
-# ambient_config_failures - both shared with lab/validation_harness.py, so
-# the test and the harness cannot drift apart.
+# ambient_config_failures; lab/validation_harness.py uses both too.
 sys.path.insert(0, str(ROOT / "lab"))
 import lab_asserts  # noqa: E402
 

@@ -1,9 +1,11 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""RC-35 / RC-24: the one replay of RUNBOOK Step 11 (hostile ambient
-``~/.config/nuclei/config.yaml``), shared by the gated
-tests/integration/test_lab_rc35.py and lab/validation_harness.py so the two
-cannot drift apart. The pass/fail judgement on its output lives in
-lab/lab_asserts.py (``ambient_config_failures``), also shared.
+"""RC-35: nuclei: neutralize ambient config + control HOME
+RC-24: Lab runbook polish + validation harness
+
+Replay of RUNBOOK Step 11 (hostile ambient ``~/.config/nuclei/config.yaml``),
+run by tests/integration/test_lab_rc35.py and lab/validation_harness.py. The
+pass/fail judgement on its output is lab/lab_asserts.py's
+``ambient_config_failures``.
 
 Runs only *inside* the scanner container (it imports ``op06d`` and runs the
 real pinned nuclei). Everything is on the scanner's **loopback only**: three
@@ -19,7 +21,7 @@ Prints ONE JSON line: ``{"control": {...}, "wrapper": {...}, "controlled": {...}
                    OAST, proving the experiment can detect them.
 * ``wrapper``    - ``NucleiTool.run`` exactly as built (always its own
                    ``-config`` + scrubbed ``HOME``/``XDG_CONFIG_HOME``).
-                   MUST be clean - this is the row RC-35 asserts on.
+                   MUST be clean - this is the row the assertions check.
 * ``controlled`` - raw nuclei with only the mitigation applied by hand (an
                    empty ``-config`` + scrubbed ``HOME``), no other wrapper
                    flags: shows the config scrub alone is what neutralizes it.
@@ -51,7 +53,7 @@ HOSTILE_CONFIG = (
     "header:\n  - \"X-Hostile-Config: 1\"\n"
 )
 
-# The RC-35 probe template (no template-level redirects - the redirect can only
+# The probe template (no template-level redirects - the redirect can only
 # come from the ambient config). Used by all three runs.
 PROBE_TEMPLATE = (
     "id: rc35-probe\n"
@@ -162,7 +164,7 @@ def main() -> int:
         # A. positive control: hostile ambient config, no wrapper flags.
         result["control"] = _raw_nuclei(control_dir, extra=[], env=None)
 
-        # B. the wrapper exactly as built (what RC-35 asserts on).
+        # B. the wrapper exactly as built (the row the assertions check).
         from op06d.nuclei_tool import NucleiTool
 
         mark = len(LOG)

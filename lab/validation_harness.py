@@ -1,29 +1,28 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""RC-24: one-command lab validation harness.
+"""RC-24: Lab runbook polish + validation harness
 
-Runs RUNBOOK.md Steps 4-13 against the live lab in order, captures every
-step's output into a fresh, timestamped evidence bundle, and prints a
-PASS / FAIL / NEEDS-REVIEW summary - a deterministic, repeatable
-re-validation for RC-20.
+One-command lab validation harness. Runs RUNBOOK.md Steps 4-13 against the
+live lab in order, captures every step's output into a fresh, timestamped
+evidence bundle, and prints a PASS / FAIL / NEEDS-REVIEW summary.
 
     OP06D_LAB=1 python lab/validation_harness.py [--json <summary-path>] [--keep-stack]
 
 Host-side, Python 3, stdlib only, run from the repository root. Not an op06d
 package module on purpose: a lab fixture, like scan_driver.py.
 
-Safety design (do not undercut):
+Safety behaviour:
 
 * **Step 4, the isolation gate, is a hard fail-closed blocker.** Host-side
   ``.Internal`` inspect + in-scanner ``check_isolation.sh``, judged by the
-  same pure ``scan_driver.isolation_failure_reason`` RC-20 uses. Anything but
+  pure ``scan_driver.isolation_failure_reason`` that test_lab_rc20.py uses. Anything but
   a clean PASS - an error, an ambiguity, a non-zero exit - aborts the run
   before anything touches a target. Nothing else runs.
 * **Steps 10 and 11 can never PASS on their own.** They are findings-type
   steps: the harness runs and aggregates them and reports NEEDS-REVIEW (or
   FAIL on a definite problem). The go/no-go to scan stays a human decision
   after reading the summary.
-* **The stack is always torn down** at the end, even on failure (like the
-  RC-20 fixture's ``finally``), unless ``--keep-stack`` is passed.
+* **The stack is always torn down** at the end, even on failure (a
+  ``finally``), unless ``--keep-stack`` is passed.
 * **Nothing frozen is overwritten.** Every output lands under
   ``lab/captures/validation-<UTC-timestamp>/``; the committed
   ``lab/captures/*.findings.json`` and ``tests/integration/baseline.json`` are
@@ -31,10 +30,10 @@ Safety design (do not undercut):
 
 Exit codes: 0 = no step FAILed (NEEDS-REVIEW steps still need a human read),
 1 = at least one step FAILed or was skipped, 2 = the isolation gate did not
-PASS (nothing was scanned). A run with ``OP06D_LAB`` unset or no docker
-prints ``RESULT: SKIPPED`` and exits 0, like the gated pytest tests skip.
+PASS (nothing was scanned), 3 = skipped: ``OP06D_LAB`` unset, no docker, or
+an invalid compose file (prints ``RESULT: SKIPPED``; nothing ran).
 
-Shared code, so the harness and the gated tests cannot drift: the scan set is
+Code shared with the gated tests: the scan set is
 ``lab/scan_driver.py``, the baseline + ambient-config assertions are
 ``lab/lab_asserts.py``, the Step 11 replay is ``lab/ambient_config_probe.py``.
 The small docker helpers (``_compose``/``_exec``/``_wait_for_targets``) are
@@ -69,7 +68,7 @@ import lab_asserts  # noqa: E402
 from scan_driver import RUNS, isolation_failure_reason  # noqa: E402
 
 PASS, FAIL, NEEDS_REVIEW, SKIP = "PASS", "FAIL", "NEEDS-REVIEW", "SKIP"
-EXIT_OK, EXIT_FAIL, EXIT_ISOLATION = 0, 1, 2
+EXIT_OK, EXIT_FAIL, EXIT_ISOLATION, EXIT_SKIPPED = 0, 1, 2, 3
 
 # (step key, label) in run order. "1w" is a preflight, not a runbook step of
 # its own: RUNBOOK Step 1 tells the operator to put "now" inside the window.
@@ -225,7 +224,7 @@ def classify_parsers(rows: list[dict]) -> StepResult:
 def classify_tag_audit(audit: dict) -> StepResult:
     """Never PASS. FAIL only on a definite problem: a write-method template
     in the default selection that the bundled -eid backstop does not cover
-    (RC-36's drift signal), or an audit that read nothing."""
+    (not in the bundled -eid list), or an audit that read nothing."""
     if not audit.get("templates_scanned"):
         return StepResult("10", "tag audit", FAIL, "the audit scanned 0 templates")
     unexcluded = audit.get("write_method_unexcluded", [])
@@ -400,7 +399,7 @@ from op06d.nmap_tool import NmapTool, PROFILES
 from op06d.nuclei_tool import NucleiTool
 from op06d.tools import ProcessResult
 seen = []
-def cap(argv, timeout, **kw):  # since RC-35 nuclei's runner is also passed env=
+def cap(argv, timeout, **kw):  # nuclei's runner is also passed env=
     seen.append(list(argv))
     return ProcessResult(0, b"", b"")
 nm = NmapTool(50, runner=cap)
@@ -660,7 +659,7 @@ def _last_json(cp: subprocess.CompletedProcess) -> Any:
 
 
 def skip_reason() -> str | None:
-    """Same gating as the RC-20 test: OP06D_LAB=1, docker, a valid compose file."""
+    """Same gating as tests/integration/test_lab_rc20.py: OP06D_LAB=1, docker, a valid compose file."""
     if os.environ.get("OP06D_LAB") != "1":
         return "set OP06D_LAB=1 to run the lab validation harness (RC-24)"
     if shutil.which("docker") is None:
@@ -868,7 +867,7 @@ def main(argv: list[str] | None = None) -> int:
     reason = skip_reason()
     if reason:
         _say(f"=== OP-06D lab validation (RC-24) {started_iso} ===\nRESULT: SKIPPED - {reason}")
-        return EXIT_OK
+        return EXIT_SKIPPED
 
     stamp = started.strftime("%Y%m%dT%H%M%SZ")
     bundle_host = LAB_DIR / "captures" / f"validation-{stamp}"

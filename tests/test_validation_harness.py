@@ -1,10 +1,10 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""RC-24: fast, docker-free tests of the validation harness's pure decision
-logic (lab/validation_harness.py). Same idea as test_lab_isolation_guard.py:
-the guarantees that matter - an isolation failure short-circuits the whole
-run, a NEEDS-REVIEW step never turns into a clean PASS, a findings step
-never auto-passes - are checked in the default suite with no lab and no
-Docker. The live run stays behind OP06D_LAB=1."""
+"""RC-24: Lab runbook polish + validation harness
+
+Docker-free tests of lab/validation_harness.py's pure decision logic: an
+isolation failure short-circuits the whole run, a NEEDS-REVIEW step never
+turns into a clean PASS, a findings step never auto-passes, and the run
+skips (exit 3) without OP06D_LAB=1."""
 
 from __future__ import annotations
 
@@ -133,8 +133,8 @@ def test_ambient_dirty_wrapper_fails(key, value):
 
 
 def test_ambient_subcheck_the_control_never_showed_is_inconclusive_not_clean():
-    """The RC-24 first run: control followed the redirect and sent the
-    header but never reached OAST. OAST must read INCONCLUSIVE on its own,
+    """Control followed the redirect and sent the header but never
+    reached OAST. OAST must read INCONCLUSIVE on its own,
     not be folded into "wrapper clean"."""
     result = {"wrapper": CLEAN_WRAPPER, "hostile_config_removed": True,
               "control": {"redirect_followed": True, "hostile_header_sent": True, "oast_contacted": False}}
@@ -266,5 +266,5 @@ def test_skip_reason_without_op06d_lab(monkeypatch):
 
 def test_main_skips_cleanly_without_the_lab(monkeypatch, capsys):
     monkeypatch.delenv("OP06D_LAB", raising=False)
-    assert vh.main([]) == vh.EXIT_OK
+    assert vh.main([]) == vh.EXIT_SKIPPED == 3
     assert "RESULT: SKIPPED" in capsys.readouterr().out
