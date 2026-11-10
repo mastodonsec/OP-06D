@@ -331,7 +331,16 @@ def test_only_the_pinned_template_dir_is_ever_passed_as_a_template_path():
         for banned in ("-w", "-workflows", "-wt", "-workflow-templates", "-template-url", "-tu",
                        "-templates", "-H", "-header", "-V", "-var", "-l", "-list", "-code", "-headless"):
             assert banned not in argv
-        slashy = [a for a in argv if "/" in a or a.startswith("http")]
+        # RC-35 always passes `-config <per-run file>`; that file path is the
+        # config, not a template path, and is absolute on Linux (/tmp/...)
+        # but not on Windows (C:\...). Exclude exactly that one argument
+        # value - by position, after asserting -config occurs once - and keep
+        # the path check itself unchanged, so any other path anywhere in the
+        # argv still fails on every OS.
+        assert argv.count("-config") == 1
+        config_value_index = argv.index("-config") + 1
+        rest = [a for i, a in enumerate(argv) if i != config_value_index]
+        slashy = [a for a in rest if "/" in a or a.startswith("http")]
         assert set(slashy) <= {NUCLEI_PATH, TEMPLATES}
 
 
