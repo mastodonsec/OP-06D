@@ -243,19 +243,26 @@ lab/                isolated Docker lab (Juice Shop + DVWA) for live validation
 
 ## Project status
 
-**Built and unit-tested:** engagement parser, guardrail gate (scope, rate, window, audit,
-sanitize), orchestrator loop, nmap wrapper, nuclei wrapper.
+**Recon MVP: complete.** Engagement-file parser, guardrail gate (scope allowlist, rate cap,
+time window, audit log, output sanitizer), resolve-once DNS pinning, orchestrator loop,
+nmap and nuclei wrappers, result normalization, evidence store, Markdown/HTML/PDF reports,
+and the `op06d` CLI with operator approval for intrusive actions.
 
-**In progress:** isolated lab stand-up and validation of the wrappers against real tools.
+**Validated against an isolated lab** (pinned nmap 7.93, nuclei v3.11.1, templates v10.5.1):
+real-tool flags and output confirmed, functional and repeatability tests against a frozen
+baseline, and adversarial gate testing — no bypass found. A one-command validation harness
+(`lab/validation_harness.py`) re-runs the whole lab check, with the isolation gate as a hard,
+fail-closed precondition.
 
-**Before any live client engagement, still required:**
+**Pre-live hardening: done.** nuclei coverage instrumentation, nmap privilege-degradation
+reporting, neutralized ambient nuclei config, and a write-method template exclusion backstop.
 
-- Lab validation complete (real-tool flags/output confirmed, tag vocabulary audited,
-  isolation proven).
-- **Resolve-once DNS fix** — close the time-of-check/time-of-use gap between the gate's
-  scope check and the tool's own hostname resolution (tracked as RC-23). Until this lands,
-  a hostname's DNS could change between check and scan.
-- Full adversarial gate testing against a live model with varied injection payloads.
+**Before any live client engagement, still required:** a signed, authorized scope, and a
+check of the project board for any newly filed blockers. No known blockers remain in code.
+
+**Open, non-blocking:** multi-IP target handling, and a self-hosted interactsh control for
+the lab's out-of-band detection check. Product direction (backlog): deployable sensor
+appliance, web UI, plugin arsenal.
 
 **Deliberately out of the MVP** (later iterations): exploitation tier (Metasploit),
 breach-and-attack simulation (CALDERA), cloud posture auditing, authenticated app testing,
