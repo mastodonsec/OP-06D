@@ -142,8 +142,9 @@ created lab\captures
 
 Read `lab/docker-compose.yml`, `lab/scanner/Dockerfile` and `lab/engagement.yaml`.
 Confirm: one network with `internal: true`; no `ports:` anywhere; no service on a
-second network; the digests match the table above. Edit the `window` in
-`lab/engagement.yaml` so *now* is inside it (the gate refuses outside it).
+second network; the digests match the table above. Do **not** edit the `window`
+in `lab/engagement.yaml`: it is a template; this session's copy is generated in
+Step 4b.
 
 Validate the file syntax without starting anything:
 
@@ -243,6 +244,27 @@ a Gateway IP (the `.1`) for a custom-subnet network, internal or not; that is
 normal and is **not** a failure. What matters is `"Internal": true` **plus**
 the inside-scanner result: no default route, and every outbound attempt
 blocked.)
+
+## Step 4b. Generate this session's engagement
+
+Only after Step 4 printed PASS. `lab/engagement.yaml` is a template; this writes
+a copy whose `window` is now - 5 min .. now + 4 h (everything else unchanged),
+validates it through the normal engagement schema, and prints a confirmation.
+The gate still refuses to act outside that window. It runs inside the scanner;
+re-run it if a session outlasts the window (`--hours N`, at most 24, changes
+the length):
+
+```powershell
+docker compose -f $LAB exec -T scanner python3 /lab/make_lab_engagement.py /captures/engagement.now.yaml
+```
+
+Expected output (your times):
+
+```
+wrote /captures/engagement.now.yaml (window 2026-11-10T09:55:00Z .. 2026-11-10T14:00:00Z; validated)
+```
+
+Steps 8 and 13 use `/captures/engagement.now.yaml`.
 
 ## Step 5. Record the installed versions
 
@@ -351,7 +373,7 @@ committed, by-hand captures); the automated test always uses a fresh,
 ephemeral subdirectory instead (see RC-20 in CONTEXT.md).
 
 ```powershell
-docker compose -f $LAB exec -T scanner python3 /lab/scan_driver.py /captures
+docker compose -f $LAB exec -T scanner python3 /lab/scan_driver.py /captures --engagement /captures/engagement.now.yaml
 ```
 
 **Takes a few minutes.** Before each of the seven rows the driver prints
@@ -866,7 +888,7 @@ from op06d.gate import Gate
 from op06d.tools import GatedToolbox, default_tools
 from op06d.orchestrator import Orchestrator
 
-eng = load_engagement("/lab/engagement.yaml")
+eng = load_engagement("/captures/engagement.now.yaml")
 log = AuditLog.for_engagement(eng, "/captures/e2e-audit")
 box = GatedToolbox(eng, Gate(eng, audit_pin=log.record_dns_pin), log,
                    default_tools(eng, nuclei_template_dir="/opt/nuclei-templates", nuclei_templates_pin="v10.5.1"))
@@ -916,7 +938,7 @@ no `dns_pinned` entry at all (it's an IP, nothing to resolve).
 **What to do.** If every expectation above holds, copy
 `lab/captures/e2e-audit/*.audit.jsonl` somewhere safe: it is a real
 end-to-end evidence trail. If the termination is `window_expired` or
-`window_not_open`, the engagement window has lapsed - fix it as in Step 1 and
+`window_not_open`, the generated engagement window has lapsed - regenerate it with the Step 4b command and
 re-run. Anything else that differs (a different step kind, an
 `action_executed` for `1.1.1.1`, raw XML/JSONL in the planner's view, a
 missing or doubled `dns_pinned`) is a finding: **do not scan with OP-06D**

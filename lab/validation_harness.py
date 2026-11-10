@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """RC-24: Lab runbook polish + validation harness
+RC-28: RC-20 follow-up: make the lab harness teardown idempotent (down-before-up)
 
 One-command lab validation harness. Runs RUNBOOK.md Steps 4-13 against the
 live lab in order, captures every step's output into a fresh, timestamped
@@ -21,8 +22,15 @@ Safety behaviour:
   steps: the harness runs and aggregates them and reports NEEDS-REVIEW (or
   FAIL on a definite problem). The go/no-go to scan stays a human decision
   after reading the summary.
-* **The stack is always torn down** at the end, even on failure (a
-  ``finally``), unless ``--keep-stack`` is passed.
+* **The stack is cleared before it is brought up** (``docker compose down``
+  first, so a stack left running by a killed run does not linger), and is
+  always torn down at the end, even on failure or an ``up`` timeout, unless
+  ``--keep-stack`` is passed (which skips only the final teardown). See
+  ``lab/lab_stack.py``.
+* **The engagement window is generated per run.** After the isolation gate,
+  ``lab/make_lab_engagement.py`` writes ``<bundle>/engagement.yaml`` from the
+  committed ``lab/engagement.yaml`` template with a window around now; Steps
+  1w, 8 and 13 use that file. The template is never modified.
 * **Nothing frozen is overwritten.** Every output lands under
   ``lab/captures/validation-<UTC-timestamp>/``; the committed
   ``lab/captures/*.findings.json`` and ``tests/integration/baseline.json`` are
@@ -65,6 +73,7 @@ SCANNER_IMAGE = "op06d-lab-scanner:nmap-7.93-nuclei-3.11.1-templates-10.5.1"
 
 sys.path.insert(0, str(LAB_DIR))
 import lab_asserts  # noqa: E402
+import lab_stack as stack  # noqa: E402
 from scan_driver import RUNS, isolation_failure_reason  # noqa: E402
 
 PASS, FAIL, NEEDS_REVIEW, SKIP = "PASS", "FAIL", "NEEDS-REVIEW", "SKIP"
@@ -114,8 +123,8 @@ def classify_window(now: dt.datetime, start: dt.datetime, end: dt.datetime) -> S
         return StepResult("1w", "engagement window", PASS, f"now inside {start.isoformat()} .. {end.isoformat()}")
     return StepResult(
         "1w", "engagement window", FAIL,
-        f"now ({now.isoformat()}) is outside the lab window {start.isoformat()} .. {end.isoformat()} - "
-        "the gate will deny every scan; edit `window` in lab/engagement.yaml (RUNBOOK Step 1; RC-28)",
+        f"now ({now.isoformat()}) is outside the generated lab window {start.isoformat()} .. {end.isoformat()} - "
+        "the gate will deny every scan; check the host/container clock and lab/make_lab_engagement.py",
     )
 
 
@@ -339,9 +348,17 @@ def skipped(reason: str, after: str = "4") -> list[StepResult]:
     return [StepResult(k, n, SKIP, reason) for k, n in STEPS[keys.index(after) + 1:]]
 
 
-def overall(results: list[StepResult]) -> tuple[int, str]:
+TEARDOWN_FAILED_LINE = f"RESULT: FAIL - teardown failed; the lab may still be running: {stack.TEARDOWN_HINT}"
+
+
+def overall(results: list[StepResult], *, teardown_failed: bool = False) -> tuple[int, str]:
     """The run's exit code and final line. NEEDS-REVIEW never fails the run
-    but is never reported as a clean PASS either; the go/no-go stays human."""
+    but is never reported as a clean PASS either; the go/no-go stays human.
+    A failed final teardown always makes the run FAIL (exit 2 is kept if the
+    isolation gate also failed), with the teardown line as the result."""
+    if teardown_failed:
+        code, _ = overall(results)
+        return max(code, EXIT_FAIL), TEARDOWN_FAILED_LINE
     by_step = {r.step: r for r in results}
     iso = by_step.get("4")
     if iso is None or iso.status != PASS:
@@ -373,9 +390,9 @@ def format_report(results: list[StepResult], started: str, final_line: str) -> s
 # ============================================================================
 
 SNIPPET_WINDOW = r"""
-import json, datetime
+import json, datetime, sys
 from op06d.engagement import load_engagement
-w = load_engagement("/lab/engagement.yaml").authorization.window
+w = load_engagement(sys.argv[1]).authorization.window
 print(json.dumps({"start": w[0].isoformat(), "end": w[1].isoformat(),
                   "now": datetime.datetime.now(datetime.timezone.utc).isoformat()}))
 """
@@ -532,7 +549,7 @@ from op06d.gate import Gate
 from op06d.tools import GatedToolbox, default_tools
 from op06d.orchestrator import Orchestrator
 
-eng = load_engagement("/lab/engagement.yaml")
+eng = load_engagement(sys.argv[2])
 log = AuditLog.for_engagement(eng, sys.argv[1])
 box = GatedToolbox(eng, Gate(eng, audit_pin=log.record_dns_pin), log,
                    default_tools(eng, nuclei_template_dir="/opt/nuclei-templates", nuclei_templates_pin="v10.5.1"))
@@ -684,6 +701,7 @@ class Harness:
         self.baseline = baseline
         self.scans_ctr = f"{bundle_ctr}/step08-scans"
         self.scans_host = bundle_host / "step08-scans"
+        self.engagement_ctr = f"{bundle_ctr}/engagement.yaml"  # generated in step1_window
         self.extra: dict = {}
 
     def capture(self, name: str, *parts: subprocess.CompletedProcess | str) -> None:
@@ -708,7 +726,12 @@ class Harness:
         return classify_isolation(internal, iso.returncode)
 
     def step1_window(self) -> StepResult:
-        cp = _py(SNIPPET_WINDOW, timeout=60)
+        gen = stack.generate_engagement(_exec, self.engagement_ctr)
+        self.capture("step01-window.txt", gen)
+        if gen.returncode != 0:
+            return StepResult("1w", "engagement window", FAIL,
+                              "could not generate the run's engagement from lab/engagement.yaml - see step01-window.txt")
+        cp = _py(SNIPPET_WINDOW, self.engagement_ctr, timeout=60)
         self.capture("step01-window.txt", cp)
         w = _last_json(cp)
         return classify_window(*(dt.datetime.fromisoformat(w[k]) for k in ("now", "start", "end")))
@@ -750,7 +773,7 @@ class Harness:
     def step8_scans(self) -> StepResult:
         summary_ctr = f"{self.scans_ctr}/summary.json"
         cp = _exec("python3", "-u", "/lab/scan_driver.py", self.scans_ctr, "--json", summary_ctr,
-                   timeout=1800, stream=True)
+                   "--engagement", self.engagement_ctr, timeout=1800, stream=True)
         self.capture("step08-scans.txt", cp)
         if cp.returncode != 0:
             return StepResult("8", "scans vs baseline", FAIL, f"scan_driver.py exit {cp.returncode}")
@@ -810,7 +833,7 @@ class Harness:
         return classify_priv(rows, profiles, tracebacks)
 
     def step13_e2e(self) -> StepResult:
-        cp = _py(SNIPPET_E2E, f"{self.ctr}/step13-e2e-audit", timeout=1800)
+        cp = _py(SNIPPET_E2E, f"{self.ctr}/step13-e2e-audit", self.engagement_ctr, timeout=1800)
         self.capture("step13-e2e.txt", cp)
         r = _last_json(cp)
         (self.host / "step13-e2e.json").write_text(json.dumps(r, indent=2), encoding="utf-8")
@@ -830,7 +853,7 @@ def run_steps(h: Harness) -> list[StepResult]:
         return [iso, *skipped("isolation gate did not PASS - refusing to run anything else")]
 
     plan: list[tuple[str, str, Callable[[], StepResult]]] = [
-        ("1w", "engagement window", h.step1_window),
+        ("1w", "engagement window (generated for this run)", h.step1_window),
         ("5", "versions + template-set hash", h.step5_versions),
         ("6", "pytest inside the scanner", h.step6_pytest),
         ("7", "wrapper flag argv", h.step7_flags),
@@ -876,27 +899,28 @@ def main(argv: list[str] | None = None) -> int:
     _say(f"evidence bundle: {bundle_host}")
 
     results: list[StepResult]
+    teardown_error: str | None = None
+    _say("-> clearing any leftover lab stack, then bringing the lab up (docker compose down; up -d)")
     try:
-        _say("-> bringing the lab up (docker compose up -d)")
-        up = _compose("up", "-d", timeout=900)
-        h.capture("stack.txt", up)
-        if up.returncode != 0:
-            results = [StepResult("4", "isolation", FAIL, "docker compose up failed - see stack.txt"),
-                       *skipped("the stack did not come up")]
-        elif not _wait_for_targets():
-            results = [StepResult("4", "isolation", FAIL,
-                                  "lab targets never answered HTTP, so the isolation controls cannot run"),
-                       *skipped("the targets never came up")]
-        else:
-            results = run_steps(h)
-    finally:
-        if args.keep_stack:
-            _say("-> --keep-stack: leaving the lab running (tear down: docker compose -f lab/docker-compose.yml down)")
-        else:
-            _say("-> tearing the lab down")
-            h.capture("stack.txt", _compose("down", timeout=300))
+        with stack.lab_stack(_compose, keep=args.keep_stack, record=lambda cp: h.capture("stack.txt", cp)):
+            if not _wait_for_targets():
+                results = [StepResult("4", "isolation", FAIL,
+                                      "lab targets never answered HTTP, so the isolation controls cannot run"),
+                           *skipped("the targets never came up")]
+            else:
+                results = run_steps(h)
+            _say("-> --keep-stack: leaving the lab running (tear down: docker compose -f lab/docker-compose.yml down)"
+                 if args.keep_stack else "-> tearing the lab down")
+    except stack.TeardownError as exc:
+        # Raised only after the with-body finished: the step results stand.
+        teardown_error = str(exc)
+        _say(f"-> TEARDOWN FAILED: {exc} - see stack.txt; run: {stack.TEARDOWN_HINT}")
+    except (stack.LabStackError, subprocess.TimeoutExpired) as exc:
+        results = [StepResult("4", "isolation", FAIL,
+                              f"the stack did not come up ({type(exc).__name__}) - see stack.txt"),
+                   *skipped("the stack did not come up")]
 
-    code, final_line = overall(results)
+    code, final_line = overall(results, teardown_failed=teardown_error is not None)
     report = format_report(results, started_iso, final_line)
     summary = {
         "ticket": "RC-24",
@@ -904,6 +928,7 @@ def main(argv: list[str] | None = None) -> int:
         "bundle": str(bundle_host),
         "exit_code": code,
         "result": final_line,
+        "teardown_error": teardown_error,
         "human_review_required": [r.step for r in results if r.status == NEEDS_REVIEW],
         "steps": [asdict(r) for r in results],
         "versions": h.extra.get("versions"),
