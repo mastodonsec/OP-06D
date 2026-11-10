@@ -12,6 +12,8 @@ Runs inside the scanner (PyYAML and op06d are installed there):
 
     python3 /lab/make_lab_engagement.py <out.yaml> [--hours N] [--template /lab/engagement.yaml]
 
+``N`` defaults to 4 and must be greater than 0 and at most 24.
+
 The template is only read, never written. ``<out.yaml>`` goes under the
 writable ``/captures`` mount.
 """
@@ -21,6 +23,7 @@ from __future__ import annotations
 import argparse
 import copy
 import datetime as dt
+import math
 import pathlib
 import sys
 from typing import Any
@@ -28,6 +31,7 @@ from typing import Any
 import yaml
 
 DEFAULT_HOURS = 4.0
+MAX_HOURS = 24.0
 LEAD = dt.timedelta(minutes=5)
 TIME_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
 
@@ -40,8 +44,8 @@ def window_for(now: dt.datetime, hours: float) -> tuple[dt.datetime, dt.datetime
     """``[now - 5 min, now + hours]``, UTC, whole seconds."""
     if now.tzinfo is None:
         raise ValueError("now must be timezone-aware")
-    if not hours > 0:
-        raise ValueError(f"hours must be positive, got {hours!r}")
+    if not (isinstance(hours, (int, float)) and math.isfinite(hours) and 0 < hours <= MAX_HOURS):
+        raise ValueError(f"hours must be a finite number in (0, {MAX_HOURS:g}], got {hours!r}")
     now = now.astimezone(dt.timezone.utc).replace(microsecond=0)
     return now - LEAD, now + dt.timedelta(hours=hours)
 

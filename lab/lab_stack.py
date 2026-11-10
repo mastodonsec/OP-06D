@@ -6,9 +6,23 @@ Lab stack lifecycle shared by the gated integration-test fixtures
 call that generates a run-specific engagement file inside the scanner.
 
 ``lab_stack`` runs ``docker compose down`` first (clearing a stack left
-running by a killed earlier run), then ``up -d`` inside the ``try``, and
-``down`` again in the ``finally`` - so a failure or timeout during ``up``
-still tears the stack down. ``keep=True`` skips only that final ``down``.
+running by a killed earlier run), then ``up -d``, and ``down`` again when the
+``with`` block ends - including when ``up`` fails or times out, or the body
+raises. ``keep=True`` skips only that final ``down``.
+
+Errors are kept apart so callers can report them differently:
+
+* the initial ``down`` timing out raises ``subprocess.TimeoutExpired``, and
+  ``up`` failing raises ``LabStackError`` (or ``TimeoutExpired``) - the stack
+  never came up;
+* the final ``down`` failing or timing out after a normal exit from the body
+  raises ``TeardownError`` - the body's work completed, but the lab may still
+  be running;
+* if the body itself raised, the final ``down`` is best-effort and never
+  replaces the body's exception.
+
+Every compose call is passed to ``record``, including one that timed out
+(recorded with returncode -1 and a ``TIMEOUT`` stderr).
 
 Host-side, stdlib only. The compose runner is passed in, so the ordering is
 testable without docker (tests/test_lab_stack.py).
@@ -33,6 +47,14 @@ class LabStackError(RuntimeError):
     """``docker compose up`` did not succeed."""
 
 
+class TeardownError(RuntimeError):
+    """The final ``docker compose down`` failed or timed out; the lab may
+    still be running."""
+
+
+TEARDOWN_HINT = "docker compose -f lab/docker-compose.yml down"
+
+
 @contextlib.contextmanager
 def lab_stack(
     compose: ComposeRunner,
@@ -45,14 +67,29 @@ def lab_stack(
     """Bring the lab up for the ``with`` body; yields the ``up`` result.
 
     ``compose(*args, timeout=...)`` runs ``docker compose -f <file> *args``.
-    Raises ``LabStackError`` if ``up`` exits non-zero (after tearing down).
-    ``record`` receives every compose result, for evidence capture."""
+    See the module docstring for which error is raised when."""
 
     def run(*args: str, timeout: float) -> subprocess.CompletedProcess:
-        cp = compose(*args, timeout=timeout)
+        try:
+            cp = compose(*args, timeout=timeout)
+        except subprocess.TimeoutExpired as exc:
+            if record is not None:
+                out = exc.stdout.decode(errors="replace") if isinstance(exc.stdout, bytes) else (exc.stdout or "")
+                record(subprocess.CompletedProcess(
+                    exc.cmd if exc.cmd else ["docker", "compose", *args], -1, out,
+                    f"TIMEOUT: docker compose {' '.join(args)} did not finish within {timeout:.0f}s"))
+            raise
         if record is not None:
             record(cp)
         return cp
+
+    def final_down() -> None:
+        try:
+            cp = run("down", timeout=down_timeout)
+        except subprocess.TimeoutExpired as exc:
+            raise TeardownError(f"docker compose down timed out after {down_timeout:.0f}s") from exc
+        if cp.returncode != 0:
+            raise TeardownError(f"docker compose down failed (exit {cp.returncode}):\n{cp.stdout}\n{cp.stderr}")
 
     run("down", timeout=down_timeout)
     try:
@@ -60,9 +97,14 @@ def lab_stack(
         if up.returncode != 0:
             raise LabStackError(f"docker compose up failed (exit {up.returncode}):\n{up.stdout}\n{up.stderr}")
         yield up
-    finally:
+    except BaseException:
         if not keep:
-            run("down", timeout=down_timeout)
+            # Best effort: a teardown problem must not replace the original error.
+            with contextlib.suppress(Exception):
+                final_down()
+        raise
+    if not keep:
+        final_down()
 
 
 def generate_engagement(

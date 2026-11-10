@@ -3,7 +3,8 @@
 
 Docker-free tests of lab/lab_stack.py with a mocked compose runner: down
 runs before up, down still runs when up fails, times out or the body
-raises, and keep=True skips only the final down."""
+raises, keep=True skips only the final down, and a failing final down is
+reported as TeardownError without masking an error from the body."""
 
 from __future__ import annotations
 
@@ -20,22 +21,33 @@ import lab_stack as stack  # noqa: E402
 
 
 class FakeCompose:
-    def __init__(self, up_returncode: int = 0, up_raises: BaseException | None = None):
+    """Records calls. ``fail`` maps a call index (0 = initial down, 1 = up,
+    2 = final down) to an exception to raise or a non-zero returncode."""
+
+    def __init__(self, up_returncode: int = 0, up_raises: BaseException | None = None,
+                 fail: dict[int, BaseException | int] | None = None):
         self.calls: list[tuple[str, ...]] = []
-        self.up_returncode = up_returncode
-        self.up_raises = up_raises
+        self.fail = dict(fail or {})
+        if up_raises is not None:
+            self.fail[1] = up_raises
+        elif up_returncode:
+            self.fail[1] = up_returncode
 
     def __call__(self, *args: str, timeout: float) -> subprocess.CompletedProcess:
+        i = len(self.calls)
         self.calls.append(args)
-        if args[0] == "up":
-            if self.up_raises is not None:
-                raise self.up_raises
-            return subprocess.CompletedProcess(["docker", "compose", *args], self.up_returncode, "", "boom")
-        return subprocess.CompletedProcess(["docker", "compose", *args], 0, "", "")
+        outcome = self.fail.get(i, 0)
+        if isinstance(outcome, BaseException):
+            raise outcome
+        return subprocess.CompletedProcess(["docker", "compose", *args], outcome, "", "boom" if outcome else "")
 
     @property
     def verbs(self) -> list[str]:
         return [c[0] for c in self.calls]
+
+
+def _timeout(*args: str) -> subprocess.TimeoutExpired:
+    return subprocess.TimeoutExpired(["docker", "compose", *args], 300)
 
 
 def test_down_before_up_and_down_after():
@@ -103,3 +115,45 @@ def test_generate_engagement_runs_the_generator_in_the_scanner():
     stack.generate_engagement(scanner_exec, "/captures/x/engagement.yaml", hours=2)
     assert calls == [("python3", "/lab/make_lab_engagement.py", "/captures/x/engagement.yaml",
                       "--template", "/lab/engagement.yaml", "--hours", "2")]
+
+
+def test_initial_down_timeout_propagates_and_up_never_runs():
+    c = FakeCompose(fail={0: _timeout("down")})
+    with pytest.raises(subprocess.TimeoutExpired):
+        with stack.lab_stack(c):
+            pytest.fail("the body must not run")
+    assert c.verbs == ["down"]
+
+
+@pytest.mark.parametrize("outcome", [_timeout("down"), 1], ids=["timeout", "nonzero-exit"])
+def test_final_down_failure_after_a_clean_body_raises_teardown_error(outcome):
+    c, body_ran = FakeCompose(fail={2: outcome}), []
+    with pytest.raises(stack.TeardownError):
+        with stack.lab_stack(c):
+            body_ran.append(True)
+    assert body_ran == [True]
+    assert c.verbs == ["down", "up", "down"]
+
+
+def test_final_down_failure_never_masks_an_error_from_the_body():
+    c = FakeCompose(fail={2: _timeout("down")})
+    with pytest.raises(RuntimeError, match="isolation failed"):
+        with stack.lab_stack(c):
+            raise RuntimeError("isolation failed")
+    assert c.verbs == ["down", "up", "down"]
+
+
+def test_final_down_failure_never_masks_an_up_failure():
+    c = FakeCompose(fail={1: 1, 2: _timeout("down")})
+    with pytest.raises(stack.LabStackError):
+        with stack.lab_stack(c):
+            pass
+
+
+def test_a_timed_out_call_is_still_recorded():
+    c, seen = FakeCompose(fail={2: _timeout("down")}), []
+    with pytest.raises(stack.TeardownError):
+        with stack.lab_stack(c, record=seen.append):
+            pass
+    assert [cp.returncode for cp in seen] == [0, 0, -1]
+    assert "TIMEOUT" in seen[-1].stderr

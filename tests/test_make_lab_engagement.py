@@ -48,10 +48,23 @@ def test_hours_is_configurable():
     assert _parse(end_s) - _parse(start_s) == dt.timedelta(hours=1, minutes=35)
 
 
-@pytest.mark.parametrize("hours", [0, -1])
-def test_non_positive_hours_refused(hours):
+@pytest.mark.parametrize("hours", [0, -1, 24.01, 25, 1000, float("nan"), float("inf"), float("-inf")])
+def test_hours_outside_zero_to_24_or_non_finite_refused(hours):
     with pytest.raises(ValueError):
         mle.make_engagement(_template(), NOW, hours=hours)
+
+
+def test_hours_of_exactly_24_is_allowed():
+    start_s, end_s = mle.make_engagement(_template(), NOW, hours=24)["authorization"]["window"]
+    assert _parse(end_s) - _parse(start_s) == dt.timedelta(hours=24, minutes=5)
+
+
+@pytest.mark.parametrize("hours", ["25", "nan", "inf", "0"])
+def test_cli_rejects_out_of_range_hours_and_writes_nothing(tmp_path, capsys, hours):
+    out = tmp_path / "e.yaml"
+    assert mle.main([str(out), "--template", str(TEMPLATE_PATH), "--hours", hours]) == 1
+    assert "hours must be" in capsys.readouterr().err
+    assert not out.exists()
 
 
 def test_naive_now_refused():

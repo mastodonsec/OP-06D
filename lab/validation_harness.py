@@ -348,9 +348,17 @@ def skipped(reason: str, after: str = "4") -> list[StepResult]:
     return [StepResult(k, n, SKIP, reason) for k, n in STEPS[keys.index(after) + 1:]]
 
 
-def overall(results: list[StepResult]) -> tuple[int, str]:
+TEARDOWN_FAILED_LINE = f"RESULT: FAIL - teardown failed; the lab may still be running: {stack.TEARDOWN_HINT}"
+
+
+def overall(results: list[StepResult], *, teardown_failed: bool = False) -> tuple[int, str]:
     """The run's exit code and final line. NEEDS-REVIEW never fails the run
-    but is never reported as a clean PASS either; the go/no-go stays human."""
+    but is never reported as a clean PASS either; the go/no-go stays human.
+    A failed final teardown always makes the run FAIL (exit 2 is kept if the
+    isolation gate also failed), with the teardown line as the result."""
+    if teardown_failed:
+        code, _ = overall(results)
+        return max(code, EXIT_FAIL), TEARDOWN_FAILED_LINE
     by_step = {r.step: r for r in results}
     iso = by_step.get("4")
     if iso is None or iso.status != PASS:
@@ -891,6 +899,7 @@ def main(argv: list[str] | None = None) -> int:
     _say(f"evidence bundle: {bundle_host}")
 
     results: list[StepResult]
+    teardown_error: str | None = None
     _say("-> clearing any leftover lab stack, then bringing the lab up (docker compose down; up -d)")
     try:
         with stack.lab_stack(_compose, keep=args.keep_stack, record=lambda cp: h.capture("stack.txt", cp)):
@@ -902,12 +911,16 @@ def main(argv: list[str] | None = None) -> int:
                 results = run_steps(h)
             _say("-> --keep-stack: leaving the lab running (tear down: docker compose -f lab/docker-compose.yml down)"
                  if args.keep_stack else "-> tearing the lab down")
+    except stack.TeardownError as exc:
+        # Raised only after the with-body finished: the step results stand.
+        teardown_error = str(exc)
+        _say(f"-> TEARDOWN FAILED: {exc} - see stack.txt; run: {stack.TEARDOWN_HINT}")
     except (stack.LabStackError, subprocess.TimeoutExpired) as exc:
         results = [StepResult("4", "isolation", FAIL,
                               f"the stack did not come up ({type(exc).__name__}) - see stack.txt"),
                    *skipped("the stack did not come up")]
 
-    code, final_line = overall(results)
+    code, final_line = overall(results, teardown_failed=teardown_error is not None)
     report = format_report(results, started_iso, final_line)
     summary = {
         "ticket": "RC-24",
@@ -915,6 +928,7 @@ def main(argv: list[str] | None = None) -> int:
         "bundle": str(bundle_host),
         "exit_code": code,
         "result": final_line,
+        "teardown_error": teardown_error,
         "human_review_required": [r.step for r in results if r.status == NEEDS_REVIEW],
         "steps": [asdict(r) for r in results],
         "versions": h.extra.get("versions"),

@@ -9,7 +9,7 @@ fixture, read-only-mounted at ``/lab``, not something the product ships.
 
 Usage (inside the scanner):
 
-    python3 /lab/scan_driver.py <captures-dir> [--json <summary-path>]
+    python3 /lab/scan_driver.py <captures-dir> --engagement <generated-engagement.yaml> [--json <summary-path>]
 
 Writes the raw + ``*.findings.json`` captures under ``<captures-dir>`` exactly
 as RUNBOOK Step 8 describes, and (with ``--json``) a machine-readable summary:
@@ -58,7 +58,7 @@ def isolation_failure_reason(network_internal: str, isolation_exit_code: int) ->
 def run(
     out_dir: pathlib.Path,
     *,
-    engagement_path: str = "/lab/engagement.yaml",
+    engagement_path: str,
     template_dir: str = "/opt/nuclei-templates",
     templates_pin: str = "v10.5.1",
     audit_subdir: str = "audit",
@@ -122,7 +122,9 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("out_dir")
     parser.add_argument("--json", dest="json_path", default=None)
-    parser.add_argument("--engagement", default="/lab/engagement.yaml")
+    parser.add_argument("--engagement", required=True,
+                        help="the run's generated engagement (lab/make_lab_engagement.py), "
+                             "not the lab/engagement.yaml template")
     parser.add_argument("--template-dir", default="/opt/nuclei-templates")
     parser.add_argument("--templates-pin", default="v10.5.1")
     args = parser.parse_args(argv)

@@ -9,7 +9,9 @@ skips (exit 3) without OP06D_LAB=1."""
 from __future__ import annotations
 
 import datetime as dt
+import json
 import pathlib
+import subprocess
 import sys
 
 import pytest
@@ -268,3 +270,91 @@ def test_main_skips_cleanly_without_the_lab(monkeypatch, capsys):
     monkeypatch.delenv("OP06D_LAB", raising=False)
     assert vh.main([]) == vh.EXIT_SKIPPED == 3
     assert "RESULT: SKIPPED" in capsys.readouterr().out
+
+
+# -- main(): stack lifecycle paths (mocked compose; no docker) ---------------
+
+class _Compose:
+    """Fake ``_compose``: call 0 = initial down, 1 = up, 2 = final down.
+    ``fail`` maps a call index to an exception to raise."""
+
+    def __init__(self, fail=None):
+        self.calls, self.fail = [], dict(fail or {})
+
+    def __call__(self, *args, timeout=120, **kw):
+        i = len(self.calls)
+        self.calls.append(args)
+        if i in self.fail:
+            raise self.fail[i]
+        return subprocess.CompletedProcess(["docker", "compose", *args], 0, "", "")
+
+
+def _full_run_results():
+    results = [vh.StepResult(k, n, vh.PASS, "ok") for k, n in vh.STEPS]
+    for r in results:
+        if r.step in vh.REVIEW_STEPS:
+            r.status = vh.NEEDS_REVIEW
+    return results
+
+
+@pytest.fixture
+def harness_env(monkeypatch, tmp_path):
+    monkeypatch.setattr(vh, "LAB_DIR", tmp_path)
+    monkeypatch.setattr(vh, "skip_reason", lambda: None)
+    monkeypatch.setattr(vh, "_wait_for_targets", lambda: True)
+    ran = []
+    monkeypatch.setattr(vh, "run_steps", lambda h: ran.append(h) or _full_run_results())
+
+    def install(compose):
+        monkeypatch.setattr(vh, "_compose", compose)
+        return compose
+
+    def summary():
+        bundle = next((tmp_path / "captures").glob("validation-*"))
+        return json.loads((bundle / "summary.json").read_text(encoding="utf-8")), bundle
+
+    return install, ran, summary
+
+
+def test_main_up_timeout_is_a_step4_fail_and_nothing_runs(harness_env, capsys):
+    install, ran, summary = harness_env
+    compose = install(_Compose(fail={1: subprocess.TimeoutExpired(["docker", "compose", "up"], 900)}))
+    assert vh.main([]) == vh.EXIT_ISOLATION
+    assert ran == []
+    s, _ = summary()
+    steps = {st["step"]: st for st in s["steps"]}
+    assert steps["4"]["status"] == vh.FAIL and "did not come up" in steps["4"]["detail"]
+    assert all(st["status"] == vh.SKIP for k, st in steps.items() if k != "4")
+    assert s["teardown_error"] is None
+    assert [c[0] for c in compose.calls] == ["down", "up", "down"]
+
+
+def test_main_final_down_timeout_keeps_results_and_fails_with_teardown_line(harness_env, capsys):
+    install, ran, summary = harness_env
+    install(_Compose(fail={2: subprocess.TimeoutExpired(["docker", "compose", "down"], 300)}))
+    assert vh.main([]) == vh.EXIT_FAIL
+    assert len(ran) == 1
+    s, bundle = summary()
+    steps = {st["step"]: st for st in s["steps"]}
+    assert steps["4"]["status"] == vh.PASS and steps["8"]["status"] == vh.PASS
+    assert steps["10"]["status"] == vh.NEEDS_REVIEW
+    assert s["result"] == vh.TEARDOWN_FAILED_LINE
+    assert s["result"] == ("RESULT: FAIL - teardown failed; the lab may still be running: "
+                           "docker compose -f lab/docker-compose.yml down")
+    assert "timed out" in s["teardown_error"]
+    stack_txt = (bundle / "stack.txt").read_text(encoding="utf-8")
+    assert stack_txt.count("$ docker compose") == 3 and "TIMEOUT" in stack_txt
+    assert capsys.readouterr().out.rstrip().splitlines()[-2] == vh.TEARDOWN_FAILED_LINE
+
+
+def test_main_clean_run_is_unaffected(harness_env):
+    install, ran, summary = harness_env
+    install(_Compose())
+    assert vh.main([]) == vh.EXIT_OK
+    s, _ = summary()
+    assert s["teardown_error"] is None and s["result"].startswith("RESULT: PASS, needs human review")
+
+
+def test_teardown_failure_keeps_exit_2_when_isolation_also_failed():
+    results = [vh.StepResult("4", "isolation", vh.FAIL), *vh.skipped("x")]
+    assert vh.overall(results, teardown_failed=True) == (vh.EXIT_ISOLATION, vh.TEARDOWN_FAILED_LINE)
