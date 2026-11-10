@@ -43,6 +43,9 @@ lab/captures/*.json
 # RC-20 ephemeral integration-test captures — never committed, wiped before every run
 lab/captures/_rc20_ephemeral/
 
+# RC-24 validation-harness evidence bundles — timestamped, one per run, never committed
+lab/captures/validation-*/
+
 # Unit test / coverage reports
 htmlcov/
 .tox/
