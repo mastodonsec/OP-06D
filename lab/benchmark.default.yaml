@@ -1,0 +1,70 @@
+# RC-46: Planner model benchmark: score candidate models on lab runs
+#
+# The default shortlist for lab/benchmark.py. Nothing here is pulled or run for
+# you: `uv run python lab/benchmark.py models --config lab/benchmark.default.yaml`
+# lists what host Ollama still needs.
+#
+# Sized for a 10 GB (desktop RTX 3080) or 12 GB (RTX 4080 Laptop) GPU:
+# the 8B-class models fit entirely, the 14B is at the edge of 10 GB and may be
+# partly offloaded there, and the 30B MoE is always partly offloaded. Each run
+# records how much of the model was on the GPU.
+benchmark: default
+
+# Per-run limits (the RC-47 acceptance limits). A candidate may override any of
+# them under its own `limits:`.
+limits:
+  max_iterations: 12
+  max_actions: 6
+  max_wall_clock: 1800
+  max_tokens: 300000
+
+engagements:
+  local: lab/engagement.yaml
+  anthropic: lab/engagement-llm-hosted.yaml
+
+# Required as soon as a hosted candidate is listed. One budget for the whole
+# benchmark: each hosted run is capped to what is left, and the hosted group
+# stops when it is used up.
+hosted_budget:
+  max_tokens: 700000
+  max_cost_usd: 5.00
+
+candidates:
+  - name: llama3.1-8b-q5
+    provider: local
+    model: llama3.1:8b-instruct-q5_K_M   # the RC-40 default local model
+    quantization: q5_K_M
+    context_tokens: 8192
+    runs: 5
+
+  - name: qwen2.5-7b-q5
+    provider: local
+    model: qwen2.5:7b-instruct-q5_K_M
+    quantization: q5_K_M
+    context_tokens: 8192
+    runs: 5
+
+  - name: qwen2.5-14b-q4
+    provider: local
+    model: qwen2.5:14b-instruct-q4_K_M
+    quantization: q4_K_M
+    context_tokens: 8192
+    runs: 5
+
+  - name: qwen3-30b-moe-q4
+    provider: local
+    model: qwen3:30b-a3b-q4_K_M
+    quantization: q4_K_M
+    context_tokens: 8192
+    runs: 3
+    notes: "30B mixture-of-experts (3B active); larger than the GPU, so partly offloaded to CPU"
+    limits:
+      max_wall_clock: 3600
+
+  # Hosted reference. No `model:` means the RC-40 default hosted model. Runs
+  # only with --allow-hosted, the hosted engagement above, and ANTHROPIC_API_KEY
+  # in the shell.
+  - name: anthropic-default
+    provider: anthropic
+    context_tokens: 200000
+    runs: 2

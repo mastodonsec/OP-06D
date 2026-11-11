@@ -1125,3 +1125,93 @@ The integration test brings the stack down at the end; for manual runs,
 always finish with `uv run python lab/model_relay.py down` (it also removes the
 relay and its networks; a plain `docker compose -f lab/docker-compose.yml down`
 would leave the relay running as an orphan).
+
+## Planner model benchmark (RC-46, OPT-IN)
+
+RC-46: Planner model benchmark: score candidate models on lab runs
+
+`lab/benchmark.py` runs `op06d run --planner llm` N times per candidate model
+through the model relay above and scores every run from its audit log and
+evidence store. It is long, it tears the `rc-lab` stack down and up, and
+hosted candidates cost money, so nothing runs it for you.
+
+The candidates are in a YAML config; `lab/benchmark.default.yaml` is the
+shortlist (provider, model, quantization label, context size, N, per-run
+limits, and the hosted budget). The harness never pulls a model:
+
+```powershell
+uv run python lab/benchmark.py models --config lab/benchmark.default.yaml   # present / MISSING per local model
+ollama pull llama3.1:8b-instruct-q5_K_M
+ollama pull qwen2.5:7b-instruct-q5_K_M
+ollama pull qwen2.5:14b-instruct-q4_K_M
+ollama pull qwen3:30b-a3b-q4_K_M
+```
+
+```powershell
+uv run python lab/model_relay.py build local    # once, if the overlay images are not built
+# smoke: one local model, one run
+uv run python lab/benchmark.py run --config lab/benchmark.default.yaml --candidate llama3.1-8b-q5 --runs 1
+# every local candidate
+uv run python lab/benchmark.py run --config lab/benchmark.default.yaml --provider local
+# hosted reference (paid): needs the flag, the key and the config's hosted_budget
+$env:ANTHROPIC_API_KEY = Read-Host -MaskInput "Anthropic API key"   # paste with right-click, check .Length
+uv run python lab/benchmark.py run --config lab/benchmark.default.yaml --provider anthropic --allow-hosted
+Remove-Item Env:ANTHROPIC_API_KEY
+```
+
+`validate` instead of `run` checks the config and the selection and starts
+nothing. Exit codes: 0 done, 1 failed, 2 refused before anything started,
+130 interrupted.
+
+What `run` does:
+
+- Refuses before any docker call when a hosted candidate is selected without
+  `--allow-hosted`, the engagement does not allow the provider, the key is
+  implausible, or a local model is not in host Ollama (it prints the
+  `ollama pull` lines).
+- One stack per provider, `local` first: `down`, `up`, then `check`, which
+  must PASS or no run starts. Local candidates share the `local` stack and
+  differ by `--model` and `--context-tokens`.
+- One `--planner fixed` run first, once per benchmark: its findings are the
+  reference set for coverage.
+- Hosted runs share one budget (`hosted_budget.max_tokens` and/or
+  `max_cost_usd`). Each run's `--max-tokens` / `--max-cost-usd` is capped to
+  what is left; when less than 20 000 tokens or $0.05 is left the remaining
+  hosted runs are recorded as `skipped_budget` and the benchmark finishes
+  normally. A hosted run that left no record is charged its whole grant.
+- `down` at the end, also after an error or Ctrl+C; partial results are
+  written and marked `aborted`.
+
+Metrics per run (definitions in `lab/benchmark_metrics.py`):
+
+| Metric | From | Definition |
+|---|---|---|
+| Valid-action rate | audit log | (well-formed actions + well-formed `done`) / model turns. Re-asks after an invalid reply are turns. |
+| Out-of-scope denied | evidence store | proposals the gate refused at stage `scope` |
+| Redundant actions | audit log | executed actions whose tool + target + parameter set was already executed in the run |
+| Baseline coverage | evidence store | share of the fixed-planner run's findings this run also produced |
+| Tokens, wall clock, termination, failure cause | audit log | loop-end entry; first to last entry |
+
+**Finding identity** (what "the same finding" means for coverage): the RC-15
+`finding_id`, i.e. the first 16 hex characters of SHA-256 over (source tool,
+asset IP or else hostname, port, category, key), where the key is the nuclei
+template id or the nmap finding title / script id. It has no timestamp or run
+id, and a hostname target is keyed by the IP that was scanned. Consequences:
+an nmap port found without version detection is a different finding from the
+same port with a detected product, and nmap and nuclei reporting the same
+service are two findings.
+
+Each run also records its environment: GPU name and VRAM (`nvidia-smi` on the
+host, else `unknown`), quantization label, context size, Ollama version,
+`output_mode`, and how many of the model's bytes were on the GPU (Ollama
+`/api/ps`), which is what shows a partly offloaded model.
+
+Output, both git-ignored:
+
+- run output (report, evidence store, audit log per run):
+  `lab/captures/_rc46_benchmark/<id>/<candidate>/run-NN/run/`
+- results: `benchmark-results/<id>/results.json`, `results.csv` (one row per
+  run) and `summary.md` (per candidate: N, failures, mean ± sample standard
+  deviation and min to max). The results directory is scanned for API-key
+  material before the command returns; a file that matches is deleted and the
+  command fails.
