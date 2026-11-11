@@ -138,7 +138,8 @@ audit log, no evidence.
 - If an Ollama server rejects the schema `format` (HTTP 400, as older versions
   do), the adapter switches to plain JSON mode (`format: "json"`) for the rest
   of the run and relies on strict validation alone. The mode in use is stored
-  with the run's planner record (`output_mode`). The llama.cpp and
+  with the run's planner record (`output_mode`) and shown in the report's
+  Planner section ("Output mode"). The llama.cpp and
   OpenAI-compatible runtimes do not drop their constraint.
 - Ollama receives `num_ctx = --context-tokens`. For llama.cpp, LM Studio and
   vLLM, the context size is set when the server is launched, so pass the same

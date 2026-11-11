@@ -190,6 +190,8 @@ class PlannerSection(_Frozen):
     input_tokens: int | None = None
     output_tokens: int | None = None
     failure_cause: dict[str, Any] | None = None
+    # RC-46: Planner model benchmark: score candidate models on lab runs
+    output_mode: str | None = None
     limits: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -363,7 +365,8 @@ def build_report(run: ReconstructedRun) -> Report:
 
 _PLANNER_FIELDS = (
     "planner", "provider", "model", "endpoint_class", "context_tokens", "iterations",
-    "actions", "termination", "input_tokens", "output_tokens", "failure_cause", "limits",
+    "actions", "termination", "input_tokens", "output_tokens", "failure_cause", "output_mode",
+    "limits",
 )
 
 
@@ -394,7 +397,8 @@ def planner_rows(p: PlannerSection) -> list[tuple[str, str]]:
     rows = [("Planner", p.planner)]
     for label, value in (
         ("Provider", p.provider), ("Model", p.model), ("Endpoint", p.endpoint_class),
-        ("Context size (tokens)", p.context_tokens), ("Iterations", p.iterations),
+        ("Context size (tokens)", p.context_tokens), ("Output mode", p.output_mode),
+        ("Iterations", p.iterations),
         ("Tool actions", p.actions), ("Termination reason", p.termination),
         ("Failure cause", format_failure_cause(p.failure_cause)),
         ("Input tokens", p.input_tokens), ("Output tokens", p.output_tokens),

@@ -362,6 +362,25 @@ def test_a_failure_without_a_known_status_records_the_error_class_only(tmp_path)
     assert "Failure cause" in summary.report_html_path.read_text(encoding="utf-8")
 
 
+def test_the_report_planner_section_shows_the_output_mode_from_the_run_record(tmp_path):
+    # RC-46: Planner model benchmark: score candidate models on lab runs
+    llm = ScriptLLM([DONE])
+    llm.output_mode = "json_schema"
+    summary, _, _ = _run(tmp_path, [], llm=llm)
+    assert _planner_row(summary)["output_mode"] == "json_schema"
+    html = summary.report_html_path.read_text(encoding="utf-8")
+    assert "<th>Output mode</th><td>json_schema</td>" in html
+    from op06d.report import build_report, render_markdown
+    store = EvidenceStore(summary.evidence_db_path)
+    assert "| Output mode | json_schema |" in render_markdown(build_report(store.reconstruct_run(summary.run_id)))
+
+
+def test_a_run_without_an_output_mode_has_no_output_mode_row(tmp_path):
+    summary, _, _ = _run(tmp_path, [DONE])
+    assert "output_mode" not in _planner_row(summary)
+    assert "Output mode" not in summary.report_html_path.read_text(encoding="utf-8")
+
+
 def test_a_run_that_does_not_fail_records_no_failure_cause(tmp_path):
     summary, _, _ = _run(tmp_path, [DONE])
     assert "cause" not in _loop_end(summary).parameters
