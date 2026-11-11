@@ -65,6 +65,8 @@ coverage.xml
 *.lcov
 .hypothesis/
 .pytest_cache/
+# pytest --basetemp .pytest-tmp (see lab/RUNBOOK.md) - per-run scratch, never committed
+.pytest-tmp/
 cover/
 
 # Translations

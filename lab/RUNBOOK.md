@@ -17,7 +17,8 @@ UTF-8 handling that Windows PowerShell 5.1 does not do reliably.
 > `tests/integration/test_lab_rc20.py` against the frozen baseline in
 > `tests/integration/baseline.json`. It is excluded from the default test
 > suite and needs `OP06D_LAB=1`:
-> `OP06D_LAB=1 pytest -m lab tests/integration/test_lab_rc20.py`.
+> `OP06D_LAB=1 pytest -m lab --basetemp .pytest-tmp tests/integration/test_lab_rc20.py`
+> (`.pytest-tmp/` is pytest's scratch directory for the run; it is git-ignored).
 > It does not replace the exploratory one-off steps below (10/11/12) or the
 > scripted-orchestrator end-to-end in Step 13.
 
@@ -1104,9 +1105,9 @@ two interfaces). After `down`, rerun Step 4 before any non-relay scan.
 ```powershell
 # lab acceptance, one upstream per invocation
 $env:OP06D_LAB = "1"; $env:OP06D_LLM_PROVIDER = "local"
-uv run pytest -m lab tests/integration/test_lab_rc47.py -rs
+uv run pytest -m lab -rs --basetemp .pytest-tmp tests/integration/test_lab_rc47.py
 $env:OP06D_LLM_PROVIDER = "anthropic"; $env:ANTHROPIC_API_KEY = Read-Host -MaskInput "Anthropic API key"
-uv run pytest -m lab tests/integration/test_lab_rc47.py -rs
+uv run pytest -m lab -rs --basetemp .pytest-tmp tests/integration/test_lab_rc47.py
 Remove-Item Env:OP06D_LLM_PROVIDER, Env:ANTHROPIC_API_KEY
 
 # RC-21 live-model gate through the relay (overlay up, see above), local:
