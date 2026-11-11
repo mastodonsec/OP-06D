@@ -281,6 +281,7 @@ def run_engagement(
             **planner_info, "iterations": outcome.iterations, "actions": outcome.actions,
             "termination": termination, "input_tokens": outcome.input_tokens,
             "output_tokens": outcome.output_tokens,
+            **({"failure_cause": outcome.failure} if outcome.failure else {}),
             **({"output_mode": llm.output_mode} if hasattr(llm, "output_mode") else {}),
         })
 

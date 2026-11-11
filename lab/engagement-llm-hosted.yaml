@@ -1,0 +1,30 @@
+# RC-47: Lab model relay: let the sealed scanner reach the planner model for lab runs
+#
+# The lab engagement (lab/engagement.yaml) plus the one change a hosted-model lab
+# run needs: planner.allowed_providers lists "anthropic". Without a planner block
+# only the local provider is allowed (RC-40), and lab/model_relay.py refuses to
+# start the anthropic relay for an engagement that does not allow it.
+#
+# Everything else must stay identical to lab/engagement.yaml
+# (tests/test_lab_model_relay.py checks it). Like that file, this is a TEMPLATE:
+# each run generates a copy with a window around "now" (lab/make_lab_engagement.py).
+engagement: rc-lab-2026-11
+authorization:
+  client: "OP-06D lab (self-owned, isolated)"
+  signed_scope_ref: "LAB-INTERNAL-NOT-A-CLIENT"
+  authorized_by: "thomas@mastodonsec.com"
+  window: ["2026-11-05T00:00Z", "2026-11-10T00:00Z"]
+scope:
+  in_scope:
+    - juice-shop.lab
+    - dvwa.lab
+    - 172.31.77.10
+    - 172.31.77.11
+  out_of_scope:
+    - 172.31.77.20
+intensity:
+  max_rps: 50
+  destructive: false
+objective: "Lab validation: external-style recon of the OP-06D lab targets"
+planner:
+  allowed_providers: [local, anthropic]

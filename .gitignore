@@ -42,6 +42,8 @@ lab/captures/*.json
 
 # RC-20 ephemeral integration-test captures — never committed, wiped before every run
 lab/captures/_rc20_ephemeral/
+# RC-47 model-relay acceptance captures (reports, evidence, audit logs) - never committed
+lab/captures/_rc47_ephemeral/
 
 # RC-24 validation-harness evidence bundles — timestamped, one per run, never committed
 lab/captures/validation-*/
@@ -63,6 +65,8 @@ coverage.xml
 *.lcov
 .hypothesis/
 .pytest_cache/
+# pytest --basetemp .pytest-tmp (see lab/RUNBOOK.md) - per-run scratch, never committed
+.pytest-tmp/
 cover/
 
 # Translations

@@ -339,6 +339,49 @@ def test_api_failure_ends_the_run_cleanly_and_nothing_runs(tmp_path):
     assert summary.report_html_path.exists()
 
 
+def test_model_failure_cause_is_in_the_audit_log_the_evidence_store_and_the_report(tmp_path):
+    exc = LLMUnavailable(f"model API error: AuthenticationError (HTTP 401) {FAKE_KEY}")
+    exc.with_cause(401, "authentication_error")
+    summary, tool, _ = _run(tmp_path, [exc])
+    assert summary.termination == "model_failure" and tool.calls == []
+    cause = {"error": "LLMUnavailable", "http_status": 401, "error_type": "authentication_error"}
+    assert _loop_end(summary).parameters["cause"] == cause
+    noted = [e for e in _log(summary) if (e.reason or "").startswith("model failure")]
+    assert len(noted) == 1 and noted[0].parameters["cause"] == cause
+    assert _planner_row(summary)["failure_cause"] == cause
+    html = summary.report_html_path.read_text(encoding="utf-8")
+    assert "Failure cause" in html and "authentication_error (HTTP 401)" in html
+    for p in sorted((tmp_path / "out").rglob("*")):
+        if p.is_file():
+            assert FAKE_KEY.encode() not in p.read_bytes(), p
+
+
+def test_a_failure_without_a_known_status_records_the_error_class_only(tmp_path):
+    summary, _, _ = _run(tmp_path, [LLMUnavailable("local model: gave up after 4 attempts")])
+    assert _loop_end(summary).parameters["cause"] == {"error": "LLMUnavailable"}
+    assert "Failure cause" in summary.report_html_path.read_text(encoding="utf-8")
+
+
+def test_a_run_that_does_not_fail_records_no_failure_cause(tmp_path):
+    summary, _, _ = _run(tmp_path, [DONE])
+    assert "cause" not in _loop_end(summary).parameters
+    assert "failure_cause" not in _planner_row(summary)
+    assert "Failure cause" not in summary.report_html_path.read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize("bad", ["x", "sk-ant-" + "short", "plain-" + "a" * 60])
+def test_cli_anthropic_with_an_implausible_key_is_refused_before_anything_is_created(
+        tmp_path, capsys, monkeypatch, bad):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", bad)
+    eng = _engagement(tmp_path, {"allowed_providers": ["anthropic"]})
+    code = main(["run", "--engagement", str(eng), "--out", str(tmp_path / "o"),
+                 "--planner", "llm", "--llm-provider", "anthropic"])
+    err = capsys.readouterr().err
+    assert code == 2 and "does not look like an Anthropic API key" in err
+    assert f"{len(bad)} character(s) long" in err
+    assert not (tmp_path / "o").exists()
+
+
 def test_refusal_ends_the_run_as_model_refused_in_audit_log_and_report(tmp_path):
     summary, tool, llm = _run(tmp_path, [act(), LLMRefused("model declined the request (stop_reason=refusal)")])
     assert summary.termination == "model_refused" and len(tool.calls) == 1 and len(llm.calls) == 2

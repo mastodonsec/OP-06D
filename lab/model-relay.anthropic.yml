@@ -1,0 +1,82 @@
+# RC-47: Lab model relay: let the sealed scanner reach the planner model for lab runs
+#
+# OPT-IN overlay, upstream = api.anthropic.com:443. Never part of the base lab.
+# Start it ONLY through the launcher, which refuses unless the engagement's
+# planner.allowed_providers lists "anthropic" (lab/engagement-llm-hosted.yaml does):
+#   uv run python lab/model_relay.py up anthropic --engagement lab/engagement-llm-hosted.yaml
+#
+#   scanner (172.31.78.20) --relaynet (internal)--> model-relay (172.31.78.2:443)
+#   model-relay --relay_egress--> api.anthropic.com:443, nothing else
+#
+# * Raw TCP passthrough, no TLS termination: TLS, SNI and certificate validation
+#   are end to end between the scanner and the real api.anthropic.com. Inside the
+#   scanner, api.anthropic.com resolves to the relay (extra_hosts below), so the
+#   pinned hosted endpoint is used unchanged; there is no endpoint override.
+# * The relay forwards a connection only if its TLS ClientHello carries SNI
+#   api.anthropic.com: the address it shares serves other names too.
+# * relaynet is internal and joins ONLY the scanner and the relay. The targets
+#   stay on labnet only; labnet itself is untouched.
+# * relay_egress is the only network with an outbound route, and only the relay
+#   is on it. The relay's own iptables allow just api.anthropic.com's addresses
+#   on 443, then HAProxy runs unprivileged with every capability dropped
+#   (lab/relay/relay-entrypoint.sh).
+# * The API key is never set here. Pass it to one command at a time, by name:
+#     docker compose ... exec -T -e ANTHROPIC_API_KEY scanner ...
+
+name: rc-lab
+
+services:
+  scanner:
+    image: op06d-lab-scanner-llm:nmap-7.93-nuclei-3.11.1-templates-10.5.1-anthropic-2.8.0
+    build:
+      context: ./relay
+      dockerfile: scanner-llm.Dockerfile
+      args:
+        BASE_IMAGE: op06d-lab-scanner:nmap-7.93-nuclei-3.11.1-templates-10.5.1
+    extra_hosts:
+      - "api.anthropic.com:172.31.78.2"
+    networks:
+      relaynet:
+        ipv4_address: 172.31.78.20
+
+  model-relay:
+    build:
+      context: ./relay
+    image: op06d-lab-relay:alpine-3.24.4-haproxy-3.4.7
+    command: ["anthropic"]
+    restart: "no"
+    init: true
+    read_only: true
+    tmpfs:
+      - /run
+      - /tmp
+    mem_limit: 64m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    # Held only by the entrypoint (iptables, then setpriv); HAProxy runs with none.
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+      - SETUID
+      - SETGID
+      - SETPCAP
+    environment:
+      RELAY_NET: 172.31.78.0/24
+      RELAY_BIND: 172.31.78.2
+    networks:
+      relaynet:
+        ipv4_address: 172.31.78.2
+      relay_egress: {}
+
+networks:
+  relaynet:
+    driver: bridge
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.31.78.0/24
+  relay_egress:
+    driver: bridge
+    internal: false

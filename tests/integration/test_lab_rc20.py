@@ -69,7 +69,7 @@ def _require_docker() -> None:
 def _compose(*args: str, timeout: float = 120) -> subprocess.CompletedProcess:
     return subprocess.run(
         ["docker", "compose", "-f", str(COMPOSE_FILE), *args],
-        capture_output=True, text=True, timeout=timeout,
+        capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=timeout,
     )
 
 
@@ -110,7 +110,7 @@ def _assert_isolation_or_abort() -> None:
     docker."""
     inspect = subprocess.run(
         ["docker", "network", "inspect", "rc-lab_labnet", "--format", "{{.Internal}}"],
-        capture_output=True, text=True, timeout=30,
+        capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30,
     )
     internal = inspect.stdout.strip() if inspect.returncode == 0 else "<inspect failed>"
     iso = _exec("bash", "/lab/check_isolation.sh", timeout=120)

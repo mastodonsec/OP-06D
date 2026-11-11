@@ -138,11 +138,24 @@ class RunResult:
     input_tokens: int = 0
     output_tokens: int = 0
     cost_usd: float | None = None
+    failure: dict[str, Any] | None = None  # why the model call failed (model_failure / model_refused)
 
     @property
     def evidence(self) -> list[ExecutionResult]:
         """Executed actions with their RAW output, for RC-15/16."""
         return [s.result for s in self.steps if s.result is not None and s.result.executed]
+
+
+def failure_cause(exc: LLMError) -> dict[str, Any]:
+    """What is recorded about a failed model call: the adapter's error class
+    and, when known, the HTTP status and the API's error type. Identifiers
+    only - never the error message or anything from the request."""
+    cause: dict[str, Any] = {"error": type(exc).__name__}
+    if exc.http_status is not None:
+        cause["http_status"] = exc.http_status
+    if exc.error_type is not None:
+        cause["error_type"] = exc.error_type
+    return cause
 
 
 # --- planner reply protocol -------------------------------------------------
@@ -369,18 +382,21 @@ class Orchestrator:
     def _cost(self) -> float | None:
         return self._limits.cost(self._in_tokens, self._out_tokens)
 
-    def _end(self, why: Termination, steps: list[Step], iterations: int, summary: str = "") -> RunResult:
+    def _end(self, why: Termination, steps: list[Step], iterations: int, summary: str = "", *,
+             failure: dict[str, Any] | None = None) -> RunResult:
         stats: dict[str, Any] = {}
         if self._actions or self._in_tokens or self._out_tokens:
             stats = {"actions": self._actions, "input_tokens": self._in_tokens,
                      "output_tokens": self._out_tokens}
+        if failure:
+            stats["cause"] = failure
         try:
             self._note(EVENT_LOOP_END, iterations, why.value,
                        summary=summary[:MAX_STORED_REPLY_CHARS], **stats)
         except AuditError:
             pass  # already stopping; nothing more to protect
         return RunResult(why, iterations, tuple(steps), summary, self._actions,
-                         self._in_tokens, self._out_tokens, self._cost())
+                         self._in_tokens, self._out_tokens, self._cost(), failure)
 
     def _clock_exceeded(self) -> bool:
         limit = self._limits.max_wall_clock_seconds
@@ -467,13 +483,15 @@ class Orchestrator:
                 self._account_failed_call()
                 refused = isinstance(exc, LLMRefused)
                 label = "model refused" if refused else "model failure"
+                cause = failure_cause(exc)
                 try:
                     self._note(EVENT_ITERATION, n,
-                               f"{label}: {type(exc).__name__}: {exc}"[:MAX_REASON_CHARS])
+                               f"{label}: {type(exc).__name__}: {exc}"[:MAX_REASON_CHARS], cause=cause)
                 except AuditError:
                     return self._end(Termination.AUDIT_FAILURE, steps, n)
                 return self._end(
-                    Termination.MODEL_REFUSED if refused else Termination.MODEL_FAILURE, steps, n)
+                    Termination.MODEL_REFUSED if refused else Termination.MODEL_FAILURE, steps, n,
+                    failure=cause)
             except Exception as exc:
                 steps.append(Step(n, "llm_error"))
                 try:

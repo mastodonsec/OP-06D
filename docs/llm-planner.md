@@ -150,14 +150,15 @@ audit log, no evidence.
   host. The modes behave as described above.
 - **The sealed lab:** op06d and the tools run *inside* the scanner container on
   `labnet`. That network is `internal: true`, with no route to the host or the
-  internet, so a lab LLM run can reach neither host-loopback Ollama nor
-  `api.anthropic.com`. The chosen lab design is an opt-in **model-relay
-  overlay**, built in RC-47. It adds a second internal network that joins only
-  the scanner and a relay container, and the relay forwards to exactly one
-  upstream: host Ollama, or `api.anthropic.com:443` as TLS passthrough. The
-  targets are not on that network, and the base `lab/docker-compose.yml` and
-  its no-egress isolation are unchanged. Until RC-47 lands, `--planner llm`
-  is not wired into the lab.
+  internet, so on its own a lab LLM run can reach neither host Ollama nor
+  `api.anthropic.com`. RC-47 adds an opt-in **model-relay overlay**
+  (`lab/model-relay.local.yml` / `lab/model-relay.anthropic.yml`, driven by
+  `lab/model_relay.py`): a second internal network joins only the scanner and
+  a relay container, and the relay forwards to exactly one upstream - host
+  Ollama, or `api.anthropic.com:443` as raw TLS passthrough filtered on the
+  SNI. The targets are not on that network, the base `lab/docker-compose.yml`
+  and its no-egress isolation are unchanged, and the anthropic relay starts
+  only for an engagement that allows it. See lab/RUNBOOK.md, "Model relay".
 
 ## Replies, failures and context
 

@@ -189,6 +189,7 @@ class PlannerSection(_Frozen):
     termination: str | None = None
     input_tokens: int | None = None
     output_tokens: int | None = None
+    failure_cause: dict[str, Any] | None = None
     limits: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -362,8 +363,20 @@ def build_report(run: ReconstructedRun) -> Report:
 
 _PLANNER_FIELDS = (
     "planner", "provider", "model", "endpoint_class", "context_tokens", "iterations",
-    "actions", "termination", "input_tokens", "output_tokens", "limits",
+    "actions", "termination", "input_tokens", "output_tokens", "failure_cause", "limits",
 )
+
+
+def format_failure_cause(cause: dict[str, Any] | None) -> str | None:
+    """``authentication_error (HTTP 401)`` from a recorded model-failure cause."""
+    if not isinstance(cause, dict):
+        return None
+    name = cause.get("error_type") or cause.get("error")
+    status = cause.get("http_status")
+    parts = [str(name)] if name else []
+    if status is not None:
+        parts.append(f"(HTTP {status})" if parts else f"HTTP {status}")
+    return " ".join(parts) or None
 
 
 def _planner_section(info: dict[str, Any] | None) -> PlannerSection | None:
@@ -383,6 +396,7 @@ def planner_rows(p: PlannerSection) -> list[tuple[str, str]]:
         ("Provider", p.provider), ("Model", p.model), ("Endpoint", p.endpoint_class),
         ("Context size (tokens)", p.context_tokens), ("Iterations", p.iterations),
         ("Tool actions", p.actions), ("Termination reason", p.termination),
+        ("Failure cause", format_failure_cause(p.failure_cause)),
         ("Input tokens", p.input_tokens), ("Output tokens", p.output_tokens),
     ):
         if value is not None:
