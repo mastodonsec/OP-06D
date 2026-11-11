@@ -392,11 +392,13 @@ def test_default_runner_survives_bytes_that_are_not_cp1252():
     assert cp.stderr.startswith("━━") and cp.stderr.endswith("�")
 
 
-def test_every_text_mode_subprocess_call_under_lab_decodes_utf8_with_replacement():
+def test_every_text_mode_subprocess_call_in_the_lab_and_its_integration_tests_decodes_utf8():
     import ast
 
     seen = 0
-    for path in sorted(LAB.glob("*.py")):
+    integration = ROOT / "tests" / "integration"
+    assert len(list(integration.glob("test_lab_rc*.py"))) >= 5
+    for path in sorted([*LAB.glob("*.py"), *integration.glob("*.py")]):
         for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
             if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
                     and isinstance(node.func.value, ast.Name) and node.func.value.id == "subprocess"
@@ -411,7 +413,9 @@ def test_every_text_mode_subprocess_call_under_lab_decodes_utf8_with_replacement
             where = f"{path.name}:{node.lineno}"
             assert isinstance(kw.get("encoding"), ast.Constant) and kw["encoding"].value == "utf-8", where
             assert isinstance(kw.get("errors"), ast.Constant) and kw["errors"].value == "replace", where
-    assert seen >= 3  # model_relay.default_runner and both branches of validation_harness._run
+    # model_relay.default_runner, both branches of validation_harness._run, and the
+    # compose runners of the four older integration tests (rc20 has two calls)
+    assert seen >= 8
 
 
 # --- no key material in lab/ -----------------------------------------------------------------

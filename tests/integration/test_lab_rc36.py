@@ -67,7 +67,7 @@ def _require_docker() -> None:
 def _compose(*args: str, timeout: float = 180) -> subprocess.CompletedProcess:
     return subprocess.run(
         ["docker", "compose", "-f", str(COMPOSE_FILE), *args],
-        capture_output=True, text=True, timeout=timeout,
+        capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=timeout,
     )
 
 
@@ -133,7 +133,8 @@ with tempfile.TemporaryDirectory() as home:
         clean.append(a)
     clean += extra + ["-tl"]
     env = {{"PATH": os.environ["PATH"], "HOME": home, "XDG_CONFIG_HOME": home}}
-    p = subprocess.run(clean, capture_output=True, text=True, timeout=120, env=env)
+    p = subprocess.run(clean, capture_output=True, text=True, encoding="utf-8", errors="replace",
+                       timeout=120, env=env)
     lines = [l for l in p.stdout.splitlines() if l.strip().startswith("/")]
     print(json.dumps({{"returncode": p.returncode, "count": len(lines),
                       "stderr_tail": p.stderr[-300:]}}))

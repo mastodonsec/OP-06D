@@ -22,7 +22,9 @@
     powershell -File lab\check_isolation.ps1
     powershell -File lab\check_isolation.ps1 -WithInternetControl
 
-  Exit codes: 0 = PASS, 1 = FAIL (not isolated: stop), 2 = INCONCLUSIVE.
+  Exit codes: 0 = PASS, 1 = FAIL (not isolated: stop), 2 = INCONCLUSIVE,
+              3 = NOT RUN (Docker is unreachable or the lab stack is not up, so
+                  nothing was checked; this says nothing about isolation).
 #>
 param(
   [string]$Compose = "lab/docker-compose.yml",
@@ -36,13 +38,37 @@ $network = "${Project}_labnet"
 
 function Pass($m) { Write-Host "PASS  $m" -ForegroundColor Green }
 function Fail($m) { Write-Host "FAIL  $m" -ForegroundColor Red; $script:failed = $true }
+function NotRun($m, $hint) {
+  Write-Host "RESULT: NOT RUN - $m" -ForegroundColor Yellow
+  Write-Host "Nothing was checked. This is neither a PASS nor an isolation FAIL."
+  Write-Host $hint
+  exit 3
+}
+
+# Precondition: there must be a running stack to check. Without one every check
+# below would fail for the wrong reason and read as "not isolated".
+docker version --format '{{.Server.Version}}' *> $null
+if ($LASTEXITCODE -ne 0) {
+  NotRun "cannot reach the Docker daemon." "Start Docker Desktop, then bring the lab up:  docker compose -f $Compose up -d"
+}
+$expected = @("juice-shop", "dvwa", "scanner")
+docker network inspect $network *> $null
+$networkExists = ($LASTEXITCODE -eq 0)
+$running = @(docker ps --filter "label=com.docker.compose.project=$Project" --filter "status=running" --format '{{.Label "com.docker.compose.service"}}' 2>$null) | Where-Object { $_ }
+$missing = @($expected | Where-Object { $running -notcontains $_ })
+if (-not $networkExists -or $missing.Count -gt 0) {
+  $what = @()
+  if (-not $networkExists) { $what += "network $network does not exist" }
+  if ($missing.Count -gt 0) { $what += "not running: $($missing -join ', ')" }
+  NotRun "the $Project stack is not up ($($what -join '; '))." "Bring it up, then run this again:  docker compose -f $Compose up -d"
+}
 
 Write-Host "=== A. Host-side checks ==================================================="
 
 # A1. the network is internal
 $internal = (docker network inspect $network --format '{{.Internal}}' 2>$null)
 if ($internal -eq "true") { Pass "network $network is internal (no gateway, no NAT)" }
-else { Fail "network $network is not internal (got '$internal'). Is the stack up? Is 'internal: true' set?" }
+else { Fail "network $network is not internal (got '$internal'). Is 'internal: true' set?" }
 
 # A2. which containers are on it, and what else they are attached to
 $containers = @(docker network inspect $network --format '{{range $id, $c := .Containers}}{{$c.Name}} {{end}}' 2>$null) -split '\s+' | Where-Object { $_ }
