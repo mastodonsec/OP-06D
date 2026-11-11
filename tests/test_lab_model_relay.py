@@ -174,7 +174,7 @@ def test_anthropic_with_the_hosted_template_is_allowed_and_uses_only_its_overlay
     d = NoDocker()
     path = relay.up("anthropic", "lab/engagement-llm-hosted.yaml", run=d)
     assert path.name == "engagement-llm-hosted.yaml"
-    up_call = d.calls[-1]
+    up_call = next(c for c in d.calls if "up" in c)
     assert up_call[-3:] == ["up", "-d", "--remove-orphans"]
     files = [up_call[i + 1] for i, a in enumerate(up_call) if a == "-f"]
     assert [pathlib.Path(f).name for f in files] == ["docker-compose.yml", "model-relay.anthropic.yml"]
@@ -207,6 +207,108 @@ def test_a_running_relay_of_the_other_mode_blocks_up():
     with pytest.raises(relay.RelayError, match="one upstream per stack"):
         relay.up("local", None, run=d)
     assert not any("up" in c for c in d.calls)
+
+
+# --- up waits for the lab targets ----------------------------------------------------------
+
+class SlowTargets(NoDocker):
+    """Each target's probe fails ``not_ready[svc]`` times, then succeeds."""
+
+    def __init__(self, not_ready: dict[str, int], running: bool = True):
+        super().__init__()
+        self.not_ready, self.running, self.slept = dict(not_ready), running, []
+
+    def __call__(self, argv, timeout):
+        self.calls.append(list(argv))
+        if "curl" in argv:
+            svc = next(s for s, url in relay.TARGET_READY.items() if url == argv[-1])
+            if self.not_ready.get(svc, 0) > 0:
+                self.not_ready[svc] -= 1
+                return subprocess.CompletedProcess(argv, 7, "", "curl: (7) Failed to connect")
+            return subprocess.CompletedProcess(argv, 0, "", "")
+        if argv[-3:-1] == ["ps", "-q"]:
+            return subprocess.CompletedProcess(argv, 0, f"id-{argv[-1]}\n", "")
+        if argv[:3] == ["docker", "container", "inspect"]:
+            state = ('{"Running": true, "Status": "running", "ExitCode": 0}' if self.running
+                     else '{"Running": false, "Status": "exited", "ExitCode": 137}')
+            return subprocess.CompletedProcess(argv, 0, f'[{{"State": {state}}}]', "")
+        return subprocess.CompletedProcess(argv, 0, "", "")
+
+    def probes(self) -> list[str]:
+        return [c[-1] for c in self.calls if "curl" in c]
+
+
+class FakeClock:
+    def __init__(self):
+        self.now = 0.0
+
+    def __call__(self) -> float:
+        return self.now
+
+    def sleep(self, seconds: float) -> None:
+        self.now += seconds
+
+
+def test_wait_probes_each_target_from_the_scanner_until_it_answers():
+    d, clock = SlowTargets({"juice-shop": 3}), FakeClock()
+    relay.wait_for_targets("local", d, timeout=60, interval=2, clock=clock, sleep=clock.sleep)
+    juice, dvwa = relay.TARGET_READY["juice-shop"], relay.TARGET_READY["dvwa"]
+    assert d.probes() == [juice, dvwa, juice, juice, juice]  # a ready target is not probed again
+    assert clock.now == 6
+    probe = next(c for c in d.calls if "curl" in c)
+    assert probe[probe.index("exec"):probe.index("curl")] == ["exec", "-T", "scanner"]
+
+
+def test_wait_fails_clearly_when_a_target_never_answers():
+    d, clock = SlowTargets({"juice-shop": 10**6}), FakeClock()
+    with pytest.raises(relay.NotReady) as exc:
+        relay.wait_for_targets("local", d, timeout=30, interval=5, clock=clock, sleep=clock.sleep)
+    msg = str(exc.value)
+    assert "not ready after 30s" in msg and "juice-shop" in msg and "Failed to connect" in msg
+    assert "dvwa" not in msg.split("left up")[0]  # only the target that is still down is named
+    assert "model_relay.py down" in msg
+    assert clock.now == 30
+
+
+def test_wait_fails_at_once_when_a_target_container_has_exited():
+    d, clock = SlowTargets({"dvwa": 10**6}, running=False), FakeClock()
+    with pytest.raises(relay.NotReady, match=r"dvwa is not running \(status: exited, exit code: 137\)"):
+        relay.wait_for_targets("local", d, timeout=30, interval=5, clock=clock, sleep=clock.sleep)
+    assert clock.now == 0
+
+
+def test_a_hung_probe_counts_as_not_ready():
+    class Hung(SlowTargets):
+        def __call__(self, argv, timeout):
+            if "curl" in argv:
+                self.calls.append(list(argv))
+                raise subprocess.TimeoutExpired(argv, timeout)
+            return super().__call__(argv, timeout)
+
+    clock = FakeClock()
+    with pytest.raises(relay.NotReady, match="the probe timed out"):
+        relay.wait_for_targets("local", Hung({}), timeout=4, interval=2, clock=clock, sleep=clock.sleep)
+
+
+def test_up_waits_for_the_targets_after_compose_up_and_fails_when_they_never_come(monkeypatch):
+    d = NoDocker()
+    relay.up("local", None, run=d)
+    verbs = ["up" if "up" in c else "probe" for c in d.calls if "up" in c or "curl" in c]
+    assert verbs == ["up", "probe", "probe"]
+
+    monkeypatch.setattr(relay, "wait_for_targets",
+                        lambda mode, run: (_ for _ in ()).throw(relay.NotReady("lab target(s) not ready")))
+    with pytest.raises(relay.NotReady):
+        relay.up("local", None, run=NoDocker())
+
+
+def test_cli_up_reports_a_target_that_never_came_up_as_a_failure(monkeypatch, capsys):
+    def never(mode, engagement):
+        raise relay.NotReady("lab target(s) not ready after 180s")
+
+    monkeypatch.setattr(relay, "up", never)
+    assert relay.main(["up", "local"]) == 1
+    assert "failed: lab target(s) not ready after 180s" in capsys.readouterr().err
 
 
 def test_unknown_mode_is_refused():

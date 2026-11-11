@@ -20,6 +20,9 @@ Rules it enforces before any docker call:
   ``anthropic`` has no default engagement - it must be named explicitly;
 * the engagement file must live under lab/ (the scanner sees it at /lab).
 
+``up`` returns only once every lab target answers HTTP from the scanner, and
+fails if one never does, so ``check`` can follow it directly.
+
 The API key is never written anywhere: ``run anthropic`` passes
 ``ANTHROPIC_API_KEY`` to the one ``docker compose exec`` by name, and docker
 reads its value from this process's environment.
@@ -38,6 +41,7 @@ import pathlib
 import re
 import subprocess
 import sys
+import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
@@ -66,6 +70,9 @@ RELAY_PORT = {"local": 11434, "anthropic": 443}
 RELAY_ALLOWED_CAPS = frozenset({"CAP_NET_ADMIN", "CAP_NET_RAW", "CAP_SETUID", "CAP_SETGID", "CAP_SETPCAP"})
 EXPECTED_EXTRA_HOSTS = {"local": [], "anthropic": [f"api.anthropic.com:{RELAY_IP}"]}
 TARGET_SERVICES = ("juice-shop", "dvwa")
+TARGET_READY = {"juice-shop": "http://juice-shop.lab:3000/", "dvwa": "http://dvwa.lab/"}
+READY_TIMEOUT = 180.0
+READY_INTERVAL = 3.0
 
 CAPTURE_SUBDIR = "_rc47_ephemeral"
 HOST_OLLAMA = "http://127.0.0.1:11434"
@@ -87,6 +94,10 @@ class RelayError(RuntimeError):
 
 class PolicyRefused(RelayError):
     """The engagement does not allow the requested provider."""
+
+
+class NotReady(RelayError):
+    """The stack started but a lab target never answered."""
 
 
 def default_runner(argv: Sequence[str], timeout: float) -> subprocess.CompletedProcess:
@@ -189,7 +200,65 @@ def up(mode: str, engagement: str | None = None, run: Runner = default_runner) -
             "`uv run python lab/model_relay.py down` first"
         )
     _ok(run(compose_argv(mode, "up", "-d", "--remove-orphans"), 1800), "docker compose up")
+    wait_for_targets(mode, run)
     return path
+
+
+def _probe_target(mode: str, url: str, run: Runner) -> str | None:
+    """One HTTP probe from the scanner. Returns None when the target answered."""
+    argv = compose_argv(mode, "exec", "-T", "scanner", "curl", "-sS", "--noproxy", "*",
+                        "--max-time", "5", "-o", "/dev/null", url)
+    try:
+        cp = run(argv, 30)
+    except subprocess.TimeoutExpired:
+        return "the probe timed out"
+    if cp.returncode == 0:
+        return None
+    return (cp.stderr or cp.stdout or "").strip()[:300] or f"curl exit {cp.returncode}"
+
+
+def wait_for_targets(mode: str, run: Runner = default_runner, *, timeout: float = READY_TIMEOUT,
+                     interval: float = READY_INTERVAL, clock: Callable[[], float] = time.monotonic,
+                     sleep: Callable[[float], None] = time.sleep) -> None:
+    """Block until every lab target answers HTTP from the scanner.
+
+    ``docker compose up -d`` returns when the containers have started, not when
+    the services inside them listen (Juice Shop takes about a minute), and a
+    ``check`` run in that gap is INCONCLUSIVE. The probes are the same requests
+    as the controls in lab/check_relay_isolation.sh, over labnet.
+    """
+    pending = dict(TARGET_READY)
+    last: dict[str, str] = {}
+    deadline = clock() + timeout
+    while True:
+        for svc, url in list(pending.items()):
+            error = _probe_target(mode, url, run)
+            if error is None:
+                del pending[svc]
+                continue
+            last[svc] = error
+            cid = _container_id(mode, svc, run)
+            state = (_inspect(cid, run) or {}).get("State", {}) if cid else {}
+            if not state.get("Running"):
+                raise NotReady(
+                    f"lab target {svc} is not running (status: {state.get('Status', 'no container')}, "
+                    f"exit code: {state.get('ExitCode', 'n/a')}); it will not become ready.\n{_not_ready_hint(mode, svc)}"
+                )
+        if not pending:
+            return
+        if clock() >= deadline:
+            detail = "\n".join(f"  {svc} ({pending[svc]}): {last[svc]}" for svc in pending)
+            raise NotReady(
+                f"lab target(s) not ready after {timeout:.0f}s:\n{detail}\n{_not_ready_hint(mode, *pending)}"
+            )
+        sleep(interval)
+
+
+def _not_ready_hint(mode: str, *services: str) -> str:
+    logs = " ".join(["docker", "compose", "-f", "lab/docker-compose.yml", "-f", f"lab/model-relay.{mode}.yml",
+                     "logs", "--tail", "50", *services])
+    return (f"The stack was left up for inspection: `{logs}`. Do not run `check` or `run` against it; "
+            "tear it down with `uv run python lab/model_relay.py down`.")
 
 
 def down(run: Runner = default_runner) -> subprocess.CompletedProcess:
@@ -487,7 +556,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"built the overlay images ({args.mode})")
         elif args.cmd == "up":
             path = up(args.mode, args.engagement)
-            print(f"{args.mode} relay up (engagement {path.relative_to(ROOT)} allows it). "
+            print(f"{args.mode} relay up and lab targets ready (engagement {path.relative_to(ROOT)} allows it). "
                   f"Next: uv run python lab/model_relay.py check {args.mode}")
         elif args.cmd == "check":
             return _print_check(check(args.mode))
@@ -512,6 +581,9 @@ def main(argv: list[str] | None = None) -> int:
         elif args.cmd == "status":
             mode = running_relay_mode(default_runner)
             print(f"relay: {mode or 'not running'}")
+    except NotReady as exc:
+        print(f"failed: {exc}", file=sys.stderr)
+        return 1
     except RelayError as exc:
         print(f"refused: {exc}", file=sys.stderr)
         return 2

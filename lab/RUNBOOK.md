@@ -1046,6 +1046,11 @@ uv run python lab/model_relay.py down
 Remove-Item Env:ANTHROPIC_API_KEY
 ```
 
+`up` returns only once both lab targets answer HTTP from the scanner (it polls
+for up to 180 s), so `check` can follow it directly. If a target never answers,
+or its container has exited, `up` prints `failed: ...` naming the target and
+exits 1, leaving the stack up for inspection; run `down` afterwards.
+
 `run` limits the acceptance run (`--max-iterations 12 --max-actions 6
 --max-wall-clock 1800 --max-tokens 300000` by default; each is a flag). The
 report, evidence store and audit log land in
