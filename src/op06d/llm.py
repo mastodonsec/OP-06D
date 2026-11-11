@@ -20,6 +20,7 @@ import ipaddress
 import json
 import os
 import random
+import re
 import time
 import urllib.error
 import urllib.request
@@ -33,6 +34,7 @@ __all__ = [
     "LLMError", "LLMConfigError", "LLMUnavailable", "LLMRefused", "Usage", "RetryPolicy", "LLMSettings",
     "AnthropicLLM", "LocalLLM", "action_schema", "action_grammar", "validate_local_endpoint",
     "build_llm", "PROVIDERS", "LOCAL_RUNTIMES", "ANTHROPIC_API_KEY_ENV",
+    "validate_anthropic_key", "MIN_ANTHROPIC_KEY_CHARS",
 ]
 
 PROVIDERS = ("anthropic", "local")
@@ -54,8 +56,28 @@ TRANSIENT_STATUSES = frozenset({408, 409, 425, 429, 500, 502, 503, 504, 529})
 MAX_RETRY_AFTER_SECONDS = 60.0
 
 
+MIN_ANTHROPIC_KEY_CHARS = 40
+ANTHROPIC_KEY_PREFIX = "sk-ant-"
+_ERROR_TYPE_RE = re.compile(r"[A-Za-z][A-Za-z0-9_]{0,63}")
+
+
 class LLMError(Exception):
-    """Base class for model-adapter failures."""
+    """Base class for model-adapter failures.
+
+    ``http_status`` and ``error_type`` say why a call failed (for example 401
+    and ``authentication_error``) when the adapter knows; neither ever holds
+    response text or key material.
+    """
+
+    http_status: int | None = None
+    error_type: str | None = None
+
+    def with_cause(self, http_status: object = None, error_type: object = None) -> "LLMError":
+        if isinstance(http_status, int) and not isinstance(http_status, bool) and 100 <= http_status <= 599:
+            self.http_status = http_status
+        if isinstance(error_type, str) and _ERROR_TYPE_RE.fullmatch(error_type):
+            self.error_type = error_type
+        return self
 
 
 class LLMConfigError(LLMError):
@@ -99,23 +121,64 @@ class RetryPolicy:
 
 
 class _Transient(Exception):
-    def __init__(self, label: str, retry_after: float | None = None) -> None:
+    def __init__(self, label: str, retry_after: float | None = None, *,
+                 http_status: int | None = None, error_type: str | None = None) -> None:
         super().__init__(label)
         self.label = label
         self.retry_after = retry_after
+        self.http_status = http_status
+        self.error_type = error_type
 
 
 def _with_retries(call: Callable[[], Any], policy: RetryPolicy, what: str) -> Any:
-    last = "unknown error"
+    last: _Transient | None = None
     for attempt in range(max(1, policy.attempts)):
         try:
             return call()
         except _Transient as exc:
-            last = exc.label
+            last = exc
             if attempt + 1 >= policy.attempts:
                 break
             policy.sleep(policy.delay(attempt, exc.retry_after))
-    raise LLMUnavailable(scrub_text(f"{what}: gave up after {policy.attempts} attempts ({last})"))
+    label = last.label if last is not None else "unknown error"
+    raise LLMUnavailable(
+        scrub_text(f"{what}: gave up after {policy.attempts} attempts ({label})")
+    ).with_cause(getattr(last, "http_status", None), getattr(last, "error_type", None))
+
+
+def _api_error_type(exc: Exception) -> str | None:
+    """The API's own error type (``authentication_error``, ...) from an SDK
+    exception's parsed body. Only a short identifier is accepted, so no
+    message text can come through."""
+    body = getattr(exc, "body", None)
+    if not isinstance(body, Mapping):
+        return None
+    inner = body.get("error")
+    value = inner.get("type") if isinstance(inner, Mapping) else body.get("type")
+    return value if isinstance(value, str) and _ERROR_TYPE_RE.fullmatch(value) else None
+
+
+def validate_anthropic_key(key: object) -> str:
+    """Return ``key`` if it is plausibly an Anthropic API key, else raise
+    ``LLMConfigError``. The message gives the length, never the value."""
+    if not isinstance(key, str) or not key:
+        raise LLMConfigError(
+            f"{ANTHROPIC_API_KEY_ENV} is not set; the API key is read only from the environment"
+        )
+    problem = None
+    if any(c.isspace() for c in key):
+        problem = "contains whitespace"
+    elif not key.startswith(ANTHROPIC_KEY_PREFIX):
+        problem = f"does not start with {ANTHROPIC_KEY_PREFIX!r}"
+    elif len(key) < MIN_ANTHROPIC_KEY_CHARS:
+        problem = f"is too short (a real key has at least {MIN_ANTHROPIC_KEY_CHARS} characters)"
+    if problem:
+        raise LLMConfigError(
+            f"{ANTHROPIC_API_KEY_ENV} does not look like an Anthropic API key: it {problem}; "
+            f"the value in the environment is {len(key)} character(s) long. Set it again "
+            "(a masked prompt can take a paste as a single character)"
+        )
+    return key
 
 
 def _retry_after(headers: object) -> float | None:
@@ -227,10 +290,7 @@ class AnthropicLLM:
         if key:
             register_secret(key)
         if client is None:
-            if not key:
-                raise LLMConfigError(
-                    f"{ANTHROPIC_API_KEY_ENV} is not set; the API key is read only from the environment"
-                )
+            validate_anthropic_key(key)
             try:
                 import anthropic
             except ImportError:
@@ -253,14 +313,16 @@ class AnthropicLLM:
         status = getattr(exc, "status_code", None)
         name = type(exc).__name__
         if isinstance(status, int):
-            label = f"{name} (HTTP {status})"
+            api_type = _api_error_type(exc)
+            label = f"{name} (HTTP {status}{', ' + api_type if api_type else ''})"
             if status in TRANSIENT_STATUSES:
-                return _Transient(label, _retry_after(getattr(getattr(exc, "response", None), "headers", None)))
-            return LLMUnavailable(f"model API error: {label}")
+                return _Transient(label, _retry_after(getattr(getattr(exc, "response", None), "headers", None)),
+                                  http_status=status, error_type=api_type)
+            return LLMUnavailable(f"model API error: {label}").with_cause(status, api_type)
         mro = {c.__name__ for c in type(exc).__mro__}
         if mro & {"APIConnectionError", "APITimeoutError"} or isinstance(exc, (OSError, TimeoutError)):
-            return _Transient(name)
-        return LLMUnavailable(f"model API error: {name}")
+            return _Transient(name, error_type=name)
+        return LLMUnavailable(f"model API error: {name}").with_cause(None, name)
 
     def _call(self, system: str, messages: list[dict[str, str]]) -> Any:
         kwargs: dict[str, Any] = {
@@ -428,17 +490,18 @@ class LocalLLM:
         try:
             status, raw, headers = self._transport(url, payload, self._timeout)
         except (OSError, TimeoutError, urllib.error.URLError) as exc:
-            raise _Transient(type(exc).__name__) from None
+            raise _Transient(type(exc).__name__, error_type=type(exc).__name__) from None
         if status in TRANSIENT_STATUSES:
-            raise _Transient(f"HTTP {status}", _retry_after({k.lower(): v for k, v in headers.items()}))
+            raise _Transient(f"HTTP {status}", _retry_after({k.lower(): v for k, v in headers.items()}),
+                             http_status=status)
         if status == 404:
             raise LLMUnavailable(
                 f"local endpoint returned 404 (is model {self.model!r} available on the server?)"
-            )
+            ).with_cause(status)
         if status == 400:
-            raise _BadRequest("local endpoint returned HTTP 400")
+            raise _BadRequest("local endpoint returned HTTP 400").with_cause(status)
         if not 200 <= status < 300:
-            raise LLMUnavailable(f"local endpoint returned HTTP {status}")
+            raise LLMUnavailable(f"local endpoint returned HTTP {status}").with_cause(status)
         try:
             data = json.loads(raw.decode("utf-8"))
         except (UnicodeDecodeError, ValueError):

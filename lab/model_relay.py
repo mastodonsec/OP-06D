@@ -18,7 +18,9 @@ Rules it enforces before any docker call:
 * engagement policy: the engagement must allow the provider
   (``planner.allowed_providers``; without a planner block only ``local``).
   ``anthropic`` has no default engagement - it must be named explicitly;
-* the engagement file must live under lab/ (the scanner sees it at /lab).
+* the engagement file must live under lab/ (the scanner sees it at /lab);
+* anthropic only: ``ANTHROPIC_API_KEY`` must look like a real key (``sk-ant-``,
+  plausible length) before ``up`` or ``run`` creates anything.
 
 ``up`` returns only once every lab target answers HTTP from the scanner, and
 fails if one never does, so ``check`` can follow it directly.
@@ -54,7 +56,7 @@ sys.path.insert(0, str(ROOT / "src"))
 from op06d.audit import verify_log  # noqa: E402
 from op06d.engagement import Engagement, EngagementError, load_engagement  # noqa: E402
 from op06d.evidence import EvidenceStore  # noqa: E402
-from op06d.llm import DEFAULT_LOCAL_MODEL  # noqa: E402
+from op06d.llm import DEFAULT_LOCAL_MODEL, LLMConfigError, validate_anthropic_key  # noqa: E402
 
 MODES = ("local", "anthropic")
 PROJECT = "rc-lab"
@@ -78,6 +80,7 @@ CAPTURE_SUBDIR = "_rc47_ephemeral"
 HOST_OLLAMA = "http://127.0.0.1:11434"
 KEY_ENV = "ANTHROPIC_API_KEY"
 KEY_SHAPE = re.compile(rb"sk-ant-[A-Za-z0-9_\-]{8,}")
+LEAK_SCAN_MIN_SECRET_CHARS = 20
 
 ACCEPTANCE_LIMITS = {"max_iterations": 12, "max_actions": 6, "max_wall_clock": 1800, "max_tokens": 300_000}
 BAD_TERMINATIONS = frozenset({
@@ -101,7 +104,11 @@ class NotReady(RelayError):
 
 
 def default_runner(argv: Sequence[str], timeout: float) -> subprocess.CompletedProcess:
-    return subprocess.run(list(argv), capture_output=True, text=True, timeout=timeout, check=False)
+    # Docker's output is UTF-8 whatever the console code page is; decoding it with the
+    # Windows default (cp1252) raised UnicodeDecodeError in subprocess's reader thread.
+    # Callers decide success by return code; the text is for people.
+    return subprocess.run(list(argv), capture_output=True, text=True, encoding="utf-8", errors="replace",
+                          timeout=timeout, check=False)
 
 
 # --- policy -----------------------------------------------------------------------
@@ -143,6 +150,18 @@ def check_policy(mode: str, engagement: str | os.PathLike | None) -> tuple[pathl
             f"(planner.allowed_providers: {allowed}); refusing to start the {mode} relay"
         )
     return path, eng
+
+
+def require_key(mode: str, environ: dict[str, str] | None = None) -> None:
+    """Refuse an anthropic stack or run whose key is missing or cannot be a real
+    key (empty, too short, not ``sk-ant-``), before anything is created."""
+    if _mode(mode) != "anthropic":
+        return
+    env = os.environ if environ is None else environ
+    try:
+        validate_anthropic_key(env.get(KEY_ENV) or "")
+    except LLMConfigError as exc:
+        raise RelayError(f"{exc}. It is read from this shell and passed to the scanner by name only") from None
 
 
 def container_path(host_path: pathlib.Path) -> str:
@@ -191,8 +210,10 @@ def build(mode: str, run: Runner = default_runner) -> None:
     _ok(run(compose_argv(mode, "build", "scanner", "model-relay"), 1800), "overlay build")
 
 
-def up(mode: str, engagement: str | None = None, run: Runner = default_runner) -> pathlib.Path:
+def up(mode: str, engagement: str | None = None, run: Runner = default_runner, *,
+       environ: dict[str, str] | None = None) -> pathlib.Path:
     path, _ = check_policy(mode, engagement)
+    require_key(mode, environ)
     other = running_relay_mode(run)
     if other is not None and other != mode:
         raise RelayError(
@@ -447,8 +468,7 @@ def run_acceptance(mode: str, engagement: str | None = None, *, model: str | Non
                    environ: dict[str, str] | None = None) -> RunOutcome:
     env = os.environ if environ is None else environ
     path, _ = check_policy(mode, engagement)
-    if mode == "anthropic" and not env.get(KEY_ENV):
-        raise RelayError(f"{KEY_ENV} is not set in this shell; it is passed to the scanner by name only")
+    require_key(mode, env)
     if mode == "local":
         wanted = model or DEFAULT_LOCAL_MODEL
         if not ollama_has_model(wanted):
@@ -472,13 +492,26 @@ def run_acceptance(mode: str, engagement: str | None = None, *, model: str | Non
     m = re.search(r"report \(html\):\s*(\S+)", cp.stdout or "")
     report = (LAB / "captures" / pathlib.PurePosixPath(m.group(1)).relative_to("/captures")) if m else None
     problems = [] if cp.returncode == 0 else [f"op06d run exited {cp.returncode}: {(cp.stderr or '').strip()[:500]}"]
-    problems += verify_run(mode, out_dir / "run", report, secret=env.get(KEY_ENV))
+    secret = env.get(KEY_ENV) or None
+    if mode != "anthropic" and secret is not None and len(secret) < LEAK_SCAN_MIN_SECRET_CHARS:
+        secret = None  # a local run does not use the key; the key-shape scan still runs
+    problems += verify_run(mode, out_dir / "run", report, secret=secret)
     return RunOutcome(mode, cp.returncode, cp.stdout or "", cp.stderr or "", out_dir, report, problems)
 
 
 def verify_run(mode: str, run_dir: pathlib.Path, report: pathlib.Path | None, *,
                secret: str | None = None) -> list[str]:
-    """What a finished acceptance run must show. Returns the problems found."""
+    """What a finished acceptance run must show. Returns the problems found.
+
+    Raises ``RelayError`` instead of passing or failing when ``secret`` is too
+    short to search for: a few characters occur in any file by chance."""
+    if secret is not None and len(secret) < LEAK_SCAN_MIN_SECRET_CHARS:
+        raise RelayError(
+            f"refusing to scan the run output for key material: the {KEY_ENV} value to search for is "
+            f"{len(secret)} character(s) long, below the minimum of {LEAK_SCAN_MIN_SECRET_CHARS}. A value "
+            "that short matches unrelated bytes, so the scan could neither pass nor fail honestly. "
+            "This run is NOT verified; set the real key and run again"
+        )
     problems: list[str] = []
     if report is None or not report.is_file():
         return problems + [f"no HTML report was produced under {run_dir}"]

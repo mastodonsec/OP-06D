@@ -26,6 +26,7 @@ sys.path.insert(0, str(LAB))
 import model_relay as relay  # noqa: E402
 
 MODES = ("local", "anthropic")
+FAKE_KEY = "sk-ant-" + "api03-" + "R" * 48  # built in pieces: never a key-shaped literal in the tree
 
 
 def _yaml(path: pathlib.Path) -> dict:
@@ -172,7 +173,7 @@ def test_anthropic_with_the_default_lab_engagement_is_refused_before_docker():
 
 def test_anthropic_with_the_hosted_template_is_allowed_and_uses_only_its_overlay():
     d = NoDocker()
-    path = relay.up("anthropic", "lab/engagement-llm-hosted.yaml", run=d)
+    path = relay.up("anthropic", "lab/engagement-llm-hosted.yaml", run=d, environ={relay.KEY_ENV: FAKE_KEY})
     assert path.name == "engagement-llm-hosted.yaml"
     up_call = next(c for c in d.calls if "up" in c)
     assert up_call[-3:] == ["up", "-d", "--remove-orphans"]
@@ -330,6 +331,87 @@ def test_anthropic_acceptance_without_key_is_refused_before_docker():
     with pytest.raises(relay.RelayError, match="ANTHROPIC_API_KEY"):
         relay.run_acceptance("anthropic", "lab/engagement-llm-hosted.yaml", run=d, environ={})
     assert d.calls == []
+
+
+BAD_KEYS = ["", "x", "sk-ant-" + "short", "plain-" + "a" * 60, FAKE_KEY + "\n"]
+
+
+@pytest.mark.parametrize("bad", BAD_KEYS)
+def test_an_implausible_key_is_refused_by_up_and_run_before_docker(bad):
+    env = {relay.KEY_ENV: bad}
+    for call in (
+        lambda d: relay.up("anthropic", "lab/engagement-llm-hosted.yaml", run=d, environ=env),
+        lambda d: relay.run_acceptance("anthropic", "lab/engagement-llm-hosted.yaml", run=d, environ=env),
+    ):
+        d = NoDocker()
+        with pytest.raises(relay.RelayError, match="ANTHROPIC_API_KEY") as exc:
+            call(d)
+        assert d.calls == []
+        assert len(bad) < 2 or bad.strip() not in str(exc.value)
+
+
+def test_the_key_is_not_needed_for_a_local_stack():
+    relay.up("local", None, run=NoDocker(), environ={})
+
+
+def test_cli_reports_an_implausible_key_with_its_length(monkeypatch, capsys):
+    monkeypatch.setenv(relay.KEY_ENV, "x")
+    monkeypatch.setattr(relay, "default_runner", NoDocker())
+    assert relay.main(["up", "anthropic", "--engagement", "lab/engagement-llm-hosted.yaml"]) == 2
+    err = capsys.readouterr().err
+    assert "does not look like an Anthropic API key" in err and "1 character(s) long" in err
+
+
+# --- the leak scan refuses a secret too short to search for ---------------------------------------
+
+@pytest.mark.parametrize("secret", ["", "v", "x" * (relay.LEAK_SCAN_MIN_SECRET_CHARS - 1)])
+def test_leak_scan_refuses_a_too_short_secret_instead_of_passing_or_failing(tmp_path, secret):
+    (tmp_path / "run").mkdir()
+    (tmp_path / "run" / "report.html").write_text("<h2>Planner</h2> every vowel is in here", encoding="utf-8")
+    with pytest.raises(relay.RelayError, match="refusing to scan") as exc:
+        relay.verify_run("anthropic", tmp_path / "run", tmp_path / "run" / "report.html", secret=secret)
+    assert f"{len(secret)} character(s) long" in str(exc.value) and "NOT verified" in str(exc.value)
+
+
+def test_leak_scan_still_runs_without_a_secret_or_with_a_real_one(tmp_path):
+    for secret in (None, FAKE_KEY):
+        assert relay.verify_run("local", tmp_path / "run", None, secret=secret) == [
+            f"no HTML report was produced under {tmp_path / 'run'}"]
+
+
+# --- captured subprocess output is decoded as UTF-8 ----------------------------------------------
+
+def test_default_runner_survives_bytes_that_are_not_cp1252():
+    # 0x81, 0x8d, 0x8f, 0x90 and 0x9d are undefined in cp1252: decoding docker's
+    # UTF-8 build output with the Windows default raised UnicodeDecodeError.
+    code = ("import sys; sys.stdout.buffer.write(b'\\x81\\x8d\\x8f\\x90\\x9d caf\\xc3\\xa9 \\xe2\\x9c\\x94'); "
+            "sys.stderr.buffer.write(b'\\xe2\\x94\\x81\\xe2\\x94\\x81 \\xff'); sys.exit(3)")
+    cp = relay.default_runner([sys.executable, "-c", code], 60)
+    assert cp.returncode == 3
+    assert "café ✔" in cp.stdout and "�" in cp.stdout
+    assert cp.stderr.startswith("━━") and cp.stderr.endswith("�")
+
+
+def test_every_text_mode_subprocess_call_under_lab_decodes_utf8_with_replacement():
+    import ast
+
+    seen = 0
+    for path in sorted(LAB.glob("*.py")):
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+            if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+                    and isinstance(node.func.value, ast.Name) and node.func.value.id == "subprocess"
+                    and node.func.attr in ("run", "Popen", "check_output", "check_call")):
+                continue
+            kw = {k.arg: k.value for k in node.keywords}
+            text_mode = any(isinstance(kw.get(n), ast.Constant) and kw[n].value is True
+                            for n in ("text", "universal_newlines"))
+            if not text_mode:
+                continue
+            seen += 1
+            where = f"{path.name}:{node.lineno}"
+            assert isinstance(kw.get("encoding"), ast.Constant) and kw["encoding"].value == "utf-8", where
+            assert isinstance(kw.get("errors"), ast.Constant) and kw["errors"].value == "replace", where
+    assert seen >= 3  # model_relay.default_runner and both branches of validation_harness._run
 
 
 # --- no key material in lab/ -----------------------------------------------------------------

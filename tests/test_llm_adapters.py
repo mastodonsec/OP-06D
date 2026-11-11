@@ -25,6 +25,7 @@ from op06d.llm import (
     action_grammar,
     action_schema,
     build_llm,
+    validate_anthropic_key,
     validate_local_endpoint,
 )
 from op06d.redaction import REDACTED, clear_registered_secrets, scrub_text
@@ -231,6 +232,66 @@ def _client(outcomes):
 def test_anthropic_requires_the_key_in_the_environment():
     with pytest.raises(LLMConfigError, match="ANTHROPIC_API_KEY"):
         AnthropicLLM(environ={})
+
+
+@pytest.mark.parametrize("bad, why", [
+    ("x", "does not start with"),                        # a masked prompt that took Ctrl+V as one character
+    ("plain-" + "a" * 60, "does not start with"),
+    ("sk-ant-" + "short", "too short"),
+    (FAKE_KEY + " ", "whitespace"),
+])
+def test_anthropic_rejects_a_key_that_cannot_be_real_without_echoing_it(bad, why):
+    with pytest.raises(LLMConfigError, match=why) as exc:
+        AnthropicLLM(environ={"ANTHROPIC_API_KEY": bad})
+    msg = str(exc.value)
+    assert f"{len(bad)} character(s) long" in msg
+    assert len(bad) < 2 or bad.strip() not in msg
+
+
+def test_validate_anthropic_key_accepts_a_plausible_key():
+    assert validate_anthropic_key(FAKE_KEY) == FAKE_KEY
+    with pytest.raises(LLMConfigError, match="is not set"):
+        validate_anthropic_key("")
+
+
+class FakeAuthError(FakeStatusError):
+    def __init__(self, status, error_type, message="invalid x-api-key"):
+        super().__init__(status)
+        self.body = {"type": "error", "error": {"type": error_type, "message": message}}
+
+
+def test_anthropic_failure_carries_the_http_status_and_api_error_type():
+    client, _ = _client([FakeAuthError(401, "authentication_error", message=f"bad key {FAKE_KEY}")])
+    llm = AnthropicLLM(client=client, environ={}, retry=NO_SLEEP)
+    with pytest.raises(LLMUnavailable) as exc:
+        llm.complete("S", [{"role": "user", "content": "go"}])
+    assert (exc.value.http_status, exc.value.error_type) == (401, "authentication_error")
+    assert "HTTP 401, authentication_error" in str(exc.value)
+    assert FAKE_KEY not in str(exc.value) and "bad key" not in str(exc.value)
+
+
+def test_an_error_type_that_is_not_a_plain_identifier_is_dropped():
+    client, _ = _client([FakeAuthError(403, f"denied for {FAKE_KEY}")])
+    llm = AnthropicLLM(client=client, environ={}, retry=NO_SLEEP)
+    with pytest.raises(LLMUnavailable) as exc:
+        llm.complete("S", [{"role": "user", "content": "go"}])
+    assert (exc.value.http_status, exc.value.error_type) == (403, None)
+    assert FAKE_KEY not in str(exc.value)
+
+
+def test_exhausted_retries_keep_the_last_cause():
+    client, _ = _client([FakeAuthError(529, "overloaded_error")] * 2)
+    llm = AnthropicLLM(client=client, environ={}, retry=RetryPolicy(attempts=2, sleep=lambda s: None))
+    with pytest.raises(LLMUnavailable, match="gave up after 2 attempts") as exc:
+        llm.complete("S", [{"role": "user", "content": "go"}])
+    assert (exc.value.http_status, exc.value.error_type) == (529, "overloaded_error")
+
+
+def test_local_failure_carries_the_http_status():
+    llm = LocalLLM("m", transport=lambda url, body, timeout: (401, b"{}", {}), retry=NO_SLEEP)
+    with pytest.raises(LLMUnavailable) as exc:
+        llm.complete("S", [{"role": "user", "content": "go"}])
+    assert (exc.value.http_status, exc.value.error_type) == (401, None)
 
 
 def test_anthropic_call_shape_and_usage_without_refusal_fallbacks():

@@ -84,6 +84,7 @@ def _wait_for_targets(attempts: int = 30, delay: float = 2.0) -> None:
 def relay_stack():
     _require_prerequisites()
     relay.check_policy(MODE, ENGAGEMENT[MODE])  # refuse before any docker call
+    relay.require_key(MODE)  # a mistyped key fails here, not after a stack and a run exist
     _ok = relay.default_runner(["docker", "compose", "-f", str(relay.COMPOSE_BASE), "build", "scanner"], 1800)
     assert _ok.returncode == 0, f"base scanner build failed:\n{_ok.stdout}\n{_ok.stderr}"
     with stack.lab_stack(_compose):

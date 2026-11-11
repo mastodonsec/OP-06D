@@ -1046,6 +1046,27 @@ uv run python lab/model_relay.py down
 Remove-Item Env:ANTHROPIC_API_KEY
 ```
 
+**Pasting the key.** `Read-Host -MaskInput` reads Ctrl+V as a single
+character, not as a paste, so the variable ends up one character long. Paste
+with a right-click or Ctrl+Shift+V, then check the length before going on (a
+real key is around 100 characters and starts with `sk-ant-`):
+
+```powershell
+$env:ANTHROPIC_API_KEY.Length
+```
+
+`up anthropic`, `run anthropic` and `op06d run --llm-provider anthropic`
+refuse a key that is empty, shorter than 40 characters or does not start with
+`sk-ant-`, before any stack, run or evidence exists; the error gives the
+length, never the value. The leak scan at the end of `run` refuses to scan
+(exit 2, neither PASS nor FAIL) if the key it is told to look for is shorter
+than 20 characters, because a value that short matches unrelated bytes.
+
+If a run ends with `model_failure`, the cause is recorded without key
+material: the audit log's loop-end entry carries `cause` (error class, HTTP
+status, API error type), and the report's Planner section shows a "Failure
+cause" row, for example `authentication_error (HTTP 401)`.
+
 `up` returns only once both lab targets answer HTTP from the scanner (it polls
 for up to 180 s), so `check` can follow it directly. If a target never answers,
 or its container has exited, `up` prints `failed: ...` naming the target and
