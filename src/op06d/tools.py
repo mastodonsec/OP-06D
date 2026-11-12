@@ -102,6 +102,11 @@ class Tool(Protocol):
     ``validate_parameters(parameters) -> str | None`` (a problem, or None)
     ``risk_for(parameters) -> Risk``
     ``destructive_for(parameters) -> bool``
+    ``parameter_schema() -> dict[str, dict]``: for each parameter the planner
+    may be offered, a JSON-schema fragment for its value, in agreement with
+    ``validate_parameters``. It is guidance for the planner (the prompt and
+    the model's structured output); ``validate_parameters`` stays the check.
+    A parameter left out is not offered to the planner.
     """
 
     name: str
@@ -273,6 +278,17 @@ def _decision(target: object, reason: str, stage: str) -> GateDecision:
     return GateDecision(label, False, reason, stage)
 
 
+def parameter_schema_of(tool: Tool) -> dict[str, dict[str, Any]]:
+    """The tool's ``parameter_schema()``, limited to its ``allowed_parameters``
+    and in name order. A tool without the hook offers every allowed parameter
+    with no constraint on its value."""
+    hook = getattr(tool, "parameter_schema", None)
+    if not callable(hook):
+        return {name: {} for name in sorted(tool.allowed_parameters)}
+    declared = hook()
+    return {name: dict(declared[name]) for name in sorted(declared) if name in tool.allowed_parameters}
+
+
 def _json_safe(value: object, depth: int = 0) -> bool:
     if depth > 4:
         return False
@@ -307,15 +323,17 @@ class GatedToolbox:
 
     # -- read-only description for the system prompt (no callables) ----------
     def describe(self) -> list[dict[str, Any]]:
-        return [
-            {
+        out = []
+        for t in self.__tools.values():
+            schema = parameter_schema_of(t)
+            out.append({
                 "name": t.name,
                 "description": t.description,
                 "risk": Risk(t.risk).name,
-                "parameters": sorted(t.allowed_parameters),
-            }
-            for t in self.__tools.values()
-        ]
+                "parameters": list(schema),
+                "parameter_schema": schema,
+            })
+        return out
 
     def redact(self, action: ToolAction) -> dict[str, Any]:
         """The action's parameters as safe to log (used by the loop's records)."""

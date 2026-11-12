@@ -135,6 +135,18 @@ audit log, no evidence.
   llama.cpp gets an equivalent GBNF grammar, and OpenAI-compatible servers get
   `response_format: json_schema`. The tool name is restricted to the
   registered tools. The reply is still parsed strictly; see below.
+- **Parameter shapes:** each tool declares a JSON-schema fragment per
+  parameter (`parameter_schema()`, built from the constants its
+  `validate_parameters` uses). The planner prompt shows each parameter with
+  its type and allowed values, for example `severity (array of: info, low,
+  medium, high, critical)`, and the action schema has one branch per tool
+  with that tool's parameters and no others. This is guidance:
+  `validate_parameters` is still the check, and a comma-separated string
+  where a list is expected is still refused. The GBNF grammar carries the
+  same keys and value shapes, with the keys in name order and without numeric
+  ranges or list length limits. The OpenAI-compatible request sends the
+  schema with `strict: false`, because strict mode requires every property
+  to be required and a tool's parameters are all optional.
 - If an Ollama server rejects the schema `format` (HTTP 400, as older versions
   do), the adapter switches to plain JSON mode (`format: "json"`) for the rest
   of the run and relies on strict validation alone. The mode in use is stored

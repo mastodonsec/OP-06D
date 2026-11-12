@@ -347,7 +347,7 @@ class NucleiTool:
     name = "nuclei"
     description = (
         "Templated web and service checks via nuclei, using a curated, pinned template set. "
-        "Select with 'severity' (info, low, medium, high, critical) and 'tags' ("
+        "Select with 'severity' (a list from info, low, medium, high, critical) and 'tags' (a list; "
         + ", ".join(sorted(ACTIVE_TAGS)) + " are low impact; intrusive tags need operator approval). "
         "Optional 'port' (1-65535) and 'scheme' (http, https) target a non-default port or force "
         "a scheme; both apply only to the gate-approved target, never a second host. "
@@ -464,6 +464,23 @@ class NucleiTool:
         return path
 
     # -- hooks used by the toolbox --------------------------------------------
+    def parameter_schema(self) -> dict[str, dict[str, Any]]:
+        """What ``validate_parameters`` accepts, as JSON-schema fragments built
+        from the same constants. ``template_ids`` is offered only when a
+        curated list is configured; which ids are curated, and the upper
+        bounds on ``tags`` and ``template_ids``, are left to
+        ``validate_parameters``."""
+        schema: dict[str, dict[str, Any]] = {
+            "severity": {"type": "array", "items": {"type": "string", "enum": list(SEVERITIES)},
+                         "minItems": 1, "maxItems": len(SEVERITIES)},
+            "tags": {"type": "array", "items": {"type": "string", "enum": sorted(ALL_TAGS)}, "minItems": 1},
+            "port": {"type": "integer", "minimum": 1, "maximum": 65535},
+            "scheme": {"type": "string", "enum": list(self.SCHEMES)},
+        }
+        if self._curated:
+            schema["template_ids"] = {"type": "array", "items": {"type": "string"}, "minItems": 1}
+        return schema
+
     def validate_parameters(self, parameters: Mapping[str, Any]) -> str | None:
         if "severity" in parameters:
             sev = parameters["severity"]

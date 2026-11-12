@@ -212,6 +212,13 @@ def run_engagement(
         timeout=approval_timeout,
     )
     box = GatedToolbox(eng, gate, log, toolset, approver=hook)
+    if hasattr(llm, "set_tool_parameters"):
+        # The same description the planner prompt is built from. The toolbox is the only
+        # reader of the tools, so the model adapter gets their parameter schemas from it.
+        try:
+            llm.set_tool_parameters({t["name"]: t["parameter_schema"] for t in box.describe()})
+        except LLMConfigError as exc:
+            raise PlannerPolicyError(scrub_text(str(exc))) from None
 
     db_path = out_dir / "evidence.db"
     store = EvidenceStore(db_path)

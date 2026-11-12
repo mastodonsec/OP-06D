@@ -133,28 +133,34 @@ def test_llamacpp_request_carries_a_grammar_restricted_to_the_known_tools():
     url, body, _ = t.calls[0]
     assert url == "http://127.0.0.1:8080/v1/chat/completions"
     assert "root ::= action | done" in body["grammar"]
-    assert 'tool ::= "\\"nmap\\""' in body["grammar"]
+    assert '"\\"tool\\"" ws ":" ws "\\"nmap\\""' in body["grammar"]
+    assert body["grammar"] == action_grammar(["nmap"])
     assert "response_format" not in body
     assert llm.last_usage == Usage(50, 7)
 
 
-def test_openai_compatible_request_uses_a_strict_json_schema_response_format():
+def test_openai_compatible_request_uses_a_json_schema_response_format_that_is_not_strict():
+    params = {"nmap": {"profile": {"type": "string", "enum": ["default", "service"]}}}
     t = Recorder([OPENAI_OK])
     llm = LocalLLM("m", endpoint="http://127.0.0.1:1234/v1", runtime="openai",
-                   tool_names=["nmap"], transport=t, retry=NO_SLEEP)
+                   tool_names=["nmap"], tool_parameters=params, transport=t, retry=NO_SLEEP)
     llm.complete("SYS", [{"role": "user", "content": "go"}])
     url, body, _ = t.calls[0]
     assert url == "http://127.0.0.1:1234/v1/chat/completions"
     fmt = body["response_format"]
-    assert fmt["type"] == "json_schema" and fmt["json_schema"]["strict"] is True
-    assert fmt["json_schema"]["schema"] == action_schema(["nmap"])
+    # strict mode wants every property in "required"; a tool's parameters are all optional
+    assert fmt["type"] == "json_schema" and fmt["json_schema"]["strict"] is False
+    assert fmt["json_schema"]["schema"] == action_schema(["nmap"], params)
+    parameters = fmt["json_schema"]["schema"]["anyOf"][0]["properties"]["parameters"]
+    assert parameters["properties"] == params["nmap"] and "required" not in parameters
 
 
-def test_action_schema_only_admits_the_two_reply_shapes():
-    schema = action_schema(["nmap"])
-    action, done = schema["anyOf"]
-    assert action["properties"]["tool"]["enum"] == ["nmap"]
-    assert action["additionalProperties"] is False and done["additionalProperties"] is False
+def test_action_schema_only_admits_the_reply_shapes_one_action_per_tool_and_done():
+    schema = action_schema(["nuclei", "nmap", "nmap"])
+    nmap, nuclei, done = schema["anyOf"]
+    assert nmap["properties"]["tool"]["enum"] == ["nmap"] and nuclei["properties"]["tool"]["enum"] == ["nuclei"]
+    assert nmap["properties"]["parameters"] == {"type": "object"}  # no parameter schema given
+    assert all(b["additionalProperties"] is False for b in (nmap, nuclei, done))
 
 
 def test_grammar_refuses_a_tool_name_it_cannot_quote():
