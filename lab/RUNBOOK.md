@@ -326,7 +326,10 @@ for argv in seen:
 '@ | docker compose -f $LAB exec -T scanner python3 -
 ```
 
-Expected: eight `nmap` lines and two `nuclei` lines. (Fixed on the RC-24 first
+Expected: eight `nmap` lines and two `nuclei` lines. The `--host-timeout`
+value differs per line: the wrapper sizes it from the port count and the rate
+(at 50 rps: `300s` for most profiles, `485s` for `aggressive`, `3488s` for
+`full`; see "Wrapper timeouts" in Step 12). (Fixed on the RC-24 first
 run: the capture function used to be `cap(argv, timeout)`; since RC-35 the
 nuclei wrapper calls its runner with an extra `env=` argument, so that raised
 inside the wrapper and the two `nuclei` lines silently never printed.)
@@ -854,6 +857,28 @@ The wrapper surfaces this as `status=ok`, `degraded=['os_detection']`,
 `scan-types=connect` - never `nmap_failed`. The pass criterion for this step
 is "no traceback, a structured, correctly-`degraded`-flagged status on every
 profile in both privilege modes" - met.
+
+**Wrapper timeouts.** RC-43: nmap: live run reported no ports and no limitation (silent empty result)
+
+The wrapper no longer passes a fixed `--host-timeout 300s`. Per call it
+estimates the scan time from the port count and the rate
+(`ceil((ceil(ports * 2 / max_rps) + allowance) * 1.25) + 60` seconds; the
+allowance is 120 s for `-sV`, 300 s for `-A`, plus 180 s with `scripts`) and
+passes the larger of that and 300 s. The subprocess timeout is the host
+timeout plus 60 s (at least 900 s). At this step's 50 rps that is `300s` for
+`ping`, `quick`, `default` and `service`, `485s` for `aggressive` and `3488s`
+for `full`, so `full` may run for up to an hour before nmap gives up on the
+host. At 5 rps `service` gets `710s`.
+
+Two statuses come from this:
+
+- `profile_too_slow`: the estimate is over 3600 s (for example `full` below
+  49 rps). nmap is not started; the error names the profile, port count,
+  rate and estimate.
+- `host_timeout`: nmap skipped every host that responded at `--host-timeout`.
+  The result is also `degraded` (`port_scan`, plus `service_detection` for
+  `-sV`/`-A`) and the report lists it under Limitations. If only some hosts
+  were skipped the status stays `ok` with the same `degraded` fields.
 
 Which NSE scripts need raw sockets (read-only, offline):
 

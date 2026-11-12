@@ -184,17 +184,21 @@ def test_ports_only_with_compatible_profiles():
 
 def test_valid_parameter_combinations_only_ever_add_known_argv():
     r = Runner()
-    t = tool(runner=r)
+    t = tool(runner=r, max_host_timeout_s=10**9)  # no cap on the estimate: every combination reaches argv
     for profile in ("ping", "quick", "default", "service", "full", "aggressive"):
         for scripts in (None, ["safe"], ["default", "discovery"], ["vuln", "intrusive"]):
             params = {"profile": profile}
             if scripts:
                 params["scripts"] = scripts
             t.run(IP, params)
-    known = {NMAP_PATH, "-oX", "-", "--no-stylesheet", "-n", "--max-rate", "20", "--host-timeout", "300s",
+    assert len(r.calls) == 24
+    known = {NMAP_PATH, "-oX", "-", "--no-stylesheet", "-n", "--max-rate", "20", "--host-timeout",
              "-sn", "-F", "-sV", "-p-", "-A", "--", IP}
     for argv, _ in r.calls:
-        for a in argv:
+        for i, a in enumerate(argv):
+            if argv[i - 1] == "--host-timeout":
+                assert a.endswith("s") and a[:-1].isdigit(), a
+                continue
             assert a in known or a.startswith("--script="), a
         assert [a for a in argv if a == IP] == [IP]
         assert "-n" in argv  # RC-23: never resolve, for every profile
@@ -240,7 +244,7 @@ def test_unexpected_parameters_are_refused_before_the_gate(rig, params):
 
 def test_second_target_cannot_be_smuggled_past_the_gate(rig):
     r = rig()
-    for params in ({"ports": "80", "profile": "service"}, {"scripts": ["safe"]}, {"profile": "full"}):
+    for params in ({"ports": "80", "profile": "service"}, {"scripts": ["safe"]}, {"profile": "quick"}):
         r.box.execute(ToolAction("nmap", IP, params), iteration=1)
     for argv, _ in r.runner.calls:
         hosts = [a for a in argv if a.count(".") >= 3]
@@ -254,7 +258,9 @@ def test_second_target_cannot_be_smuggled_past_the_gate(rig):
 @pytest.mark.parametrize("rps", [1, 7, 20, 500])
 def test_max_rate_comes_from_the_engagement_and_is_always_passed(rps):
     r = Runner()
-    t = NmapTool.from_engagement(engagement(max_rps=rps), runner=r, which=lambda n: NMAP_PATH)
+    # no cap on the estimate: this test is about --max-rate, for every profile at every rate
+    t = NmapTool.from_engagement(engagement(max_rps=rps), runner=r, which=lambda n: NMAP_PATH,
+                                 max_host_timeout_s=10**9)
     for profile in ("ping", "quick", "default", "service", "full", "aggressive"):
         t.run(IP, {"profile": profile})
     assert len(r.calls) == 6
@@ -707,3 +713,204 @@ def test_degraded_signal_survives_normalization_into_a_limitations_issue():
     assert len(degraded_issues) == 1
     assert "connect scan" in degraded_issues[0].detail
     assert degraded_issues[0].raw == ["os_detection"]
+
+
+# --- RC-43: host timeouts are surfaced, timeouts are sized to the work -------
+
+HOST_TIMEOUT_FIXTURE = (Path(__file__).parent / "fixtures" / "nmap_host_timeout.xml").read_text(encoding="utf-8")
+TIMED_OUT_IP = "192.0.2.10"
+
+MIXED_XML = (
+    '<?xml version="1.0"?><!DOCTYPE nmaprun><nmaprun scanner="nmap" version="7.93">'
+    '<scaninfo type="syn" protocol="tcp" numservices="1000" services="1-1000"/>'
+    '<host starttime="1" endtime="9"><status state="up" reason="echo-reply"/>'
+    '<address addr="192.0.2.11" addrtype="ipv4"/>'
+    '<ports><port protocol="tcp" portid="22"><state state="open" reason="syn-ack"/>'
+    '<service name="ssh" product="OpenSSH" version="8.2p1"/></port>'
+    '<port protocol="tcp" portid="80"><state state="open" reason="syn-ack"/>'
+    '<service name="http" product="Apache httpd" version="2.4.41"/></port></ports></host>'
+    '<host starttime="1" endtime="301" timedout="true"><status state="up" reason="echo-reply"/>'
+    '<address addr="192.0.2.10" addrtype="ipv4"/><hostnames/></host>'
+    '<runstats><finished elapsed="301.2"/><hosts up="2" down="0" total="2"/></runstats></nmaprun>'
+)
+
+
+def host_timeout_arg(argv):
+    value = argv[argv.index("--host-timeout") + 1]
+    assert argv.count("--host-timeout") == 1 and value.endswith("s")
+    return int(value[:-1])
+
+
+def test_parser_records_a_timed_out_host():
+    f = parse_nmap_xml(HOST_TIMEOUT_FIXTURE)
+    (host,) = f["hosts"]
+    assert host["timed_out"] is True
+    assert host["status"] == "up" and host["ports"] == []
+    assert host["addresses"] == [{"address": TIMED_OUT_IP, "type": "ipv4"}]
+    assert f["summary"]["hosts_timed_out"] == 1 and f["summary"]["hosts_up"] == 1
+
+
+def test_parser_does_not_mark_a_completed_host_as_timed_out():
+    f = parse_nmap_xml(FIXTURE)
+    assert "timed_out" not in f["hosts"][0] and "hosts_timed_out" not in f["summary"]
+    f = parse_nmap_xml(FIXTURE.replace("<host starttime", '<host timedout="false" starttime'))
+    assert "timed_out" not in f["hosts"][0] and "hosts_timed_out" not in f["summary"]
+
+
+def test_only_host_timing_out_is_a_non_ok_result_not_a_clean_one():
+    out = tool(max_rps=5, runner=Runner(stdout=HOST_TIMEOUT_FIXTURE)).run(TIMED_OUT_IP, {"profile": "service"})
+    assert out.status == "host_timeout"
+    f = out.findings
+    assert f["status"] == "error" and f["error"]["code"] == "host_timeout"
+    assert "--host-timeout 710s" in f["error"]["message"]
+    assert f["degraded"] is True
+    assert f["degraded_capabilities"] == ["port_scan", "service_detection"]
+    reason = f["degraded_reason"]
+    for part in (TIMED_OUT_IP, "--host-timeout 710s", "1000 ports", "max_rps 5", "'service'",
+                 "fewer ports", "higher max_rps"):
+        assert part in reason, part
+    assert out.raw == HOST_TIMEOUT_FIXTURE  # the XML is kept as evidence
+
+
+def test_a_scan_without_service_detection_only_loses_the_port_scan():
+    out = tool(max_rps=5, runner=Runner(stdout=HOST_TIMEOUT_FIXTURE)).run(TIMED_OUT_IP, {})
+    assert out.status == "host_timeout"
+    assert out.findings["degraded_capabilities"] == ["port_scan"]
+
+
+def test_host_timeout_reaches_normalization_as_an_nmap_degraded_issue():
+    from op06d.normalize import Provenance, normalize_nmap
+
+    out = tool(max_rps=5, runner=Runner(stdout=HOST_TIMEOUT_FIXTURE)).run(TIMED_OUT_IP, {"profile": "service"})
+    found, issues = normalize_nmap(out.findings, provenance=Provenance(engagement="e", scanner="nmap"))
+    assert found == []
+    (degraded,) = [i for i in issues if i.kind == "nmap_degraded"]
+    assert TIMED_OUT_IP in degraded.detail and "--host-timeout 710s" in degraded.detail
+    assert degraded.raw == ["port_scan", "service_detection"]
+    assert [i.kind for i in issues if i.kind == "host_timeout"] == ["host_timeout"]
+
+
+def test_mixed_result_stays_ok_degraded_and_keeps_the_completed_hosts_ports():
+    from op06d.normalize import Provenance, normalize_nmap
+
+    out = tool(max_rps=5, runner=Runner(stdout=MIXED_XML)).run("192.0.2.0/28", {"profile": "service"})
+    assert out.status == "ok"
+    f = out.findings
+    assert "error" not in f and f.get("status") != "error"
+    assert f["degraded"] is True and f["degraded_capabilities"] == ["port_scan", "service_detection"]
+    assert "192.0.2.10" in f["degraded_reason"] and "192.0.2.11" not in f["degraded_reason"]
+    assert f["summary"]["hosts_timed_out"] == 1
+    found, issues = normalize_nmap(f, provenance=Provenance(engagement="e", scanner="nmap"))
+    assert sorted((x.asset.ip, x.asset.port) for x in found) == [("192.0.2.11", 22), ("192.0.2.11", 80)]
+    assert [i.kind for i in issues] == ["nmap_degraded"]
+
+
+def test_a_timed_out_host_adds_to_an_earlier_privilege_degradation():
+    xml = UNPRIVILEGED_AGGRESSIVE_XML.replace(
+        "</host>",
+        '</host><host timedout="true"><status state="up"/><address addr="192.0.2.10" addrtype="ipv4"/></host>',
+    )
+    out = tool(runner=Runner(stdout=xml)).run(IP, {"profile": "aggressive"})
+    f = out.findings
+    assert out.status == "ok"
+    assert f["degraded_capabilities"] == ["os_detection", "port_scan", "service_detection"]
+    assert "connect scan" in f["degraded_reason"] and "--host-timeout" in f["degraded_reason"]
+
+
+def test_a_scan_that_finished_is_not_flagged():
+    out = tool(max_rps=5, runner=Runner(stdout=FIXTURE)).run(IP, {"profile": "service"})
+    assert out.status == "ok" and "degraded" not in out.findings and "error" not in out.findings
+
+
+# Expected --host-timeout in seconds; the constructor floor is the default 300.
+SIZING = [
+    # max_rps, parameters, --host-timeout
+    (5, {"profile": "ping"}, 300),
+    (5, {"profile": "quick"}, 300),
+    (5, {}, 560),
+    (5, {"profile": "default"}, 560),
+    (5, {"profile": "service"}, 710),
+    (5, {"profile": "full"}, 32978),
+    (5, {"profile": "aggressive"}, 935),
+    (5, {"profile": "service", "ports": "22,80,8000-8100"}, 300),
+    (5, {"profile": "default", "ports": "1-10000"}, 5060),
+    (5, {"profile": "service", "scripts": ["safe"]}, 935),
+    (50, {"profile": "ping"}, 300),
+    (50, {"profile": "quick"}, 300),
+    (50, {"profile": "default"}, 300),
+    (50, {"profile": "service"}, 300),
+    (50, {"profile": "full"}, 3488),
+    (50, {"profile": "aggressive"}, 485),
+    (50, {"profile": "service", "ports": "22,80,8000-8100"}, 300),
+    (50, {"profile": "service", "ports": "1-10000"}, 710),
+]
+
+
+@pytest.mark.parametrize("rps, params, expected", SIZING)
+def test_host_timeout_is_sized_from_ports_and_rate(rps, params, expected):
+    t = tool(max_rps=rps)
+    assert host_timeout_arg(t.build_argv(NMAP_PATH, IP, params)) == expected
+    assert t.run_timeout_for(params) > expected  # the subprocess always outlives --host-timeout
+
+
+@pytest.mark.parametrize("rps, params, expected", [s for s in SIZING if s[2] <= 3600])
+def test_the_runner_gets_a_timeout_longer_than_the_host_timeout(rps, params, expected):
+    r = Runner()
+    assert tool(max_rps=rps, runner=r).run(IP, params).status == "ok"
+    ((argv, timeout),) = r.calls
+    assert host_timeout_arg(argv) == expected
+    assert timeout >= expected + 60 and timeout >= 900.0
+
+
+@pytest.mark.parametrize("ports, count", [("80", 1), ("22,80,8000-8100", 103), ("1-100,50-150", 150),
+                                          ("80,80", 1), ("1-65535", 65535)])
+def test_port_count_expands_ranges(ports, count):
+    assert NmapTool.port_count({"profile": "service", "ports": ports}) == count
+
+
+def test_port_count_per_profile():
+    assert {p: NmapTool.port_count({"profile": p}) for p in nmap_mod.PROFILES} == {
+        "ping": 0, "quick": 100, "default": 1000, "service": 1000, "full": 65535, "aggressive": 1000}
+    assert NmapTool.port_count({}) == 1000
+
+
+def test_constructor_timeouts_are_floors():
+    t = tool(max_rps=50, host_timeout_s=1200, run_timeout_s=5000.0)
+    assert host_timeout_arg(t.build_argv(NMAP_PATH, IP, {"profile": "quick"})) == 1200
+    assert t.run_timeout_for({"profile": "quick"}) == 5000.0
+    assert host_timeout_arg(t.build_argv(NMAP_PATH, IP, {"profile": "full"})) == 3488  # above the floor
+    short = tool(max_rps=5, host_timeout_s=10, run_timeout_s=10.0)
+    assert host_timeout_arg(short.build_argv(NMAP_PATH, IP, {"profile": "service"})) == 710
+    assert short.run_timeout_for({"profile": "service"}) == 770.0
+    assert host_timeout_arg(short.build_argv(NMAP_PATH, IP, {"profile": "ping"})) == 60
+
+
+def test_a_profile_that_cannot_finish_at_the_rate_is_refused_without_running_nmap():
+    r = Runner()
+    out = tool(max_rps=5, runner=r).run(IP, {"profile": "full"})
+    assert out.status == "profile_too_slow" and r.calls == []
+    assert out.findings["status"] == "error" and out.findings["error"]["code"] == "profile_too_slow"
+    msg = out.findings["error"]["message"]
+    for part in ("'full'", "65535 ports", "max_rps 5", "32978s", "3600s", "'quick'", "'ports'", "higher max_rps"):
+        assert part in msg, part
+
+
+def test_the_refusal_follows_the_rate_and_the_cap_not_the_parameter_values():
+    t = tool(max_rps=5)
+    assert t.validate_parameters({"profile": "full"}) is None  # still a valid parameter value
+    assert t.run(IP, {"profile": "default", "ports": "1-10000"}).status == "profile_too_slow"
+    assert tool(max_rps=50).run(IP, {"profile": "full"}).status == "ok"
+    assert tool(max_rps=5, max_host_timeout_s=40000).run(IP, {"profile": "full"}).status == "ok"
+    assert tool(max_rps=50, max_host_timeout_s=200).run(IP, {"profile": "full"}).status == "profile_too_slow"
+    # the floor is not an estimate: a short scan under a high floor still runs
+    assert tool(max_rps=50, host_timeout_s=7200).run(IP, {"profile": "quick"}).status == "ok"
+
+
+def test_host_timeout_and_refusal_flow_through_the_toolbox_as_tool_errors(rig):
+    r = rig(runner=Runner(stdout=HOST_TIMEOUT_FIXTURE))
+    res = r.box.execute(ToolAction("nmap", IP, {"profile": "service"}), iteration=1)
+    assert res.outcome is Outcome.TOOL_ERROR and res.executed and res.status == "host_timeout"
+    assert "host_timeout" in res.sanitized.text and "degraded" in res.sanitized.text
+    res = r.box.execute(ToolAction("nmap", IP, {"profile": "full"}), iteration=2)  # ENG is 20 rps
+    assert res.outcome is Outcome.TOOL_ERROR and res.status == "profile_too_slow"
+    assert len(r.runner.calls) == 1
