@@ -44,6 +44,10 @@ lab/captures/*.json
 lab/captures/_rc20_ephemeral/
 # RC-47 model-relay acceptance captures (reports, evidence, audit logs) - never committed
 lab/captures/_rc47_ephemeral/
+# RC-46 benchmark run output (reports, evidence stores, audit logs), one directory per benchmark
+lab/captures/_rc46_benchmark/
+# RC-46 benchmark results (results.json, results.csv, summary.md) - kept apart from the evidence
+benchmark-results/
 
 # RC-24 validation-harness evidence bundles — timestamped, one per run, never committed
 lab/captures/validation-*/
