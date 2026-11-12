@@ -25,27 +25,34 @@ What ``run`` does, in order:
   by ``--model`` / ``--context-tokens``;
 * hosted runs draw on one per-benchmark budget (tokens and/or USD). Each run
   is capped to what is left, and the hosted group stops when it is used up;
-* ``down`` at the end, always: on success, on an error and on Ctrl+C.
+* ``down`` at the end, always: on success, on an error and on Ctrl+C. The
+  results files are written before that teardown starts and again after it,
+  and the teardown runs with Ctrl+C ignored, so a second Ctrl+C cannot skip
+  the results or cut the teardown short.
 
 Run output (reports, evidence stores, audit logs) goes under
 ``lab/captures/_rc46_benchmark/<id>/``; results (``results.json``,
 ``results.csv``, ``summary.md``) go under ``benchmark-results/<id>/``. Both are
-git-ignored. The results directory is scanned for API-key material before the
-command returns.
+git-ignored. The results directory is scanned for API-key material every time
+it is written.
 
 The launcher is injectable (``Launcher``), so tests/test_lab_benchmark.py
 drives the orchestration without docker, Ollama or a model. This module starts
-no process itself: every docker call goes through lab/model_relay.py's runner.
+one kind of process itself: ``docker compose down``, through ``teardown_runner``,
+which keeps that child out of the console's Ctrl+C. Every other docker call
+goes through lab/model_relay.py's runner.
 """
 
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import os
 import pathlib
 import platform
 import re
+import signal
 import subprocess
 import sys
 import time
@@ -53,7 +60,7 @@ import urllib.error
 import urllib.request
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
-from typing import Any, Callable, Protocol, Sequence
+from typing import Any, Callable, Iterator, Protocol, Sequence
 
 import yaml
 
@@ -368,14 +375,27 @@ def op06d_argv(request: RunRequest, engagement_in_scanner: str, out_in_scanner: 
     return argv
 
 
+def teardown_runner(argv: Sequence[str], timeout: float) -> subprocess.CompletedProcess:
+    """lab/model_relay.py's default runner (UTF-8 capture, return code), with
+    the child started outside the console's Ctrl+C: a new process group on
+    Windows, a new session elsewhere. Used for ``docker compose down`` only."""
+    detached: dict[str, Any] = ({"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP} if os.name == "nt"
+                                else {"start_new_session": True})
+    return subprocess.run(list(argv), capture_output=True, text=True, encoding="utf-8", errors="replace",
+                          timeout=timeout, check=False, **detached)
+
+
 class RelayLauncher:
     """The real thing: every step is a lab/model_relay.py call or a docker
-    compose command through its (UTF-8, return-code) runner."""
+    compose command through its (UTF-8, return-code) runner, except ``down``,
+    which uses ``teardown_runner``. A launcher given its own runner uses that
+    one for ``down`` too, unless it is also given ``down_run``."""
 
     def __init__(self, run: relay.Runner = relay.default_runner, *,
-                 fetch: Callable[[str], Any] = _get_json) -> None:
+                 fetch: Callable[[str], Any] = _get_json, down_run: relay.Runner | None = None) -> None:
         self._run = run
         self._fetch = fetch
+        self._down_run = down_run or (teardown_runner if run is relay.default_runner else run)
 
     def check_policy(self, mode: str, engagement: str) -> None:
         relay.check_policy(mode, engagement)
@@ -393,7 +413,7 @@ class RelayLauncher:
         return relay.check(mode, self._run)
 
     def down(self) -> None:
-        cp = relay.down(self._run)
+        cp = relay.down(self._down_run)
         if cp.returncode != 0:
             raise BenchmarkError(f"docker compose down failed (exit {cp.returncode}):\n{cp.stdout}\n{cp.stderr}")
 
@@ -495,6 +515,23 @@ def _error_text(text: str) -> str:
     return scrub_text(text.strip())[-500:]
 
 
+@contextlib.contextmanager
+def _sigint_ignored() -> Iterator[None]:
+    """Ignore Ctrl+C in this process for the duration, then put the previous
+    handler back. Off the main thread the handler cannot be changed, and the
+    block runs unshielded."""
+    try:
+        previous = signal.signal(signal.SIGINT, signal.SIG_IGN)
+    except ValueError:
+        yield
+        return
+    try:
+        yield
+    finally:
+        if previous is not None:
+            signal.signal(signal.SIGINT, previous)
+
+
 def preflight(config: BenchmarkConfig, candidates: Sequence[Candidate], launcher: Launcher) -> None:
     """Everything that can refuse the benchmark, before any stack exists."""
     for mode in sorted({c.provider for c in candidates}):
@@ -542,8 +579,10 @@ def run_benchmark(config: BenchmarkConfig, candidates: Sequence[Candidate], laun
     """Run the selected candidates. Returns (results, results directory).
 
     The results files are written whatever happens after the first stack is
-    asked for (a partial benchmark is marked ``aborted``), ``down`` is always
-    called, and the exception that stopped the benchmark is re-raised."""
+    asked for (a partial benchmark is marked ``aborted``): once before the
+    teardown, with ``teardown`` ``pending``, and again after it. ``down`` is
+    always called, with Ctrl+C ignored, and the exception that stopped the
+    benchmark is re-raised."""
     preflight(config, candidates, launcher)
     collect = collect or bm.collect_run
     bench_id =bench_id or f"{config.name}-{_utc():%Y%m%dT%H%M%SZ}"
@@ -555,14 +594,25 @@ def run_benchmark(config: BenchmarkConfig, candidates: Sequence[Candidate], laun
         "started_at": _utc().isoformat(timespec="seconds"), "finished_at": None,
         "config": config.as_dict(), "selected": [c.name for c in candidates],
         "finding_identity": bm.FINDING_IDENTITY, "host": {}, "baseline": None, "runs": [], "summary": [],
-        "hosted_budget": None,
+        "hosted_budget": None, "teardown": None,
     }
     baseline_ids: list[str] | None = None
     stopped: BaseException | None = None
+    stack = "benchmark"  # the stack being torn down, for the operator's line
+    leaks: set[str] = set()
+
+    def write() -> None:
+        results["summary"] = bm.summarize(results["runs"])
+        if any_hosted:
+            results["hosted_budget"] = budget.as_dict()
+        bm.write_results(results_dir, results)
+        leaks.update(scan_for_key_material(results_dir, secret))
+
     try:
         results["host"] = launcher.host_environment()
         for mode in [m for m in PROVIDER_ORDER if any(c.provider == m for c in candidates)]:
             engagement = config.engagements[mode]
+            stack = mode
             say(f"[{mode}] bringing the stack up")
             launcher.down()  # a relay left over from an earlier run, of either mode
             launcher.up(mode, engagement)
@@ -630,29 +680,40 @@ def run_benchmark(config: BenchmarkConfig, candidates: Sequence[Candidate], laun
                                    **launcher.model_placement(cand.model))
                     results["runs"].append({**run, **record, "environment": env})
         results["status"] = "completed"
-    except BaseException as exc:  # noqa: BLE001 - KeyboardInterrupt included: tear down, write, re-raise
+    except BaseException as exc:  # noqa: BLE001 - KeyboardInterrupt included: write, tear down, re-raise
         stopped = exc
         results["error"] = ("interrupted" if isinstance(exc, KeyboardInterrupt)
                             else _error_text(f"{type(exc).__name__}: {exc}"))
     finally:
-        try:
-            launcher.down()
-        except Exception as exc:  # noqa: BLE001 - never hide what stopped the benchmark
-            say(f"WARNING: teardown failed, the lab may still be running "
-                f"(`uv run python lab/model_relay.py down`): {_error_text(str(exc))}")
-            if stopped is None:
-                stopped = BenchmarkError(f"teardown failed: {exc}")
-                results.update(status="aborted", error=_error_text(str(stopped)))
-        results["finished_at"] = _utc().isoformat(timespec="seconds")
-        results["summary"] = bm.summarize(results["runs"])
-        if any_hosted:
-            results["hosted_budget"] = budget.as_dict()
-        bm.write_results(results_dir, results)
-        leaks = scan_for_key_material(results_dir, secret)
+        with _sigint_ignored():
+            results["teardown"] = "pending"
+            try:
+                write()
+                if stopped is not None:
+                    say(f"partial results ({results['status']}): {results_dir}")
+            except Exception as exc:  # noqa: BLE001 - the teardown comes first; the write is repeated after it
+                say(f"WARNING: the results could not be written before the teardown: {_error_text(str(exc))}")
+            say(f"[{stack}] tearing down the stack (this can take a minute"
+                + ("; do not press Ctrl+C again)" if isinstance(stopped, KeyboardInterrupt) else ")"))
+            try:
+                launcher.down()
+                results["teardown"] = "ok"
+            except BaseException as exc:  # noqa: BLE001 - a Ctrl+C that got through must not skip the write
+                detail = "interrupted" if isinstance(exc, KeyboardInterrupt) else _error_text(str(exc))
+                say(f"WARNING: teardown failed, the lab may still be running "
+                    f"(`uv run python lab/model_relay.py down`): {detail}")
+                results["teardown"] = "failed"
+                if stopped is None:  # never hide what stopped the benchmark
+                    stopped = exc if isinstance(exc, KeyboardInterrupt) else BenchmarkError(f"teardown failed: {exc}")
+                    results.update(status="aborted", error=f"teardown_failed: {detail}")
+                else:
+                    results["error"] = f"{results['error']}; teardown_failed: {detail}"
+            results["finished_at"] = _utc().isoformat(timespec="seconds")
+            write()
     if leaks:
         raise BenchmarkError(
             "API key material was found in the benchmark results; the file(s) were deleted: "
-            + ", ".join(leaks) + ". The run output under lab/captures/ needs the same look") from stopped
+            + ", ".join(sorted(leaks)) + ". The run output under lab/captures/ needs the same look") from stopped
     if stopped is not None:
         raise stopped
     return results, results_dir
@@ -723,7 +784,8 @@ def main(argv: list[str] | None = None, *, launcher: Launcher | None = None) -> 
             config, chosen, launcher or RelayLauncher(), results_root=pathlib.Path(args.results_dir),
             secret=os.environ.get(relay.KEY_ENV) or None)
     except KeyboardInterrupt:
-        print("interrupted: the stack was torn down and partial results were written", file=sys.stderr)
+        print("interrupted: partial results were written (status aborted) and the stack was torn down, "
+              "unless a WARNING above says the teardown failed", file=sys.stderr)
         return 130
     except Refused as exc:
         print(f"refused: {exc}", file=sys.stderr)

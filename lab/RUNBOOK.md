@@ -1179,8 +1179,20 @@ What `run` does:
   what is left; when less than 20 000 tokens or $0.05 is left the remaining
   hosted runs are recorded as `skipped_budget` and the benchmark finishes
   normally. A hosted run that left no record is charged its whole grant.
-- `down` at the end, also after an error or Ctrl+C; partial results are
-  written and marked `aborted`.
+- `down` at the end, also after an error or Ctrl+C. The results files are
+  written before that teardown starts (`teardown: pending`) and again after
+  it (`teardown: ok` or `failed`, and `finished_at`); a partial benchmark is
+  marked `aborted`.
+
+Stopping a benchmark: press Ctrl+C **once**. It prints where the partial
+results are, then `tearing down the stack (this can take a minute; do not
+press Ctrl+C again)`, and `docker compose down` runs with no output for 30
+seconds or more. Ctrl+C is ignored during the teardown, and the docker child
+is started outside the console's Ctrl+C, so a second press does nothing. The
+command exits 130. If it prints `WARNING: teardown failed`, or the process
+was killed some other way (Ctrl+Break, a closed terminal), the stack may
+still be up, and `results.json` has `teardown_failed` in `error` or still
+says `teardown: pending`: run `uv run python lab/model_relay.py down`.
 
 Metrics per run (definitions in `lab/benchmark_metrics.py`):
 

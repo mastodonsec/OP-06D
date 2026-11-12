@@ -12,6 +12,7 @@ from __future__ import annotations
 import csv
 import json
 import pathlib
+import signal
 import subprocess
 import sys
 from dataclasses import replace
@@ -428,11 +429,11 @@ def _collect(run_dir, baseline_ids):
     return _metrics()
 
 
-def _bench(tmp_path, launcher, *, cfg=None, collect=_collect, **select):
+def _bench(tmp_path, launcher, *, cfg=None, collect=_collect, say=lambda _: None, **select):
     cfg = cfg or bench.parse_config(_config())
     chosen = bench.select(cfg, allow_hosted=True, **select)
     return bench.run_benchmark(cfg, chosen, launcher, results_root=tmp_path / "results", collect=collect,
-                               bench_id="t-1", say=lambda _: None)
+                               bench_id="t-1", say=say)
 
 
 def test_candidates_are_grouped_into_one_stack_per_provider_with_one_baseline(tmp_path):
@@ -520,6 +521,104 @@ def test_down_is_called_when_a_run_blows_up_or_the_operator_interrupts(tmp_path,
     assert launcher.steps()[-1] == ("down",) and ("up", "anthropic", "lab/engagement-llm-hosted.yaml") not in launcher.calls
     data = json.loads((tmp_path / "results" / "t-1" / "results.json").read_text(encoding="utf-8"))
     assert data["status"] == "aborted" and len(data["runs"]) == 1  # the run before the failure is kept
+
+
+class TeardownStub(StubLauncher):
+    """Records what is on disk, and the SIGINT handler, when the teardown
+    ``down`` is called (the one after a stack was brought up), then raises
+    ``boom`` if there is one."""
+
+    def __init__(self, tmp_path, *, boom=None, results_dir=None, **kw):
+        super().__init__(tmp_path, **kw)
+        self.boom, self.results_dir = boom, results_dir or tmp_path / "results" / "t-1"
+        self.files_at_teardown = self.on_disk = self.sigint = None
+
+    def down(self):
+        super().down()
+        if not any(c[0] == "up" for c in self.calls):
+            return  # the down before the first up
+        found = sorted(self.results_dir.glob("**/*.*"))
+        self.files_at_teardown = [p.name for p in found]
+        for p in found:
+            if p.name == "results.json":
+                self.on_disk = json.loads(p.read_text(encoding="utf-8"))
+        self.sigint = signal.getsignal(signal.SIGINT)
+        if self.boom is not None:
+            raise self.boom
+
+
+def test_the_results_are_on_disk_before_the_teardown_and_rewritten_after_it(tmp_path):
+    said: list[str] = []
+    launcher = TeardownStub(tmp_path)
+    before = signal.getsignal(signal.SIGINT)
+    results, results_dir = _bench(tmp_path, launcher, providers=["local"], say=said.append)
+    assert launcher.files_at_teardown == ["results.csv", "results.json", "summary.md"]
+    assert launcher.on_disk["status"] == "completed" and len(launcher.on_disk["runs"]) == 3
+    assert launcher.on_disk["teardown"] == "pending" and launcher.on_disk["finished_at"] is None
+    data = json.loads((results_dir / "results.json").read_text(encoding="utf-8"))
+    assert data["status"] == "completed" and data["teardown"] == "ok" and data["finished_at"]
+    # Ctrl+C is ignored for the teardown and the previous handler is back afterwards
+    assert launcher.sigint is signal.SIG_IGN and signal.getsignal(signal.SIGINT) is before
+    assert said[-1] == "[local] tearing down the stack (this can take a minute)"
+
+
+def test_a_second_ctrl_c_during_the_teardown_cannot_skip_the_results(tmp_path):
+    said: list[str] = []
+    launcher = TeardownStub(tmp_path, fail_run_at=(3, KeyboardInterrupt()), boom=KeyboardInterrupt())
+    before = signal.getsignal(signal.SIGINT)
+    with pytest.raises(KeyboardInterrupt):
+        _bench(tmp_path, launcher, say=said.append)
+    assert signal.getsignal(signal.SIGINT) is before
+    # written before the teardown: aborted, with the run that had completed
+    assert launcher.on_disk["status"] == "aborted" and launcher.on_disk["error"] == "interrupted"
+    assert len(launcher.on_disk["runs"]) == 1 and launcher.on_disk["teardown"] == "pending"
+    # and still there, with the teardown outcome, after the second interrupt
+    data = json.loads((tmp_path / "results" / "t-1" / "results.json").read_text(encoding="utf-8"))
+    assert data["status"] == "aborted" and data["error"] == "interrupted; teardown_failed: interrupted"
+    assert data["teardown"] == "failed" and data["finished_at"]
+    assert [r["candidate"] for r in data["runs"]] == ["small"] and data["baseline"]["status"] == "ok"
+    assert sorted(p.name for p in (tmp_path / "results" / "t-1").iterdir()) == [
+        "results.csv", "results.json", "summary.md"]
+    assert f"partial results (aborted): {tmp_path / 'results' / 't-1'}" in said
+    assert "[local] tearing down the stack (this can take a minute; do not press Ctrl+C again)" in said
+    assert said[-1].startswith("WARNING: teardown failed") and "uv run python lab/model_relay.py down" in said[-1]
+
+
+def test_a_teardown_that_fails_still_leaves_results_and_warns(tmp_path):
+    said: list[str] = []
+    launcher = TeardownStub(tmp_path, boom=bench.BenchmarkError("docker compose down failed (exit 1)"))
+    with pytest.raises(bench.BenchmarkError, match="teardown failed: docker compose down failed"):
+        _bench(tmp_path, launcher, providers=["local"], say=said.append)
+    data = json.loads((tmp_path / "results" / "t-1" / "results.json").read_text(encoding="utf-8"))
+    assert data["status"] == "aborted" and data["teardown"] == "failed" and len(data["runs"]) == 3
+    assert data["error"] == "teardown_failed: docker compose down failed (exit 1)"
+    assert said[-1].startswith("WARNING: teardown failed") and "uv run python lab/model_relay.py down" in said[-1]
+    # after an earlier failure, that failure is what is raised, and both are in the results
+    said.clear()
+    launcher = TeardownStub(tmp_path, fail_run_at=(2, RuntimeError("docker fell over")),
+                            boom=subprocess.TimeoutExpired("docker", 300))
+    with pytest.raises(RuntimeError, match="docker fell over"):
+        _bench(tmp_path, launcher, providers=["local"], say=said.append)
+    data = json.loads((tmp_path / "results" / "t-1" / "results.json").read_text(encoding="utf-8"))
+    assert data["status"] == "aborted" and data["teardown"] == "failed"
+    assert data["error"].startswith("RuntimeError: docker fell over; teardown_failed: ")
+    assert any(line.startswith("WARNING: teardown failed") for line in said)
+
+
+def test_the_cli_exits_130_with_results_on_disk_after_two_interrupts(tmp_path, capsys, monkeypatch):
+    monkeypatch.setattr(bench.bm, "collect_run", _collect)
+    cfg = tmp_path / "c.yaml"
+    cfg.write_text(yaml.safe_dump(_config()), encoding="utf-8")
+    launcher = TeardownStub(tmp_path, results_dir=tmp_path / "r", fail_run_at=(2, KeyboardInterrupt()),
+                            boom=KeyboardInterrupt())
+    code = bench.main(["run", "--config", str(cfg), "--candidate", "small", "--results-dir", str(tmp_path / "r")],
+                      launcher=launcher)
+    out = capsys.readouterr()
+    assert code == 130 and "interrupted" in out.err
+    assert "do not press Ctrl+C again" in out.out and "WARNING: teardown failed" in out.out
+    (written,) = (tmp_path / "r").glob("*/results.json")
+    data = json.loads(written.read_text(encoding="utf-8"))
+    assert data["status"] == "aborted" and data["baseline"]["status"] == "ok" and data["runs"] == []
 
 
 def test_a_failed_run_is_recorded_and_the_benchmark_goes_on(tmp_path):
@@ -630,6 +729,18 @@ def test_key_material_in_the_results_fails_the_benchmark_and_removes_the_file(tm
     assert list((tmp_path / "results" / "t-1").iterdir()) == []
 
 
+def test_the_results_written_before_the_teardown_are_scanned_too(tmp_path):
+    def collect(run_dir, baseline_ids):
+        m = _collect(run_dir, baseline_ids)
+        return m if m.planner == "fixed" else replace(m, termination=FAKE_KEY)
+    launcher = TeardownStub(tmp_path, fail_run_at=(3, KeyboardInterrupt()), boom=KeyboardInterrupt())
+    with pytest.raises(bench.BenchmarkError, match="API key material was found") as err:
+        _bench(tmp_path, launcher, providers=["local"], collect=collect)
+    assert isinstance(err.value.__cause__, KeyboardInterrupt) and FAKE_KEY not in str(err.value)
+    assert launcher.files_at_teardown == []  # deleted before the teardown started, not only after it
+    assert list((tmp_path / "results" / "t-1").iterdir()) == []
+
+
 def test_the_results_scan_finds_the_key_and_key_shaped_values(tmp_path):
     (tmp_path / "clean.json").write_text('{"ok": true, "env": "ANTHROPIC_API_KEY"}', encoding="utf-8")
     (tmp_path / "shape.csv").write_text("x," + "sk-ant-" + "zzzzzzzzzzzz", encoding="utf-8")
@@ -731,15 +842,48 @@ def test_benchmark_output_directories_are_git_ignored_and_apart_from_the_evidenc
     assert (ROOT / "lab" / "captures") not in bench.DEFAULT_RESULTS_DIR.parents
 
 
-def test_the_harness_starts_no_process_of_its_own():
+def test_down_goes_through_the_teardown_runner_which_detaches_the_child_from_ctrl_c(monkeypatch):
+    seen = {}
+
+    def fake_run(argv, **kw):
+        seen.update(argv=argv, **kw)
+        return subprocess.CompletedProcess(argv, 0, "", "")
+    monkeypatch.setattr(bench.subprocess, "run", fake_run)
+    bench.RelayLauncher().down()
+    assert seen["argv"][:2] == ["docker", "compose"] and seen["argv"][-2:] == ["down", "--remove-orphans"]
+    assert seen["encoding"] == "utf-8" and seen["capture_output"] and seen["check"] is False and seen["timeout"] == 300
+    if sys.platform == "win32":
+        assert seen["creationflags"] == subprocess.CREATE_NEW_PROCESS_GROUP
+    else:
+        assert seen["start_new_session"] is True
+    # a launcher given its own runner never reaches the real one, for down either
+    seen.clear()
+    docker = FakeDocker()
+    bench.RelayLauncher(docker).down()
+    assert seen == {} and docker.calls[0][-2:] == ["down", "--remove-orphans"]
+
+    def failing(argv, timeout):
+        return subprocess.CompletedProcess(argv, 1, "", "no such network")
+    with pytest.raises(bench.BenchmarkError, match="docker compose down failed"):
+        bench.RelayLauncher(docker, down_run=failing).down()
+
+
+def test_the_harness_starts_no_process_of_its_own_except_the_teardown():
     import ast
 
     for name in ("benchmark.py", "benchmark_metrics.py"):
         tree = ast.parse((ROOT / "lab" / name).read_text(encoding="utf-8"))
-        calls = [n for n in ast.walk(tree) if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
-                 and isinstance(n.func.value, ast.Name) and n.func.value.id in ("subprocess", "os")
-                 and n.func.attr in ("run", "Popen", "call", "check_output", "check_call", "system", "popen")]
-        assert calls == [], name  # docker and nvidia-smi go through model_relay.default_runner (UTF-8 capture)
+
+        def starts(node):
+            return [n for n in ast.walk(node) if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
+                    and isinstance(n.func.value, ast.Name) and n.func.value.id in ("subprocess", "os")
+                    and n.func.attr in ("run", "Popen", "call", "check_output", "check_call", "system", "popen")]
+        # docker and nvidia-smi go through model_relay.default_runner (UTF-8 capture); the one
+        # exception is benchmark.teardown_runner, used for `docker compose down` only
+        allowed = [c for fn in tree.body if isinstance(fn, ast.FunctionDef) and fn.name == "teardown_runner"
+                   for c in starts(fn)] if name == "benchmark.py" else []
+        assert len(allowed) == (1 if name == "benchmark.py" else 0), name
+        assert starts(tree) == allowed, name
         imported = {a.name for n in ast.walk(tree) if isinstance(n, ast.Import) for a in n.names}
         imported |= {n.module for n in ast.walk(tree) if isinstance(n, ast.ImportFrom)}
         assert not {m for m in imported if m and m.startswith(("op06d.tools", "op06d.nmap", "op06d.nuclei"))}, name
