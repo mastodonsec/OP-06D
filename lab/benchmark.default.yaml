@@ -10,11 +10,15 @@
 # records how much of the model was on the GPU.
 benchmark: default
 
-# Per-run limits (the RC-47 acceptance limits). A candidate may override any of
-# them under its own `limits:`.
+# Per-run limits. A candidate may override any of them under its own `limits:`.
+# max_actions must leave room to match the `--planner fixed` baseline, or
+# coverage measures the cap rather than the model: the baseline executes 8
+# actions on the lab (nmap + nuclei on each of the 4 in-scope targets), so 10
+# gives two spare. max_iterations leaves room for re-asks and refused
+# proposals on top. (RC-47's acceptance limits, 12 / 6, are unchanged there.)
 limits:
-  max_iterations: 12
-  max_actions: 6
+  max_iterations: 16
+  max_actions: 10
   max_wall_clock: 1800
   max_tokens: 300000
 

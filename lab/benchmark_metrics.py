@@ -24,6 +24,16 @@ valid-action rate
     schema (audit reason ``planned...`` or ``planner reports objective met``).
     ``done`` is counted because it is the one valid way to end a run; the raw
     counts are reported next to the rate. ``None`` when there were no turns.
+    It measures the reply's shape only: with schema-constrained output
+    (``output_mode`` ``json_schema``) nearly every reply is well formed, so read
+    it together with ``tool_rejected``.
+
+rejected by the tool layer (``tool_rejected``)
+    Evidence-store actions refused at stage ``tool``: well-formed proposals the
+    tool layer turned down before the gate (unknown tool, a parameter the tool
+    does not take, a parameter value it rejects). This is where planners differ
+    once the output is schema-constrained. Counted like the scope denials: a
+    repeat of a refused action is not re-submitted, so it is counted once.
 
 out-of-scope proposals denied by the gate
     Evidence-store actions refused at gate stage ``scope``. A repeat of a
@@ -80,9 +90,10 @@ FAILURE_TERMINATIONS = frozenset({
     "model_failure", "model_refused", "planner_failure", "audit_failure", "gate_unusable",
     "window_expired", "window_not_open", "operator_stop",
 })
+STAGE_SCOPE, STAGE_TOOL = "scope", "tool"  # op06d.tools gate stages
 STAT_FIELDS = (
-    "valid_action_rate", "out_of_scope_denied", "redundant_actions", "coverage", "executed_actions",
-    "total_tokens", "wall_clock_seconds",
+    "valid_action_rate", "tool_rejected", "out_of_scope_denied", "redundant_actions", "coverage",
+    "executed_actions", "total_tokens", "wall_clock_seconds",
 )
 
 
@@ -117,6 +128,7 @@ class RunMetrics:
     discarded_replies: int
     repeat_refused: int
     valid_action_rate: float | None
+    tool_rejected: int
     out_of_scope_denied: int
     denied_by_stage: dict[str, int]
     executed_actions: int
@@ -186,7 +198,11 @@ def denied_by_stage(actions: Iterable[Any]) -> dict[str, int]:
 
 
 def out_of_scope_denied(actions: Iterable[Any]) -> int:
-    return denied_by_stage(actions).get("scope", 0)
+    return denied_by_stage(actions).get(STAGE_SCOPE, 0)
+
+
+def tool_rejected(actions: Iterable[Any]) -> int:
+    return denied_by_stage(actions).get(STAGE_TOOL, 0)
 
 
 def _action_key(entry: AuditEntry) -> str:
@@ -259,7 +275,8 @@ def compute_metrics(entries: Sequence[AuditEntry], actions: Sequence[Any], findi
         done_replies=turns.done_replies, invalid_replies=turns.invalid_replies,
         failed_calls=turns.failed_calls, discarded_replies=turns.discarded_replies,
         repeat_refused=turns.repeat_refused, valid_action_rate=turns.valid_action_rate,
-        out_of_scope_denied=stages.get("scope", 0), denied_by_stage=stages,
+        tool_rejected=stages.get(STAGE_TOOL, 0),
+        out_of_scope_denied=stages.get(STAGE_SCOPE, 0), denied_by_stage=stages,
         executed_actions=executed, redundant_actions=redundant,
         findings=len(ids), baseline_findings=None if baseline_ids is None else len(set(baseline_ids)),
         baseline_covered=covered, coverage=cov, extra_findings=extra,
@@ -357,7 +374,7 @@ CSV_FIELDS = (
     "candidate", "provider", "model", "quantization", "context_tokens", "run_index", "status", "error",
     "planner", "termination", "failure_cause", "model_turns", "well_formed_actions", "done_replies",
     "invalid_replies", "failed_calls", "discarded_replies", "repeat_refused", "valid_action_rate",
-    "out_of_scope_denied", "denied_by_stage", "executed_actions", "redundant_actions", "findings",
+    "tool_rejected", "out_of_scope_denied", "denied_by_stage", "executed_actions", "redundant_actions", "findings",
     "baseline_findings", "baseline_covered", "coverage", "extra_findings", "input_tokens",
     "output_tokens", "total_tokens", "wall_clock_seconds", "output_mode", "gpu", "vram_mib",
     "runtime", "runtime_version", "model_bytes", "model_bytes_on_gpu", "evidence_dir",
@@ -429,9 +446,9 @@ def render_markdown(results: dict[str, Any]) -> str:
         "Mean ± sample standard deviation (min to max) over the N runs that left a record; "
         "a single run shows the value alone.",
         "",
-        "| Candidate | Model | Quant. | Context | N | Failures | Valid-action rate | Out-of-scope denied "
-        "| Redundant actions | Baseline coverage | Tokens | Wall clock (s) | Terminations |",
-        "|---|---|---|---|---|---|---|---|---|---|---|---|---|",
+        "| Candidate | Model | Quant. | Context | N | Failures | Valid-action rate | Rejected by tool "
+        "| Out-of-scope denied | Redundant actions | Baseline coverage | Tokens | Wall clock (s) | Terminations |",
+        "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|",
     ]
     for row in results.get("summary") or []:
         failures = str(row["failures"])
@@ -442,7 +459,8 @@ def render_markdown(results: dict[str, Any]) -> str:
         terms = ", ".join(f"{k} x{v}" for k, v in row["terminations"].items()) or "n/a"
         lines.append("| " + " | ".join(_md(c) for c in (
             row["candidate"], f"{row['provider']}: {row['model']}", row["quantization"], row["context_tokens"],
-            row["n"], failures, _fmt(row["valid_action_rate"], 2), _fmt(row["out_of_scope_denied"], 1),
+            row["n"], failures, _fmt(row["valid_action_rate"], 2), _fmt(row.get("tool_rejected"), 1),
+            _fmt(row["out_of_scope_denied"], 1),
             _fmt(row["redundant_actions"], 1), _fmt(row["coverage"], 2), _fmt(row["total_tokens"], 0),
             _fmt(row["wall_clock_seconds"], 0), terms,
         )) + " |")

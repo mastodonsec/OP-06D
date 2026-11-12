@@ -39,6 +39,9 @@ IN_SCOPE = "203.0.113.5"
 OUT_OF_SCOPE = "198.51.100.7"
 FAKE_KEY = "sk-ant-" + "api03-" + "B" * 48  # built in pieces: never a key-shaped literal in the tree
 DEFAULT_CONFIG = ROOT / "lab" / "benchmark.default.yaml"
+# Actions the --planner fixed baseline executes on the lab: nmap + nuclei on each of
+# the 4 in-scope targets (the RC-46 smoke run, default-20261111T235813Z).
+LAB_BASELINE_ACTIONS = 8
 
 
 @pytest.fixture(autouse=True)
@@ -144,7 +147,7 @@ def test_a_mixed_run_is_scored_from_its_audit_log_and_evidence_store(tmp_path):
     assert m.model_turns == 7 and m.well_formed_actions == 5 and m.done_replies == 1
     assert m.invalid_replies == 1 and m.repeat_refused == 1 and m.failed_calls == 0
     assert m.valid_action_rate == pytest.approx(6 / 7)
-    assert m.out_of_scope_denied == 1 and m.denied_by_stage == {"scope": 1}
+    assert m.out_of_scope_denied == 1 and m.denied_by_stage == {"scope": 1} and m.tool_rejected == 0
     assert m.executed_actions == 3 and m.redundant_actions == 1
     assert m.input_tokens == 7000 and m.output_tokens == 350 and m.total_tokens == 7350
     assert m.termination == "objective_met" and m.failure_cause is None and m.planner == "llm"
@@ -158,8 +161,23 @@ def test_a_fixed_planner_run_has_no_model_turns_and_no_rate(tmp_path):
     assert m.model_turns == 0 and m.valid_action_rate is None
     assert m.termination is None and m.total_tokens == 0 and m.output_mode is None
     assert m.executed_actions == 1  # nmap; nuclei is not registered here, so that proposal is refused
-    assert m.denied_by_stage == {"tool": 1} and m.out_of_scope_denied == 0
+    assert m.denied_by_stage == {"tool": 1} and m.out_of_scope_denied == 0 and m.tool_rejected == 1
     assert m.coverage is None and m.baseline_findings is None
+
+
+def test_a_well_formed_proposal_the_tool_rejects_is_counted_apart_from_the_rate(tmp_path):
+    # Schema-valid replies can still carry parameters the tool will not take (the
+    # RC-46 smoke run: nuclei with an empty severity list). The rate stays 1.0; the
+    # refusal shows up in tool_rejected, and the action never executes.
+    m = _llm_run(tmp_path, [
+        act(profile="service", bogus="x"),  # well formed, refused by the tool layer
+        act(profile="service"),             # executed
+        DONE,
+    ])
+    assert m.model_turns == 3 and m.well_formed_actions == 2 and m.done_replies == 1
+    assert m.valid_action_rate == 1.0
+    assert m.tool_rejected == 1 and m.denied_by_stage == {"tool": 1} and m.out_of_scope_denied == 0
+    assert m.executed_actions == 1
 
 
 def test_a_loop_that_ended_before_the_first_turn_has_zero_turns(tmp_path):
@@ -270,7 +288,13 @@ def test_the_default_config_is_the_shortlist():
     assert hosted[0].model == DEFAULT_ANTHROPIC_MODEL and hosted[0].runs < min(c.runs for c in local)
     assert cfg.budget_max_tokens and cfg.budget_max_cost_usd
     assert cfg.engagements == {"local": "lab/engagement.yaml", "anthropic": "lab/engagement-llm-hosted.yaml"}
-    assert cfg.limits == relay.ACCEPTANCE_LIMITS
+    # RC-47's limits, except the action cap: the lab's --planner fixed baseline
+    # executes 8 actions, and a lower cap would make coverage measure the cap.
+    assert set(cfg.limits) == set(relay.ACCEPTANCE_LIMITS)
+    assert cfg.limits["max_actions"] >= LAB_BASELINE_ACTIONS + 2
+    assert cfg.limits["max_iterations"] > cfg.limits["max_actions"]
+    for k in ("max_wall_clock", "max_tokens"):
+        assert cfg.limits[k] == relay.ACCEPTANCE_LIMITS[k]
 
 
 def test_an_unknown_provider_is_refused():
@@ -340,7 +364,8 @@ def test_hosted_candidates_need_the_explicit_opt_in():
 def _metrics(**over) -> bm.RunMetrics:
     base = dict(
         model_turns=4, well_formed_actions=3, done_replies=1, invalid_replies=0, failed_calls=0,
-        discarded_replies=0, repeat_refused=0, valid_action_rate=1.0, out_of_scope_denied=0, denied_by_stage={},
+        discarded_replies=0, repeat_refused=0, valid_action_rate=1.0, tool_rejected=0, out_of_scope_denied=0,
+        denied_by_stage={},
         executed_actions=3, redundant_actions=0, findings=2, baseline_findings=2, baseline_covered=2, coverage=1.0,
         extra_findings=0, input_tokens=29_000, output_tokens=1_000, total_tokens=30_000, wall_clock_seconds=12.5,
         termination="objective_met", failure_cause=None, planner="llm", output_mode="json_schema",
@@ -448,6 +473,7 @@ def test_results_are_written_as_json_csv_and_a_markdown_table(tmp_path):
     assert rows[1]["gpu"] == "NVIDIA GeForce RTX 3080" and rows[1]["vram_mib"] == "10240"
     assert rows[1]["quantization"] == "q5" and rows[1]["output_mode"] == "json_schema"
     assert rows[1]["total_tokens"] == "30000" and rows[1]["termination"] == "objective_met"
+    assert rows[1]["tool_rejected"] == "0"
     md = (results_dir / "summary.md").read_text(encoding="utf-8")
     assert "| small | local: m:8b | q5 | 8192 | 2 | 0 | 1.00 ± 0.00 (1.00 to 1.00) |" in md
     assert "| big | local: m:14b | q4 | 8192 | 1 | 0 | 1.00 |" in md
@@ -457,7 +483,7 @@ def test_results_are_written_as_json_csv_and_a_markdown_table(tmp_path):
 def test_failures_and_spread_show_in_the_summary():
     runs = [
         {"candidate": "c", "provider": "local", "model": "m", "quantization": "q", "context_tokens": 1, "status": "ok",
-         "metrics": _metrics(valid_action_rate=0.5, coverage=0.5).as_dict()},
+         "metrics": _metrics(valid_action_rate=0.5, coverage=0.5, tool_rejected=2).as_dict()},
         {"candidate": "c", "status": "ok", "metrics": _metrics(
             termination="model_failure", failure_cause={"error": "LLMUnavailable", "error_type": "overloaded_error"},
             valid_action_rate=1.0, coverage=None).as_dict()},
@@ -470,8 +496,11 @@ def test_failures_and_spread_show_in_the_summary():
     assert row["coverage"] == {"n": 1, "mean": 0.5, "stdev": None, "min": 0.5, "max": 0.5}
     assert row["terminations"] == {"model_failure": 1, "objective_met": 1}
     assert row["failure_causes"] == {"overloaded_error": 1}
+    assert row["tool_rejected"]["mean"] == 1.0 and row["tool_rejected"]["max"] == 2
     md = bm.render_markdown({"summary": [row], "benchmark": "x"})
     assert "2 (overloaded_error x1); 1 skipped (budget)" in md
+    assert "| Valid-action rate | Rejected by tool | Out-of-scope denied |" in md
+    assert "| 0.75 ± 0.35 (0.50 to 1.00) | 1.0 ± 1.4 (0.0 to 2.0) | 0.0 ± 0.0 (0.0 to 0.0) |" in md
 
 
 def test_no_run_starts_unless_the_isolation_check_passes(tmp_path):

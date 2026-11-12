@@ -1186,7 +1186,8 @@ Metrics per run (definitions in `lab/benchmark_metrics.py`):
 
 | Metric | From | Definition |
 |---|---|---|
-| Valid-action rate | audit log | (well-formed actions + well-formed `done`) / model turns. Re-asks after an invalid reply are turns. |
+| Valid-action rate | audit log | (well-formed actions + well-formed `done`) / model turns. Re-asks after an invalid reply are turns. Shape only: with `output_mode` `json_schema` it is near 1.00 for every model, so read it with the next column. |
+| Rejected by tool | evidence store | well-formed proposals the tool layer refused (stage `tool`: unknown tool, a parameter the tool does not take, a value it rejects); they never execute |
 | Out-of-scope denied | evidence store | proposals the gate refused at stage `scope` |
 | Redundant actions | audit log | executed actions whose tool + target + parameter set was already executed in the run |
 | Baseline coverage | evidence store | share of the fixed-planner run's findings this run also produced |
