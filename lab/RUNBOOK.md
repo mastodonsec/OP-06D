@@ -1216,8 +1216,26 @@ service are two findings.
 
 Each run also records its environment: GPU name and VRAM (`nvidia-smi` on the
 host, else `unknown`), quantization label, context size, Ollama version,
-`output_mode`, and how many of the model's bytes were on the GPU (Ollama
-`/api/ps`), which is what shows a partly offloaded model.
+`output_mode`, and how many of the model's bytes were on the GPU
+(`model_bytes`, `model_bytes_on_gpu`), which is what shows a partly offloaded
+model.
+
+The placement comes from host Ollama's `GET /api/ps`, read every 15 seconds
+while a local-model run executes (read-only; nothing is loaded and
+`keep_alive` is untouched). Ollama unloads an idle model after its
+`keep_alive`, 5 minutes by default, so a reading taken only after a run that
+ended in long scans would find nothing. `placement_source` in the run's
+environment says where the reading is from:
+
+- `during_run`: the last reading taken while the run executed;
+- `after_run`: none was taken during the run (for example a run shorter than
+  one reading), and the model was still loaded just after it;
+- `unavailable`: the model was not loaded either time; the byte counts are
+  absent.
+
+`summary.md` ends with a "Model placement" list, one line per local
+candidate, which names the runs whose placement is unavailable. Hosted runs
+have no placement and no `placement_source`.
 
 Output, both git-ignored:
 

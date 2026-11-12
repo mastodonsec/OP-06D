@@ -15,6 +15,8 @@ import pathlib
 import signal
 import subprocess
 import sys
+import threading
+import time
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 
@@ -415,7 +417,7 @@ class StubLauncher:
                 "platform": "test"}
 
     def model_placement(self, model):
-        return {"model_bytes": 6_000_000_000, "model_bytes_on_gpu": 6_000_000_000}
+        return {"model_bytes": 6_000_000_000, "model_bytes_on_gpu": 6_000_000_000, "placement_source": "during_run"}
 
     def steps(self):
         return [c for c in self.calls if c[0] in ("up", "check", "run", "down")]
@@ -455,8 +457,10 @@ def test_candidates_are_grouped_into_one_stack_per_provider_with_one_baseline(tm
     env = results["runs"][0]["environment"]
     assert env == {"gpu": [{"name": "NVIDIA GeForce RTX 3080", "vram_mib": 10240}], "quantization": "q5",
                    "context_tokens": 8192, "output_mode": "json_schema", "runtime": "ollama",
-                   "runtime_version": "0.12.3", "model_bytes": 6_000_000_000, "model_bytes_on_gpu": 6_000_000_000}
+                   "runtime_version": "0.12.3", "model_bytes": 6_000_000_000, "model_bytes_on_gpu": 6_000_000_000,
+                   "placement_source": "during_run"}
     assert results["runs"][-1]["environment"]["runtime"] == "anthropic api"
+    assert "placement_source" not in results["runs"][-1]["environment"]  # a hosted run has no placement
     assert results_dir == tmp_path / "results" / "t-1"
 
 
@@ -475,7 +479,10 @@ def test_results_are_written_as_json_csv_and_a_markdown_table(tmp_path):
     assert rows[1]["quantization"] == "q5" and rows[1]["output_mode"] == "json_schema"
     assert rows[1]["total_tokens"] == "30000" and rows[1]["termination"] == "objective_met"
     assert rows[1]["tool_rejected"] == "0"
+    assert rows[1]["model_bytes_on_gpu"] == "6000000000" and rows[1]["placement_source"] == "during_run"
+    assert rows[0]["placement_source"] == ""  # the fixed-planner baseline loads no model
     md = (results_dir / "summary.md").read_text(encoding="utf-8")
+    assert "- small: 100% on the GPU (2 of 2 run(s))" in md and "placement unavailable" not in md
     assert "| small | local: m:8b | q5 | 8192 | 2 | 0 | 1.00 ± 0.00 (1.00 to 1.00) |" in md
     assert "| big | local: m:14b | q4 | 8192 | 1 | 0 | 1.00 |" in md
     assert "NVIDIA GeForce RTX 3080 (10240 MiB)" in md and bm.FINDING_IDENTITY in md
@@ -818,8 +825,9 @@ def test_the_host_environment_reads_the_gpu_from_nvidia_smi_and_falls_back_to_un
     env = launcher.host_environment()
     assert env["gpu"] == [{"name": "NVIDIA GeForce RTX 4080 Laptop GPU", "vram_mib": 12282}]
     assert env["ollama_version"] == "0.12.3"
-    assert launcher.model_placement("m:30b") == {"model_bytes": 19_000_000_000, "model_bytes_on_gpu": 9_500_000_000}
-    assert launcher.model_placement("other") == {}
+    assert launcher.model_placement("m:30b") == {"model_bytes": 19_000_000_000, "model_bytes_on_gpu": 9_500_000_000,
+                                                 "placement_source": "after_run"}
+    assert launcher.model_placement("other") == {"placement_source": "unavailable"}
 
     def no_nvidia(argv, timeout):
         raise FileNotFoundError("nvidia-smi")
@@ -828,9 +836,194 @@ def test_the_host_environment_reads_the_gpu_from_nvidia_smi_and_falls_back_to_un
         raise OSError("connection refused")
     bare = bench.RelayLauncher(no_nvidia, fetch=no_ollama).host_environment()
     assert bare["gpu"] == "unknown" and bare["ollama_version"] == "unknown"
-    assert bench.RelayLauncher(no_nvidia, fetch=no_ollama).model_placement("m") == {}
+    assert bench.RelayLauncher(no_nvidia, fetch=no_ollama).model_placement("m") == {"placement_source": "unavailable"}
     assert bench.parse_nvidia_smi("A, 10240\nB, [N/A]\n\n") == [
         {"name": "A", "vram_mib": 10240}, {"name": "B", "vram_mib": "unknown"}]
+
+
+# --- model placement, sampled while the run executes ---------------------------------------------------
+
+class PlacementLab:
+    """A fake host for the real launcher: a docker runner whose ``op06d run``
+    of a model waits until Ollama's ``/api/ps`` has been read once, and an
+    Ollama that lists ``loaded`` only while such a run is executing."""
+
+    def __init__(self, loaded=("m:8b",), boom=None):
+        self.loaded, self.boom = set(loaded), boom
+        self.running = False
+        self.sampled = threading.Event()
+        self.ps_reads = 0
+
+    def docker(self, argv, timeout):
+        if argv[0] == "nvidia-smi":
+            return subprocess.CompletedProcess(argv, 0, "NVIDIA GeForce RTX 3080, 10240\n", "")
+        if "--planner" in argv:  # an op06d run with a model
+            self.sampled.clear()
+            self.running = True
+            try:
+                assert self.sampled.wait(5), "/api/ps was not read while the run executed"
+                if self.boom is not None:
+                    raise self.boom
+            finally:
+                self.running = False
+        return subprocess.CompletedProcess(argv, 0, "", "")
+
+    def fetch(self, url):
+        if url.endswith("/api/version"):
+            return {"version": "0.12.3"}
+        assert url == f"{relay.HOST_OLLAMA}/api/ps"  # read-only, loopback, nothing else
+        self.ps_reads += 1
+        models = [{"name": m, "size": 19_000_000_000, "size_vram": 9_500_000_000} for m in self.loaded] \
+            if self.running else []
+        self.sampled.set()
+        return {"models": models}
+
+    def launcher(self):
+        lab = self
+
+        class Launcher(bench.RelayLauncher):
+            def has_model(self, model):
+                return True
+
+            def up(self, mode, engagement):
+                pass
+
+            def check(self, mode):
+                report = relay.CheckReport()
+                report.ok("fine")
+                return report
+        return Launcher(lab.docker, fetch=lab.fetch, placement_interval=0.01)
+
+
+def _pollers():
+    return [t for t in threading.enumerate() if t.name == bench.POLLER_THREAD_NAME]
+
+
+def test_placement_is_read_while_the_run_executes_not_after_the_model_was_unloaded(tmp_path):
+    lab = PlacementLab()
+    results, results_dir = _bench(tmp_path, lab.launcher(), names=["small"])
+    assert [r["status"] for r in results["runs"]] == ["ok", "ok"]
+    for run in results["runs"]:
+        env = run["environment"]
+        assert env["model_bytes"] == 19_000_000_000 and env["model_bytes_on_gpu"] == 9_500_000_000
+        assert env["placement_source"] == "during_run"
+    assert _pollers() == []
+    md = (results_dir / "summary.md").read_text(encoding="utf-8")
+    assert "- small: 50% on the GPU (2 of 2 run(s))" in md and "unavailable" not in md
+
+
+def test_a_model_ollama_never_listed_is_recorded_as_unavailable_and_the_summary_says_so(tmp_path):
+    lab = PlacementLab(loaded=("some-other-model",))
+    results, results_dir = _bench(tmp_path, lab.launcher(), names=["small"])
+    for run in results["runs"]:
+        env = run["environment"]
+        assert env["placement_source"] == "unavailable"
+        assert "model_bytes" not in env and "model_bytes_on_gpu" not in env
+    assert lab.ps_reads >= 4  # during each run, and once more after it
+    md = (results_dir / "summary.md").read_text(encoding="utf-8")
+    assert "- small: **placement unavailable for run(s) 1, 2**" in md
+    with (results_dir / "results.csv").open(encoding="utf-8", newline="") as fh:
+        rows = list(csv.DictReader(fh))
+    assert [r["placement_source"] for r in rows] == ["", "unavailable", "unavailable"]
+    assert rows[1]["model_bytes"] == ""
+
+
+def test_a_reading_is_not_carried_over_to_the_next_run_or_to_another_model():
+    lab = PlacementLab()
+    launcher = lab.launcher()
+    request = bench.RunRequest("local", "lab/engagement.yaml", "id/small/run-01", "llm", model="m:8b")
+    launcher.run(request)
+    assert launcher.model_placement("m:8b")["placement_source"] == "during_run"
+    assert launcher.model_placement("m:14b") == {"placement_source": "unavailable"}
+    lab.loaded = set()  # the next run: Ollama lists nothing
+    launcher.run(request)
+    assert launcher.model_placement("m:8b") == {"placement_source": "unavailable"}
+    # the baseline has no model: nothing is polled for it
+    reads = lab.ps_reads
+    launcher.run(bench.RunRequest("local", "lab/engagement.yaml", "id/baseline-fixed", "fixed"))
+    assert lab.ps_reads == reads and _pollers() == []
+
+
+@pytest.mark.parametrize("boom", [KeyboardInterrupt(), subprocess.TimeoutExpired("docker", 5),
+                                  relay.RelayError("docker fell over")])
+def test_the_poller_is_stopped_when_the_run_raises(boom):
+    lab = PlacementLab(boom=boom)
+    launcher = lab.launcher()
+    with pytest.raises(type(boom)):
+        launcher.run(bench.RunRequest("local", "lab/engagement.yaml", "id/small/run-01", "llm", model="m:8b"))
+    assert _pollers() == []
+    reads = lab.ps_reads
+    time.sleep(0.05)  # five intervals: a poller that was still alive would have read again
+    assert lab.ps_reads == reads
+    # what was read before the run blew up is kept for its record
+    assert launcher.model_placement("m:8b")["placement_source"] == "during_run"
+
+
+def test_a_reading_that_fails_does_not_end_the_poller():
+    replies = iter([OSError("connection refused"), {}, {"model_bytes": 1, "model_bytes_on_gpu": 1}])
+    got = threading.Event()
+
+    def read():
+        reply = next(replies, {})
+        if isinstance(reply, Exception):
+            raise reply
+        if reply:
+            got.set()
+        return reply
+    with bench.PlacementPoller(read, 0.01) as poller:
+        assert got.wait(5)
+    assert poller.reading == {"model_bytes": 1, "model_bytes_on_gpu": 1} and _pollers() == []
+
+
+# --- the finalization's own failures --------------------------------------------------------------------
+
+def test_sigint_is_put_back_to_the_default_when_there_was_no_python_handler(monkeypatch):
+    calls = []
+
+    def fake_signal(signum, handler):
+        calls.append((signum, handler))
+        return None  # what signal.signal returns for a handler that was not installed from Python
+    monkeypatch.setattr(bench.signal, "signal", fake_signal)
+    with bench._sigint_ignored():
+        assert calls == [(signal.SIGINT, signal.SIG_IGN)]
+    assert calls[-1] == (signal.SIGINT, signal.SIG_DFL) and len(calls) == 2
+
+
+@pytest.mark.parametrize("boom", [KeyboardInterrupt(), RuntimeError("docker fell over")])
+def test_a_results_write_that_fails_after_the_teardown_does_not_replace_what_stopped_the_benchmark(
+        tmp_path, monkeypatch, boom):
+    real, writes = bm.write_results, []
+
+    def write_results(results_dir, results):
+        writes.append(results["teardown"])
+        if len(writes) == 2:
+            raise OSError("disk full")
+        return real(results_dir, results)
+    monkeypatch.setattr(bench.bm, "write_results", write_results)
+    said: list[str] = []
+    launcher = StubLauncher(tmp_path, fail_run_at=(3, boom))
+    with pytest.raises(type(boom)):
+        _bench(tmp_path, launcher, providers=["local"], say=said.append)
+    assert writes == ["pending", "ok"] and launcher.steps()[-1] == ("down",)
+    assert said[-1].startswith("WARNING: the results could not be written after the teardown") and "disk full" in said[-1]
+    # what was written before the teardown is still there
+    data = json.loads((tmp_path / "results" / "t-1" / "results.json").read_text(encoding="utf-8"))
+    assert data["status"] == "aborted" and data["teardown"] == "pending" and len(data["runs"]) == 1
+
+
+def test_a_results_write_that_fails_after_the_teardown_of_a_completed_benchmark_is_raised(tmp_path, monkeypatch):
+    real, writes = bm.write_results, []
+
+    def write_results(results_dir, results):
+        writes.append(results["teardown"])
+        if len(writes) == 2:
+            raise OSError("disk full")
+        return real(results_dir, results)
+    monkeypatch.setattr(bench.bm, "write_results", write_results)
+    said: list[str] = []
+    with pytest.raises(OSError, match="disk full"):
+        _bench(tmp_path, StubLauncher(tmp_path), providers=["local"], say=said.append)
+    assert said[-1].startswith("WARNING: the results could not be written after the teardown")
 
 
 # --- repository hygiene -------------------------------------------------------------------------------

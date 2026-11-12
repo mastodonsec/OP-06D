@@ -40,7 +40,9 @@ The launcher is injectable (``Launcher``), so tests/test_lab_benchmark.py
 drives the orchestration without docker, Ollama or a model. This module starts
 one kind of process itself: ``docker compose down``, through ``teardown_runner``,
 which keeps that child out of the console's Ctrl+C. Every other docker call
-goes through lab/model_relay.py's runner.
+goes through lab/model_relay.py's runner. While a local-model run executes, a
+background thread reads host Ollama's ``/api/ps`` (read-only, loopback) to
+record how much of the model is on the GPU.
 """
 
 from __future__ import annotations
@@ -55,6 +57,7 @@ import re
 import signal
 import subprocess
 import sys
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -86,6 +89,11 @@ MIN_HOSTED_RUN_TOKENS = 20_000
 MIN_HOSTED_RUN_USD = 0.05
 BASELINE_TIMEOUT = 3_600.0
 BASELINE_NAME = "baseline-fixed"
+# Ollama unloads an idle model after its keep_alive (5 minutes by default), so where the
+# model sits is read while the run executes, this often.
+PLACEMENT_POLL_SECONDS = 15.0
+PLACEMENT_JOIN_SECONDS = 2.0
+POLLER_THREAD_NAME = "rc46-placement-poller"
 
 _TOP_KEYS = frozenset({"benchmark", "limits", "engagements", "hosted_budget", "candidates"})
 _CANDIDATE_KEYS = frozenset({
@@ -385,17 +393,56 @@ def teardown_runner(argv: Sequence[str], timeout: float) -> subprocess.Completed
                           timeout=timeout, check=False, **detached)
 
 
+class PlacementPoller:
+    """Calls ``read`` on a background daemon thread, at once and then every
+    ``interval`` seconds, for the duration of a ``with`` block, and keeps the
+    most recent non-empty reading in ``reading``. Leaving the block, by return
+    or by exception, stops the thread and waits briefly for it."""
+
+    def __init__(self, read: Callable[[], dict[str, Any]], interval: float) -> None:
+        self._read, self._interval = read, interval
+        self._stop = threading.Event()
+        self._thread = threading.Thread(target=self._poll, name=POLLER_THREAD_NAME, daemon=True)
+        self.reading: dict[str, Any] | None = None
+
+    def _poll(self) -> None:
+        while True:
+            try:
+                found = self._read()
+            except Exception:  # noqa: BLE001 - a reading that failed is a reading that is missing
+                found = {}
+            if found:
+                self.reading = found
+            if self._stop.wait(self._interval):
+                return
+
+    def __enter__(self) -> "PlacementPoller":
+        self._thread.start()
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        self._stop.set()
+        self._thread.join(PLACEMENT_JOIN_SECONDS)
+
+
 class RelayLauncher:
     """The real thing: every step is a lab/model_relay.py call or a docker
     compose command through its (UTF-8, return-code) runner, except ``down``,
     which uses ``teardown_runner``. A launcher given its own runner uses that
-    one for ``down`` too, unless it is also given ``down_run``."""
+    one for ``down`` too, unless it is also given ``down_run``.
+
+    While a local-model run executes, host Ollama's ``/api/ps`` is read every
+    ``placement_interval`` seconds (``PlacementPoller``), because Ollama
+    unloads an idle model and a reading taken after the run can find none."""
 
     def __init__(self, run: relay.Runner = relay.default_runner, *,
-                 fetch: Callable[[str], Any] = _get_json, down_run: relay.Runner | None = None) -> None:
+                 fetch: Callable[[str], Any] = _get_json, down_run: relay.Runner | None = None,
+                 placement_interval: float = PLACEMENT_POLL_SECONDS) -> None:
         self._run = run
         self._fetch = fetch
         self._down_run = down_run or (teardown_runner if run is relay.default_runner else run)
+        self._placement_interval = placement_interval
+        self._placement: tuple[str, dict[str, Any]] | None = None  # (model, reading) from the last run
 
     def check_policy(self, mode: str, engagement: str) -> None:
         relay.check_policy(mode, engagement)
@@ -418,6 +465,7 @@ class RelayLauncher:
             raise BenchmarkError(f"docker compose down failed (exit {cp.returncode}):\n{cp.stdout}\n{cp.stderr}")
 
     def run(self, request: RunRequest) -> RunArtifacts:
+        self._placement = None  # a reading belongs to one run
         path, _ = relay.check_policy(request.mode, request.engagement)
         base = f"/captures/{CAPTURE_SUBDIR}/{request.out_rel}"
         scanner = ("exec", "-T", "scanner")
@@ -431,8 +479,18 @@ class RelayLauncher:
         exec_args = ["exec", "-T"] + (["-e", relay.KEY_ENV] if with_key else []) + ["scanner"]
         limits = {**relay.ACCEPTANCE_LIMITS, **request.limits}
         timeout = BASELINE_TIMEOUT if request.planner == "fixed" else float(limits["max_wall_clock"]) + 600
-        cp = self._run(relay.compose_argv(request.mode, *exec_args, *op06d_argv(request, gen, f"{base}/run")),
-                       timeout)
+        argv = relay.compose_argv(request.mode, *exec_args, *op06d_argv(request, gen, f"{base}/run"))
+        model = request.model
+        if request.planner == "llm" and request.mode == "local" and model:
+            poller = PlacementPoller(lambda: self._read_placement(model), self._placement_interval)
+            try:
+                with poller:
+                    cp = self._run(argv, timeout)
+            finally:
+                if poller.reading:
+                    self._placement = (model, poller.reading)
+        else:
+            cp = self._run(argv, timeout)
         run_dir = LAB / "captures" / CAPTURE_SUBDIR / pathlib.PurePosixPath(request.out_rel) / "run"
         return RunArtifacts(cp.returncode, run_dir, cp.stderr or "")
 
@@ -454,7 +512,17 @@ class RelayLauncher:
 
     def model_placement(self, model: str) -> dict[str, Any]:
         """How much of a loaded model sits on the GPU (Ollama ``/api/ps``),
-        which is what tells a fully offloaded model from a partly offloaded one."""
+        which is what tells a fully offloaded model from a partly offloaded
+        one: the last reading taken while the most recent run of that model
+        was executing, else a reading taken now. ``placement_source`` says
+        which (``during_run`` / ``after_run``), or ``unavailable`` when the
+        model was loaded neither time; the byte counts are then absent."""
+        if self._placement is not None and self._placement[0] == model:
+            return {**self._placement[1], "placement_source": "during_run"}
+        found = self._read_placement(model)
+        return {**found, "placement_source": "after_run" if found else "unavailable"}
+
+    def _read_placement(self, model: str) -> dict[str, Any]:
         try:
             for m in self._fetch(f"{relay.HOST_OLLAMA}/api/ps").get("models", []):
                 if m.get("name") in (model, f"{model}:latest") or m.get("model") == model:
@@ -528,8 +596,8 @@ def _sigint_ignored() -> Iterator[None]:
     try:
         yield
     finally:
-        if previous is not None:
-            signal.signal(signal.SIGINT, previous)
+        # None means the previous handler was not installed from Python: the default is the closest there is
+        signal.signal(signal.SIGINT, previous if previous is not None else signal.SIG_DFL)
 
 
 def preflight(config: BenchmarkConfig, candidates: Sequence[Candidate], launcher: Launcher) -> None:
@@ -709,7 +777,13 @@ def run_benchmark(config: BenchmarkConfig, candidates: Sequence[Candidate], laun
                 else:
                     results["error"] = f"{results['error']}; teardown_failed: {detail}"
             results["finished_at"] = _utc().isoformat(timespec="seconds")
-            write()
+            try:
+                write()
+            except Exception as exc:  # noqa: BLE001 - never hide what stopped the benchmark
+                say(f"WARNING: the results could not be written after the teardown, {results_dir} is "
+                    f"incomplete or out of date: {_error_text(str(exc))}")
+                if stopped is None:
+                    stopped = exc
     if leaks:
         raise BenchmarkError(
             "API key material was found in the benchmark results; the file(s) were deleted: "

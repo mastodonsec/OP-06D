@@ -377,7 +377,7 @@ CSV_FIELDS = (
     "tool_rejected", "out_of_scope_denied", "denied_by_stage", "executed_actions", "redundant_actions", "findings",
     "baseline_findings", "baseline_covered", "coverage", "extra_findings", "input_tokens",
     "output_tokens", "total_tokens", "wall_clock_seconds", "output_mode", "gpu", "vram_mib",
-    "runtime", "runtime_version", "model_bytes", "model_bytes_on_gpu", "evidence_dir",
+    "runtime", "runtime_version", "model_bytes", "model_bytes_on_gpu", "placement_source", "evidence_dir",
 )
 
 
@@ -398,7 +398,7 @@ def csv_row(run: dict[str, Any]) -> dict[str, object]:
         vram_mib="; ".join(str(g.get("vram_mib")) for g in gpus) or "unknown",
         runtime=env.get("runtime"), runtime_version=env.get("runtime_version"),
         output_mode=env.get("output_mode"), model_bytes=env.get("model_bytes"),
-        model_bytes_on_gpu=env.get("model_bytes_on_gpu"),
+        model_bytes_on_gpu=env.get("model_bytes_on_gpu"), placement_source=env.get("placement_source"),
     )
     return {k: _cell(flat.get(k)) for k in CSV_FIELDS}
 
@@ -464,7 +464,41 @@ def render_markdown(results: dict[str, Any]) -> str:
             _fmt(row["redundant_actions"], 1), _fmt(row["coverage"], 2), _fmt(row["total_tokens"], 0),
             _fmt(row["wall_clock_seconds"], 0), terms,
         )) + " |")
+    lines += placement_lines(results.get("runs") or [])
     return "\n".join(lines) + "\n"
+
+
+def placement_lines(runs: Iterable[dict[str, Any]]) -> list[str]:
+    """Per local candidate: the share of the model's bytes that was on the
+    GPU, and the runs for which there is no reading."""
+    by_candidate: dict[str, list[dict[str, Any]]] = {}
+    for run in runs:
+        if (run.get("environment") or {}).get("runtime") == "ollama":
+            by_candidate.setdefault(str(run.get("candidate")), []).append(run)
+    if not by_candidate:
+        return []
+    lines = ["", "Model placement (Ollama `/api/ps`): share of the model's bytes on the GPU, read while the run "
+                 "executed unless noted.", ""]
+    for name, group in by_candidate.items():
+        shares, after, missing = [], 0, []
+        for run in group:
+            env = run["environment"]
+            size, on_gpu = env.get("model_bytes"), env.get("model_bytes_on_gpu")
+            if not isinstance(size, int) or not isinstance(on_gpu, int) or size <= 0:
+                missing.append(str(run.get("run_index")))
+                continue
+            shares.append(round(100 * on_gpu / size))
+            after += env.get("placement_source") == "after_run"
+        parts = []
+        if shares:
+            span = f"{min(shares)}%" if min(shares) == max(shares) else f"{min(shares)}% to {max(shares)}%"
+            parts.append(f"{span} on the GPU ({len(shares)} of {len(group)} run(s)"
+                         + (f", {after} read after the run" if after else "") + ")")
+        if missing:
+            parts.append(f"**placement unavailable for run(s) {', '.join(missing)}** "
+                         "(the model was not loaded when Ollama was asked)")
+        lines.append(f"- {_md(name)}: " + "; ".join(parts))
+    return lines
 
 
 def write_results(results_dir: pathlib.Path, results: dict[str, Any]) -> list[pathlib.Path]:
