@@ -37,7 +37,7 @@ import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, Callable, Protocol, Sequence
+from typing import Any, Callable, Mapping, Protocol, Sequence
 
 from op06d.audit import EVENT_ITERATION, EVENT_LOOP_END, AuditError, AuditLog
 from op06d.engagement import Engagement
@@ -226,6 +226,29 @@ def fit_observation(text: str, max_chars: int | None) -> str:
 
 # --- the system prompt (the data contract) ----------------------------------
 
+def _describe_type(fragment: Mapping[str, Any]) -> str:
+    enum = fragment.get("enum")
+    if isinstance(enum, (list, tuple)) and enum:
+        return "one of: " + ", ".join(str(v) for v in enum)
+    kind = fragment.get("type")
+    if kind == "array":
+        items = fragment.get("items") if isinstance(fragment.get("items"), Mapping) else {}
+        inner = _describe_type(items)
+        if inner.startswith("one of: "):
+            return "array of: " + inner[len("one of: "):]
+        return f"array of {inner}s" if inner else "array"
+    if kind in ("integer", "number") and "minimum" in fragment and "maximum" in fragment:
+        return f"{kind} {fragment['minimum']}-{fragment['maximum']}"
+    return kind if isinstance(kind, str) else ""
+
+
+def describe_parameter(name: str, fragment: Mapping[str, Any]) -> str:
+    """One parameter for the tool list, with its type and allowed values, from
+    its JSON-schema fragment: ``severity (array of: info, low, ...)``."""
+    kind = _describe_type(fragment)
+    return f"{name} ({kind})" if kind else name
+
+
 def build_system_prompt(engagement: Engagement, tools: list[dict[str, Any]], max_iterations: int) -> str:
     scope = engagement.scope
     lines = [
@@ -245,8 +268,15 @@ def build_system_prompt(engagement: Engagement, tools: list[dict[str, Any]], max
         "Tools:",
     ]
     for t in tools:
-        params = ", ".join(t["parameters"]) or "none"
+        schema = t.get("parameter_schema")
+        if schema is None:
+            schema = {name: {} for name in t["parameters"]}
+        params = "; ".join(describe_parameter(name, fragment) for name, fragment in schema.items()) or "none"
         lines.append(f"- {t['name']} (risk {t['risk']}): {t['description']} Parameters: {params}.")
+    lines += [
+        "Every parameter is optional. Give a value of the type shown: an array is a JSON array "
+        'even for one value (["low"], not "low" and not "low,medium").',
+    ]
     lines += [
         "",
         "## Untrusted tool output (data contract)",

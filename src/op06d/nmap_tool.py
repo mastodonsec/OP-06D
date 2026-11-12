@@ -247,7 +247,7 @@ class NmapTool:
     description = (
         "Port, service and (with safe NSE categories) basic host reconnaissance via nmap. "
         "Profiles: " + ", ".join(PROFILES) + ". 'ports' (e.g. \"22,80,8000-8100\") works with "
-        "profiles default and service. 'scripts' takes NSE categories only. "
+        "profiles default and service. 'scripts' takes a list of NSE categories only. "
         "'aggressive' includes OS detection, which needs root/raw-socket privileges; running "
         "unprivileged, it silently falls back to a connect scan with OS detection skipped - "
         "the result reports this as degraded, it does not fail."
@@ -293,6 +293,17 @@ class NmapTool:
         return path
 
     # -- hooks used by the toolbox --------------------------------------------
+    def parameter_schema(self) -> dict[str, dict[str, Any]]:
+        """What ``validate_parameters`` accepts, as JSON-schema fragments built
+        from the same constants. The ``ports`` syntax and its profile rule are
+        left to ``validate_parameters``."""
+        return {
+            "profile": {"type": "string", "enum": list(PROFILES)},
+            "ports": {"type": "string"},
+            "scripts": {"type": "array", "items": {"type": "string", "enum": sorted(ALL_CATEGORIES)},
+                        "minItems": 1, "maxItems": len(ALL_CATEGORIES)},
+        }
+
     def validate_parameters(self, parameters: Mapping[str, Any]) -> str | None:
         profile = parameters.get("profile", DEFAULT_PROFILE)
         if not isinstance(profile, str) or profile not in PROFILES:

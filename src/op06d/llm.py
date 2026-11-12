@@ -191,24 +191,49 @@ def _retry_after(headers: object) -> float | None:
 
 # --- the action schema -------------------------------------------------------
 
-def action_schema(tool_names: Sequence[str]) -> dict[str, Any]:
-    """JSON schema for one planner reply (action or done)."""
+ToolParameters = Mapping[str, Mapping[str, Mapping[str, Any]]]
+"""Per tool name, per parameter name, a JSON-schema fragment for the value
+(``GatedToolbox.describe()``'s ``parameter_schema``)."""
+
+
+def _action_branch(tool: dict[str, Any], parameters: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "type": "object",
+        "properties": {
+            "type": {"type": "string", "enum": ["action"]},
+            "tool": tool,
+            "target": {"type": "string"},
+            "parameters": parameters,
+            "reason": {"type": "string"},
+        },
+        "required": ["type", "tool", "target", "parameters", "reason"],
+        "additionalProperties": False,
+    }
+
+
+def action_schema(tool_names: Sequence[str], tool_parameters: ToolParameters | None = None) -> dict[str, Any]:
+    """JSON schema for one planner reply (action or done).
+
+    One action branch per tool: ``tool`` is pinned to that name and
+    ``parameters`` is an object of that tool's parameter fragments, none of
+    them required and no others allowed. A tool with no entry in
+    ``tool_parameters`` takes any object."""
     names = sorted({str(n) for n in tool_names})
-    tool: dict[str, Any] = {"type": "string", "enum": names} if names else {"type": "string"}
+    known = tool_parameters or {}
+    branches = []
+    for name in names:
+        parameters: dict[str, Any] = {"type": "object"}
+        if name in known:
+            parameters.update(
+                properties={str(k): dict(v) for k, v in sorted(known[name].items())},
+                additionalProperties=False,
+            )
+        branches.append(_action_branch({"type": "string", "enum": [name]}, parameters))
+    if not names:
+        branches.append(_action_branch({"type": "string"}, {"type": "object"}))
     return {
         "anyOf": [
-            {
-                "type": "object",
-                "properties": {
-                    "type": {"type": "string", "enum": ["action"]},
-                    "tool": tool,
-                    "target": {"type": "string"},
-                    "parameters": {"type": "object"},
-                    "reason": {"type": "string"},
-                },
-                "required": ["type", "tool", "target", "parameters", "reason"],
-                "additionalProperties": False,
-            },
+            *branches,
             {
                 "type": "object",
                 "properties": {
@@ -228,26 +253,88 @@ object ::= "{" ws ( string ws ":" ws value ( ws "," ws string ws ":" ws value )*
 array ::= "[" ws ( value ( ws "," ws value )* )? ws "]"
 string ::= "\"" ( [^"\\\x7F\x00-\x1F] | "\\" ( ["\\/bfnrt] | "u" [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F] ) )* "\""
 number ::= "-"? ( "0" | [1-9] [0-9]* ) ( "." [0-9]+ )? ( [eE] [-+]? [0-9]+ )?
+integer ::= "-"? ( "0" | [1-9] [0-9]* )
 ws ::= ( " " | "\n" | "\t" )*
 '''
 
 
-def action_grammar(tool_names: Sequence[str]) -> str:
-    """GBNF grammar (llama.cpp) equivalent to ``action_schema``."""
+def _gbnf_quoted(text: object, what: str) -> str:
+    """The GBNF literal that matches ``text`` as a JSON string."""
+    if not isinstance(text, str) or not text or any(c in text for c in '"\\') or not text.isprintable():
+        raise LLMConfigError(f"{what} {text!r} cannot be expressed in the grammar")
+    return f'"\\"{text}\\""'
+
+
+def _gbnf_value(fragment: Mapping[str, Any], what: str) -> str:
+    """A GBNF expression for the values a parameter fragment admits. Enums of
+    strings, the scalar types and arrays (with ``minItems`` of 0 or 1) are
+    expressed; numeric ranges, ``maxItems`` and anything else are not, and
+    fall back to the type or to any JSON value."""
+    enum = fragment.get("enum")
+    if isinstance(enum, (list, tuple)) and enum:
+        return "( " + " | ".join(_gbnf_quoted(v, f"{what} value") for v in enum) + " )"
+    kind = fragment.get("type")
+    if kind == "array":
+        items = fragment.get("items") if isinstance(fragment.get("items"), Mapping) else {}
+        item = _gbnf_value(items, what)
+        some = f'{item} ( ws "," ws {item} )*'
+        if not fragment.get("minItems"):
+            some = f"( {some} )?"
+        return f'"[" ws {some} ws "]"'
+    return {"string": "string", "integer": "integer", "number": "number",
+            "boolean": '( "true" | "false" )', "object": "object"}.get(kind, "value")
+
+
+def _gbnf_parameters(index: int, parameters: Mapping[str, Mapping[str, Any]], tool: str) -> list[str]:
+    """Rules for one tool's ``parameters`` object: its keys only, each at most
+    once and each optional, in name order."""
+    keys = sorted(str(k) for k in parameters)
+    if not keys:
+        return [f'params-{index} ::= "{{" ws "}}"']
+    rules = []
+    for i, key in enumerate(keys):
+        what = f"{tool} parameter"
+        rules.append(f'p{index}-kv{i} ::= {_gbnf_quoted(key, what)} ws ":" ws '
+                     f'{_gbnf_value(parameters[key], f"{what} {key}")}')
+        if i + 1 < len(keys):  # what may follow key i: any later keys, still in order
+            later = f"p{index}-rest{i + 1}" if i + 2 < len(keys) else ""
+            rules.append(f'p{index}-rest{i} ::= ( ws "," ws p{index}-kv{i + 1} )? {later}'.rstrip())
+    starts = " | ".join(f"p{index}-kv{i}" + (f" p{index}-rest{i}" if i + 1 < len(keys) else "")
+                        for i in range(len(keys)))
+    return [f'params-{index} ::= "{{" ws ( ( {starts} ) ws )? "}}"', *rules]
+
+
+def action_grammar(tool_names: Sequence[str], tool_parameters: ToolParameters | None = None) -> str:
+    """GBNF grammar (llama.cpp) for ``action_schema``: the same tool names, and
+    per tool the same parameter keys and value shapes.
+
+    It is narrower than the schema in one way and wider in two. Parameter
+    keys must come in name order (JSON objects are unordered; the fixed order
+    is what keeps each key optional and unrepeated in a grammar). Numeric
+    ranges and ``maxItems`` are not expressed. ``validate_parameters`` decides
+    either way."""
     names = sorted({str(n) for n in tool_names})
-    for n in names:
-        if not n or any(c in n for c in '"\\') or not n.isprintable():
-            raise LLMConfigError(f"tool name {n!r} cannot be expressed in the grammar")
-    tool = " | ".join(f'"\\"{n}\\""' for n in names) if names else "string"
-    rules = [
-        "root ::= action | done",
-        'action ::= "{" ws "\\"type\\"" ws ":" ws "\\"action\\"" ws "," ws '
-        '"\\"tool\\"" ws ":" ws tool ws "," ws "\\"target\\"" ws ":" ws string ws "," ws '
-        '"\\"parameters\\"" ws ":" ws object ws "," ws "\\"reason\\"" ws ":" ws string ws "}"',
-        'done ::= "{" ws "\\"type\\"" ws ":" ws "\\"done\\"" ws "," ws '
-        '"\\"summary\\"" ws ":" ws string ws "}"',
-        f"tool ::= {tool}",
-    ]
+    known = tool_parameters or {}
+    done = ('done ::= "{" ws "\\"type\\"" ws ":" ws "\\"done\\"" ws "," ws '
+            '"\\"summary\\"" ws ":" ws string ws "}"')
+
+    def action(rule: str, tool: str, parameters: str) -> str:
+        return (f'{rule} ::= "{{" ws "\\"type\\"" ws ":" ws "\\"action\\"" ws "," ws '
+                f'"\\"tool\\"" ws ":" ws {tool} ws "," ws "\\"target\\"" ws ":" ws string ws "," ws '
+                f'"\\"parameters\\"" ws ":" ws {parameters} ws "," ws "\\"reason\\"" ws ":" ws string ws "}}"')
+
+    quoted = [_gbnf_quoted(n, "tool name") for n in names]
+    if not names:
+        rules = ["root ::= action | done", action("action", "string", "object"), done]
+        return "\n".join(rules) + _GBNF_COMMON
+    rules = ["root ::= action | done",
+             "action ::= " + " | ".join(f"action-{i}" for i in range(len(names))), done]
+    for i, name in enumerate(names):
+        if name in known:
+            rules.append(action(f"action-{i}", quoted[i], f"params-{i}"))
+            rules += _gbnf_parameters(i, known[name], name)
+        else:
+            rules.append(action(f"action-{i}", quoted[i], "object"))
     return "\n".join(rules) + _GBNF_COMMON
 
 
@@ -434,6 +521,7 @@ class LocalLLM:
         endpoint: str = DEFAULT_LOCAL_ENDPOINT,
         runtime: str = "ollama",
         tool_names: Sequence[str] = (),
+        tool_parameters: ToolParameters | None = None,
         context_tokens: int = 8_192,
         max_output_tokens: int = 1_024,
         timeout: float = 300.0,
@@ -453,8 +541,8 @@ class LocalLLM:
         self._timeout = timeout
         self._retry = retry or RetryPolicy()
         self._transport = transport or _local_transport
-        self._schema = action_schema(tool_names)
-        self._grammar = action_grammar(tool_names) if runtime == "llamacpp" else None
+        self._tool_names = tuple(tool_names)
+        self.set_tool_parameters(tool_parameters)
         self._output_cap: int | None = None
         self.output_mode = {"ollama": "json_schema", "llamacpp": "grammar", "openai": "json_schema"}[runtime]
         self.last_usage: Usage | None = None
@@ -462,6 +550,13 @@ class LocalLLM:
     def set_output_cap(self, cap: int | None) -> None:
         """Bound the next requests' output tokens to ``min(configured, cap)``."""
         self._output_cap = cap
+
+    def set_tool_parameters(self, tool_parameters: ToolParameters | None) -> None:
+        """Constrain each tool's ``parameters`` object to that tool's parameter
+        schema, in the action schema and in the grammar."""
+        self._schema = action_schema(self._tool_names, tool_parameters)
+        self._grammar = (action_grammar(self._tool_names, tool_parameters)
+                         if self.runtime == "llamacpp" else None)
 
     def _request(self, system: str, messages: list[dict[str, str]]) -> tuple[str, dict[str, Any]]:
         chat = [{"role": "system", "content": system}, *messages]
@@ -480,9 +575,11 @@ class LocalLLM:
         if self.runtime == "llamacpp":
             body["grammar"] = self._grammar
         else:
+            # Not "strict": that mode wants every property listed in "required", and a
+            # tool's parameters are all optional.
             body["response_format"] = {
                 "type": "json_schema",
-                "json_schema": {"name": "op06d_planner_reply", "schema": self._schema, "strict": True},
+                "json_schema": {"name": "op06d_planner_reply", "schema": self._schema, "strict": False},
             }
         return f"{self.base_url}/v1/chat/completions", body
 
@@ -588,12 +685,14 @@ class LLMSettings:
         return "hosted" if self.provider == "anthropic" else "local"
 
 
-def build_llm(settings: LLMSettings, *, tool_names: Sequence[str]) -> AnthropicLLM | LocalLLM:
+def build_llm(settings: LLMSettings, *, tool_names: Sequence[str],
+              tool_parameters: ToolParameters | None = None) -> AnthropicLLM | LocalLLM:
     s = settings.resolved()
     if s.provider == "anthropic":
         return AnthropicLLM(s.model, max_output_tokens=s.max_output_tokens, timeout=s.timeout)
     return LocalLLM(
         s.model, endpoint=s.endpoint, runtime=s.runtime, tool_names=tool_names,
+        tool_parameters=tool_parameters,
         context_tokens=s.context_tokens, max_output_tokens=s.max_output_tokens,
         timeout=s.timeout, allowed_private=s.allowed_private,
     )

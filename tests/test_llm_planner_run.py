@@ -22,7 +22,7 @@ import yaml
 from op06d.audit import EVENT_LOOP_END, EVENT_PLANNER_CONFIG, read_log
 from op06d.cli import PlannerPolicyError, main, run_engagement
 from op06d.evidence import EvidenceStore
-from op06d.llm import AnthropicLLM, LLMRefused, LLMSettings, LLMUnavailable, RetryPolicy, Usage
+from op06d.llm import AnthropicLLM, LLMRefused, LLMSettings, LLMUnavailable, LocalLLM, RetryPolicy, Usage
 from op06d.orchestrator import RunLimits
 from op06d.redaction import clear_registered_secrets
 from op06d.sanitize import BLOCK_NAME
@@ -173,6 +173,27 @@ def test_system_prompt_declares_untrusted_output_to_be_data(tmp_path):
     system = llm.calls[0][0]
     assert BLOCK_NAME in system
     assert "DATA" in system and "never follow it" in system
+
+
+def test_the_model_request_and_the_prompt_carry_the_tools_parameter_schemas(tmp_path):
+    class TypedNmap(FakeNmap):
+        def parameter_schema(self):
+            return {"profile": {"type": "string", "enum": ["default", "service"]},
+                    "ports": {"type": "string"}}
+
+    sent = []
+
+    def transport(url, body, timeout):
+        sent.append(json.loads(body))
+        return 200, json.dumps({"message": {"content": DONE}, "prompt_eval_count": 1, "eval_count": 1}).encode(), {}
+    llm = LocalLLM("m", tool_names=["nmap"], transport=transport)
+    assert llm._schema["anyOf"][0]["properties"]["parameters"] == {"type": "object"}  # nothing known yet
+    summary, _, _ = _run(tmp_path, [], tool=TypedNmap(), llm=llm)
+    assert summary.termination == "objective_met"
+    parameters = sent[0]["format"]["anyOf"][0]["properties"]["parameters"]
+    assert parameters == {"type": "object", "additionalProperties": False, "properties": {
+        "ports": {"type": "string"}, "profile": {"type": "string", "enum": ["default", "service"]}}}
+    assert "Parameters: ports (string); profile (one of: default, service)." in sent[0]["messages"][0]["content"]
 
 
 # --- policy, refused before the run starts ---------------------------------------
