@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE nmaprun>
+<!-- Synthetic: hand-written in nmap 7.93's XML format, not captured from a live scan. -->
+<!-- Nmap 7.93 scan initiated Tue Nov 10 04:54:58 2026 as: /usr/bin/nmap -oX - -&#45;no-stylesheet -n -&#45;max-rate 5 -&#45;host-timeout 300s -sV -&#45; 192.0.2.10 -->
+<nmaprun scanner="nmap" args="/usr/bin/nmap -oX - -&#45;no-stylesheet -n -&#45;max-rate 5 -&#45;host-timeout 300s -sV -&#45; 192.0.2.10" start="1794286498" startstr="Tue Nov 10 04:54:58 2026" version="7.93" xmloutputversion="1.05">
+<scaninfo type="syn" protocol="tcp" numservices="1000" services="1-1000"/>
+<verbose level="0"/>
+<debugging level="0"/>
+<hosthint><status state="up" reason="unknown-response" reason_ttl="0"/>
+<address addr="192.0.2.10" addrtype="ipv4"/>
+<hostnames>
+</hostnames>
+</hosthint>
+<host starttime="1794286498" endtime="1794286798" timedout="true"><status state="up" reason="echo-reply" reason_ttl="62"/>
+<address addr="192.0.2.10" addrtype="ipv4"/>
+<hostnames>
+</hostnames>
+<times srtt="43112" rttvar="1907" to="100000"/>
+</host>
+<runstats><finished time="1794286799" timestr="Tue Nov 10 04:59:59 2026" summary="Nmap done at Tue Nov 10 04:59:59 2026; 1 IP address (1 host up) scanned in 300.53 seconds" elapsed="300.53" exit="success"/><hosts up="1" down="0" total="1"/>
+</runstats>
+</nmaprun>

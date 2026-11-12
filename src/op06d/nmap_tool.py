@@ -58,10 +58,22 @@ actually used (``syn``, ``connect``, ...), the structural sibling of RC-26's
 ``templates_loaded`` for nuclei. Stderr warnings are now captured whenever
 present, not only on a non-zero exit - the exact gap that let a degraded-but-
 successful run report ``status=ok`` with no signal at all.
+
+RC-43 (nmap: live run reported no ports and no limitation (silent empty
+result)): a host nmap gives up on at ``--host-timeout`` is still written to
+the XML as up, with no ports, and nmap exits 0. ``parse_nmap_xml`` records
+that marker (``timed_out`` on the host, ``summary.hosts_timed_out``) and
+``_run`` reports it through the same ``degraded`` path as RC-25; when every
+host that answered timed out the status is ``host_timeout``, not ``ok``.
+``--host-timeout`` and the subprocess timeout are sized per call from the
+port count and ``max_rps`` (``estimate_seconds``); a scan that cannot finish
+within ``max_host_timeout_s`` is refused as ``profile_too_slow`` before nmap
+is started.
 """
 
 from __future__ import annotations
 
+import math
 import re
 import shutil
 import subprocess
@@ -99,6 +111,31 @@ PROFILES: dict[str, tuple[tuple[str, ...], Risk]] = {
 }
 PROFILES_ALLOWING_PORTS = frozenset({"default", "service"})
 DEFAULT_PROFILE = "default"
+
+# RC-43: timeout sizing. How many ports each profile scans when 'ports' is not
+# given (nmap's defaults: -F is the top 100, no -p is the top 1,000, -p- is
+# 1-65535; -sn scans none).
+PROFILE_PORT_COUNTS: dict[str, int] = {
+    "ping": 0, "quick": 100, "default": 1000, "service": 1000, "full": 65535, "aggressive": 1000,
+}
+# --max-rate caps the probes nmap sends, so a port scan takes at least
+# ports / max_rps seconds, and longer once latency makes nmap retransmit.
+# Measured: 1,000 ports with -sV at 5 rps took 207 s at 0.25 ms latency (about
+# one probe per port plus a few seconds of service detection) and more than
+# 300 s at 43 ms. Two probes per port is the working figure.
+PROBES_PER_PORT = 2
+# Fixed allowances for the phases --max-rate does not pace: -sV service probes;
+# -A adds default scripts, OS detection and traceroute; NSE categories.
+SERVICE_DETECTION_ALLOWANCE_S = 120
+AGGRESSIVE_ALLOWANCE_S = 300
+SCRIPTS_ALLOWANCE_S = 180
+# Margin on top: a quarter again for latency, plus host discovery and start-up.
+LATENCY_FACTOR = 1.25
+SLACK_S = 60
+# The subprocess timeout is the host timeout plus this, so nmap reaches its own
+# --host-timeout (and writes its XML) before the process is killed.
+RUN_TIMEOUT_MARGIN_S = 60
+DEFAULT_MAX_HOST_TIMEOUT_S = 3600
 
 MAX_RAW_BYTES = 5_000_000
 MAX_HOSTS = 2_048
@@ -199,6 +236,10 @@ def parse_nmap_xml(text: str) -> dict[str, Any]:
             "hostnames": names[:20],
             "ports": ports,
         }
+        # RC-43: nmap marks a host it gave up on at --host-timeout with
+        # timedout="true" and writes no <ports> for it.
+        if (h.get("timedout") or "").strip().lower() == "true":
+            host["timed_out"] = True
         os_matches = [
             {"name": _clip(m.get("name"), 200), "accuracy": _int(m.get("accuracy"))}
             for m in h.findall("os/osmatch")[:5]
@@ -229,12 +270,16 @@ def parse_nmap_xml(text: str) -> dict[str, Any]:
     scan_types = sorted({
         _clip(si.get("type"), 20) for si in root.findall("scaninfo") if si.get("type")
     })
+    summary: dict[str, Any] = {"hosts_up": up, "hosts_down": down, "hosts_total": total,
+                               "elapsed_seconds": elapsed, "scan_types": scan_types}
+    timed_out = sum(1 for host in hosts if host.get("timed_out"))
+    if timed_out:  # RC-43: present only when a host timed out, like "degraded"
+        summary["hosts_timed_out"] = timed_out
     return {
         "scanner": "nmap",
         "version": _clip(root.get("version"), 30),
         "hosts": hosts,
-        "summary": {"hosts_up": up, "hosts_down": down, "hosts_total": total,
-                    "elapsed_seconds": elapsed, "scan_types": scan_types},
+        "summary": summary,
     }
 
 
@@ -250,7 +295,10 @@ class NmapTool:
         "profiles default and service. 'scripts' takes a list of NSE categories only. "
         "'aggressive' includes OS detection, which needs root/raw-socket privileges; running "
         "unprivileged, it silently falls back to a connect scan with OS detection skipped - "
-        "the result reports this as degraded, it does not fail."
+        "the result reports this as degraded, it does not fail. Scan time grows with the "
+        "port count and shrinks with the engagement's rate cap: a profile that cannot finish "
+        "at that rate is refused (profile_too_slow), and a host nmap gives up on is reported "
+        "as host_timeout or degraded, never as a host with no open ports."
     )
     risk = Risk.ACTIVE_RECON  # baseline; risk_for refines it per invocation
     destructive = False
@@ -264,6 +312,7 @@ class NmapTool:
         nmap_path: str = "nmap",
         host_timeout_s: int = 300,
         run_timeout_s: float = 900.0,
+        max_host_timeout_s: int = DEFAULT_MAX_HOST_TIMEOUT_S,
         runner: Callable[[list[str], float], ProcessResult] = run_subprocess,
         which: Callable[[str], str | None] = shutil.which,
     ) -> None:
@@ -271,8 +320,10 @@ class NmapTool:
             raise ValueError(f"max_rps must be a positive integer, got {max_rps!r}")
         self.max_rps = max_rps
         self._nmap_path = nmap_path
+        # RC-43: both are floors; each call sizes its own timeouts above them.
         self._host_timeout = int(host_timeout_s)
         self._run_timeout = float(run_timeout_s)
+        self._max_host_timeout = int(max_host_timeout_s)
         self._runner = runner
         self._which = which
 
@@ -348,6 +399,47 @@ class NmapTool:
     def destructive_for(self, parameters: Mapping[str, Any]) -> bool:
         return bool(self._categories(parameters) & EXPLOIT_CATEGORIES)
 
+    # -- timeout sizing ---------------------------------------------------------
+    @staticmethod
+    def port_count(parameters: Mapping[str, Any]) -> int:
+        """How many ports this call scans per host: the ports 'ports' lists
+        (ranges expanded, overlaps counted once), else the profile's count."""
+        if "ports" in parameters:
+            ports: set[int] = set()
+            for part in str(parameters["ports"]).split(","):
+                lo, _, hi = part.partition("-")
+                ports.update(range(int(lo), int(hi or lo) + 1))
+            return len(ports)
+        return PROFILE_PORT_COUNTS[parameters.get("profile", DEFAULT_PROFILE)]
+
+    @staticmethod
+    def _runs_service_detection(parameters: Mapping[str, Any]) -> bool:
+        flags = PROFILES[parameters.get("profile", DEFAULT_PROFILE)][0]
+        return "-sV" in flags or "-A" in flags
+
+    def estimate_seconds(self, parameters: Mapping[str, Any]) -> int:
+        """Seconds one host needs for this call at ``max_rps``: the paced port
+        scan, the fixed allowances, then the latency margin and slack."""
+        flags = PROFILES[parameters.get("profile", DEFAULT_PROFILE)][0]
+        seconds = math.ceil(self.port_count(parameters) * PROBES_PER_PORT / self.max_rps)
+        if "-A" in flags:
+            seconds += AGGRESSIVE_ALLOWANCE_S
+        elif "-sV" in flags:
+            seconds += SERVICE_DETECTION_ALLOWANCE_S
+        if self._categories(parameters):
+            seconds += SCRIPTS_ALLOWANCE_S
+        return math.ceil(seconds * LATENCY_FACTOR) + SLACK_S
+
+    def host_timeout_for(self, parameters: Mapping[str, Any]) -> int:
+        """``--host-timeout`` for this call: the estimate, never below the
+        constructor's ``host_timeout_s``."""
+        return max(self._host_timeout, self.estimate_seconds(parameters))
+
+    def run_timeout_for(self, parameters: Mapping[str, Any]) -> float:
+        """Subprocess timeout for this call: always above ``--host-timeout``,
+        never below the constructor's ``run_timeout_s``."""
+        return max(self._run_timeout, float(self.host_timeout_for(parameters) + RUN_TIMEOUT_MARGIN_S))
+
     # -- argv -----------------------------------------------------------------
     @staticmethod
     def target_problem(target: object) -> str | None:
@@ -364,7 +456,7 @@ class NmapTool:
             "--no-stylesheet",
             "-n",  # RC-23: never resolve - target is always the gate-approved IP
             "--max-rate", str(self.max_rps),
-            "--host-timeout", f"{self._host_timeout}s",
+            "--host-timeout", f"{self.host_timeout_for(parameters)}s",
             *PROFILES[profile][0],
         ]
         if "ports" in parameters:
@@ -386,17 +478,32 @@ class NmapTool:
         problem = self.validate_parameters(parameters) or self.target_problem(target)
         if problem:
             return _error("invalid_input", problem)
+        profile = parameters.get("profile", DEFAULT_PROFILE)
+        port_count = self.port_count(parameters)
+        estimate = self.estimate_seconds(parameters)
+        if estimate > self._max_host_timeout:
+            # RC-43: refused here, not in validate_parameters, because it
+            # depends on the rate and not only on the parameter values.
+            return _error(
+                "profile_too_slow",
+                f"profile {profile!r} scans {port_count} ports per host; at max_rps {self.max_rps} "
+                f"that needs about {estimate}s, over the {self._max_host_timeout}s limit, so nmap "
+                "was not started. Use the 'quick' profile, a shorter 'ports' list, or an "
+                "engagement with a higher max_rps.",
+            )
         try:
             nmap = self.check_available()
         except FileNotFoundError as exc:
             return _error("nmap_not_found", str(exc))
         argv = self.build_argv(nmap, target, parameters)
+        host_timeout = self.host_timeout_for(parameters)
+        run_timeout = self.run_timeout_for(parameters)
 
         try:
-            proc = self._runner(argv, self._run_timeout)
+            proc = self._runner(argv, run_timeout)
         except subprocess.TimeoutExpired as exc:
             partial = exc.stdout if isinstance(exc.stdout, bytes) else b""
-            return _error("timeout", f"nmap did not finish within {self._run_timeout:.0f}s",
+            return _error("timeout", f"nmap did not finish within {run_timeout:.0f}s",
                           raw=partial.decode("utf-8", errors="replace"))
         except FileNotFoundError:
             return _error("nmap_not_found", f"could not execute {nmap!r}; refusing to run")
@@ -456,6 +563,36 @@ class NmapTool:
                     "OS detection (requested via the 'aggressive' profile) was not performed: "
                     + "; ".join(reasons) + " - likely running without root/raw-socket privileges."
                 )
+
+        # RC-43: a host nmap skipped at --host-timeout has no port results;
+        # that must not read as "no open ports".
+        timed_out = [h for h in findings["hosts"] if h.get("timed_out")]
+        if timed_out:
+            addresses = [a["address"] for h in timed_out for a in h["addresses"][:1]]
+            named = ", ".join(addresses[:5]) + (f" and {len(addresses) - 5} more" if len(addresses) > 5 else "")
+            capabilities = ["port_scan"] if port_count else ["host_discovery"]
+            if self._runs_service_detection(parameters):
+                capabilities.append("service_detection")
+            reason = (
+                f"nmap skipped {len(timed_out)} host(s) ({named or 'address not reported'}) at "
+                f"--host-timeout {host_timeout}s before the scan finished (profile {profile!r}, "
+                f"{port_count} ports per host, max_rps {self.max_rps}). No port or service results "
+                "were recorded for them, so the absence of findings does not mean no ports are "
+                "open. Rerun with fewer ports (the 'quick' profile or a 'ports' list) or a higher "
+                "max_rps."
+            )
+            earlier = findings.get("degraded_capabilities", [])
+            findings["degraded"] = True
+            findings["degraded_capabilities"] = [*earlier, *(c for c in capabilities if c not in earlier)]
+            findings["degraded_reason"] = " ".join(r for r in (findings.get("degraded_reason"), reason) if r)
+            if not [h for h in up_hosts if not h.get("timed_out")]:
+                findings["status"] = "error"
+                findings["error"] = {
+                    "code": "host_timeout",
+                    "message": f"every host that responded was skipped at --host-timeout "
+                               f"{host_timeout}s; the scan is incomplete and reported no ports",
+                }
+                return ToolOutput(findings, raw=stdout, status="host_timeout")
 
         if not up_hosts:
             findings["status"] = "error"

@@ -135,6 +135,41 @@ def test_empty_run_still_produces_a_valid_coherent_report(tmp_path):
     assert "No findings were recorded" in markdown
 
 
+# --- an incomplete nmap scan is disclosed (RC-43) --------------------------------
+
+def test_an_nmap_host_timeout_is_listed_under_limitations(tmp_path):
+    from op06d.nmap_tool import NmapTool
+    from op06d.normalize import normalize_execution_result
+    from op06d.tools import ProcessResult
+
+    xml = (Path(__file__).parent / "fixtures" / "nmap_host_timeout.xml").read_bytes()
+    tool = NmapTool(5, runner=lambda argv, timeout: ProcessResult(0, xml, b""), which=lambda n: "/usr/bin/nmap")
+    out = tool.run("192.0.2.10", {"profile": "service"})
+    assert out.status == "host_timeout"
+    action = ToolAction("nmap", "192.0.2.10", {"profile": "service"})
+    result = ExecutionResult(action, Outcome.TOOL_ERROR, _allowed_decision("192.0.2.10"), True, out.raw, None,
+                             out.status, True, out.findings, Risk.ACTIVE_RECON)
+
+    with EvidenceStore.open(tmp_path / "evidence.db") as store:
+        run_id = store.start_run(ENG, tool_versions={"nmap": "7.93"})
+        action_id = store.record_action(run_id, result, iteration=1)
+        store.record_findings(run_id, action_id, normalize_execution_result(result, engagement=ENG.engagement))
+        store.finish_run(run_id, status="completed")
+        reconstructed = store.reconstruct_run(run_id)
+
+    report = build_report(reconstructed)
+    assert report.findings.total == 0
+    kinds = [i.kind for i in report.limitations.issues]
+    assert "nmap_degraded" in kinds and "host_timeout" in kinds
+
+    markdown = render_markdown(report)
+    limitations = markdown.split("## Limitations & Notes", 1)[1]
+    assert "**nmap_degraded:**" in limitations and "**host_timeout:**" in limitations
+    assert "192.0.2.10" in limitations and "host-timeout 710s" in limitations
+    assert "the absence of findings does not mean no ports are open" in limitations
+    assert "No normalization issues" not in markdown
+
+
 # --- refused actions appear with reason ----------------------------------------
 
 def test_denied_and_declined_actions_appear_in_audit_trail_with_reason(tmp_path):
