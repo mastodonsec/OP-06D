@@ -107,6 +107,7 @@ engagement file *is* the authorization boundary — it names the authorized targ
 rate cap, and the window, and the gate enforces exactly what it says.
 
 ```bash
+# Create your engagement.yaml and run
 uv run op06d run --engagement engagement.yaml --out engagement-out
 ```
 
