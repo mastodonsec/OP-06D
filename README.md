@@ -97,7 +97,7 @@ python3 -m venv py-venv
 source py-venv/bin/activate
 pip install --upgrade pip
 pip install --upgrade uv
-uv sync
+uv sync --active
 ```
 
 ## Usage
@@ -107,7 +107,7 @@ engagement file *is* the authorization boundary — it names the authorized targ
 rate cap, and the window, and the gate enforces exactly what it says.
 
 ```bash
-uv run op06d run --engagement engagement.yaml
+uv run op06d run --engagement engagement.yaml --out engagement-out
 ```
 
 ### Engagement file
