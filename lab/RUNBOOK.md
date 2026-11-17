@@ -103,7 +103,14 @@ The `latest` tag is not used anywhere. Step 5 records what is actually installed
   `com.docker.network.bridge.inhibit_ipv4`, so the bridge holds no address and
   IPAM lists no Gateway. Without it, `172.31.77.1` is an address of the Docker
   host (on native Linux, the host itself): any host service listening on
-  `0.0.0.0` (sshd, Ollama, ...) answered from inside the lab. Step 4 probes it.
+  `0.0.0.0` (sshd, Ollama, ...) answered from inside the lab. Step 4 probes it,
+  and the host-side check requires the option.
+- **No IPv6 in the containers (RC-60).** The bridge still holds an IPv6
+  link-local (`fe80::`) address, which reaches host services listening on
+  `[::]`. Every lab service sets `net.ipv6.conf.all.disable_ipv6=1` and
+  `net.ipv6.conf.default.disable_ipv6=1` in its own network namespace, so no
+  container has a link-local address. Step 4 probes the all-nodes address
+  `ff02::1` on every interface.
 - **Every container is on that network only.** No `network_mode: host`, no
   second network, no `ports:` publishing, no custom DNS, no `extra_hosts`, not
   privileged. (Internal networks are also not reachable from the host, so you
@@ -163,16 +170,34 @@ except that PowerShell's escaped newline (backtick n) inside `-w "..."` is
 - **Docker Engine plus the Compose v2 plugin.** Commands are `docker compose`
   (a space), never `docker-compose` (v1, Python, unsupported). Check:
   `docker compose version` must print v2 or later.
-- **Kali (and Debian testing):** `sudo apt install -y docker.io docker-compose docker-buildx`
-  (Kali's `docker-compose` package is Compose v2 and installs the
-  `docker compose` plugin; if `docker compose version` fails, install Docker's
-  own `docker-ce docker-ce-cli containerd.io docker-buildx-plugin
-  docker-compose-plugin` instead). Then `sudo systemctl enable --now docker`.
+- **Kali (and Debian testing):** `sudo apt install -y docker.io docker-compose docker-buildx`,
+  then `sudo systemctl enable --now docker`. Kali's `docker-compose` package
+  is meant to be Compose v2 and to install the `docker compose` plugin.
+- **If `docker compose version` does not print v2 or later on Kali,** replace
+  Kali's packages with Docker's own: package `docker-compose-plugin` (with
+  `docker-ce docker-ce-cli containerd.io docker-buildx-plugin`) from Docker's
+  Debian repository `https://download.docker.com/linux/debian`, suite
+  `trixie`, component `stable`. Kali rolling has no suite of its own there,
+  so it uses Debian's current stable one. One command per line:
+
+```bash
+sudo apt remove -y docker.io docker-compose docker-buildx
+sudo apt install -y ca-certificates curl
+sudo install -m 0755 -d /etc/apt/keyrings
+sudo curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc
+sudo chmod a+r /etc/apt/keyrings/docker.asc
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian trixie stable" | sudo tee /etc/apt/sources.list.d/docker.list
+sudo apt update
+sudo apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+sudo systemctl enable --now docker
+docker compose version
+```
+
 - **docker group vs sudo:** either prefix every docker command (and
   `uv run python lab/check_isolation.py`) with `sudo`, or add yourself to the
-  `docker` group once: `sudo usermod -aG docker "$USER"`, then log out and in
-  (`newgrp docker` for the current shell). Membership of `docker` is
-  equivalent to root on that machine.
+  `docker` group once: `sudo usermod -aG docker "$USER"`, then log out and
+  back in, then continue. Membership of `docker` is equivalent to root on
+  that machine.
 - **uv:** `curl -LsSf https://astral.sh/uv/install.sh | sh` (or `pipx install uv`).
 - **ARM hosts (Apple Silicon, ARM Linux):** dvwa and the scanner are pinned to
   `linux/amd64` and run under emulation; juice-shop, nginx and the relay run
@@ -262,12 +287,13 @@ What it does:
 | Part | Check | Pass means |
 |---|---|---|
 | A (host) | `docker network inspect rc-lab_labnet` `.Internal` | prints `true` |
+| A (host) | `docker network inspect rc-lab_labnet` `.Options` | `com.docker.network.bridge.inhibit_ipv4` is `"true"` |
 | A (host) | each lab container's attached networks | only `rc-lab_labnet` |
 | A (host) | each container's published ports / network mode / privileged | none / not host / not privileged |
 | Control (host, `-WithInternetControl`) | throwaway container on the **default bridge** requests `https://example.com` | **succeeds**: proves the method can detect connectivity (one outbound request, from a throwaway container, not from the lab) |
 | B (scanner) | `lab/check_isolation.sh`: controls inside the lab first (ping, TCP, DNS, curl to the targets must **work**) | controls ok |
 | B (scanner) | no default route, one interface in 172.31.77.0/24 | yes |
-| B (scanner) | ping, raw TCP, DNS, HTTP(S) to public addresses and names, IPv6, Docker host gateways, the labnet gateway `172.31.77.1` (ping; TCP 22, 80, 443, 11434) | **every attempt is expected to FAIL**; each prints `PASS  blocked, as expected` |
+| B (scanner) | ping, raw TCP, DNS, HTTP(S) to public addresses and names, IPv6, Docker host gateways, the labnet gateway `172.31.77.1` (ping; TCP 22, 80, 443, 11434; an ARP reply), a route via any gateway, an IPv6 all-nodes (`ff02::1`) reply from anything but a lab container, and TCP 22/80/443/11434 to any such responder | **every attempt is expected to FAIL**; each prints `PASS  blocked, as expected` |
 
 The output you want ends with:
 

@@ -50,6 +50,7 @@ CONTROL_URL = "https://example.com"
 CONTROL_PLATFORM = "linux/amd64"  # the scanner image is built for amd64 only
 SCANNER_SERVICE = "scanner"
 IN_SCANNER_SCRIPT = "/lab/check_isolation.sh"
+INHIBIT_IPV4 = "com.docker.network.bridge.inhibit_ipv4"
 
 EXIT_PASS, EXIT_FAIL, EXIT_INCONCLUSIVE, EXIT_NOT_RUN = 0, 1, 2, 3
 
@@ -168,6 +169,19 @@ def host_checks(report: Report, network: str, expected: list[str], running: dict
         report.ok(f"network {network} is internal (no gateway, no NAT)")
     else:
         report.fail(f"network {network} is not internal (got '{internal}'). Is 'internal: true' set?")
+
+    # A1b. the bridge holds no address (otherwise the gateway address is the Docker host's)
+    cp = run(["docker", "network", "inspect", network, "--format", "{{json .Options}}"], 60)
+    try:
+        options = json.loads(cp.stdout or "null") if cp.returncode == 0 else None
+        inhibit = options.get(INHIBIT_IPV4) if isinstance(options, dict) else None
+    except ValueError:
+        inhibit = None
+    if inhibit == "true":
+        report.ok(f"network {network} sets {INHIBIT_IPV4}=true (the bridge holds no gateway address)")
+    else:
+        report.fail(f"network {network} does not set {INHIBIT_IPV4}=true (got {inhibit!r}): the bridge "
+                    "would hold the gateway address, an address of the Docker host")
 
     # A2. which containers are on it, and what else they are attached to
     cp = run(["docker", "network", "inspect", network, "--format",

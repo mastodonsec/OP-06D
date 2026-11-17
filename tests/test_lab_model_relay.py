@@ -124,7 +124,7 @@ def _blocked_lines(path: pathlib.Path) -> list[str]:
 def test_relay_isolation_check_keeps_every_base_egress_attempt():
     base = _blocked_lines(LAB / "check_isolation.sh")
     relay_check = set(_blocked_lines(LAB / "check_relay_isolation.sh"))
-    assert len(base) == 24
+    assert len(base) == 29
     assert [b for b in base if b not in relay_check] == []
 
 
@@ -459,6 +459,7 @@ def test_the_key_scan_is_not_vacuous(tmp_path):
 import copy  # noqa: E402
 import json  # noqa: E402
 
+INHIBIT = "com.docker.network.bridge.inhibit_ipv4"
 NAMES = {"juice-shop": "rc-lab-juice-shop-1", "dvwa": "rc-lab-dvwa-1", "redirect": "rc-lab-redirect-1",
          "scanner": "rc-lab-scanner-1", "model-relay": "rc-lab-model-relay-1"}
 
@@ -488,8 +489,8 @@ def _topology(mode: str) -> dict:
                                  extra_hosts=list(relay.EXPECTED_RELAY_EXTRA_HOSTS[mode]) or None),
     }
     networks = {
-        lab: {"Internal": True, "Containers": {f"id-{s}": {"Name": NAMES[s]} for s in ("juice-shop", "dvwa", "redirect", "scanner")}},
-        rel: {"Internal": True, "Containers": {f"id-{s}": {"Name": NAMES[s]} for s in ("scanner", "model-relay")}},
+        lab: {"Internal": True, "Options": {INHIBIT: "true"}, "Containers": {f"id-{s}": {"Name": NAMES[s]} for s in ("juice-shop", "dvwa", "redirect", "scanner")}},
+        rel: {"Internal": True, "Options": {INHIBIT: "true"}, "Containers": {f"id-{s}": {"Name": NAMES[s]} for s in ("scanner", "model-relay")}},
         egr: {"Internal": False, "Containers": {"id-model-relay": {"Name": NAMES["model-relay"]}}},
     }
     return {"containers": containers, "networks": networks}
@@ -621,7 +622,6 @@ def test_check_fails_when_the_redirector_is_missing_from_labnet():
 
 # --- RC-60: Lab: run on Linux (Kali) and macOS, not only Windows ---------------------------
 
-INHIBIT = "com.docker.network.bridge.inhibit_ipv4"
 HOST_GATEWAY = "host.docker.internal:host-gateway"
 
 
@@ -694,3 +694,31 @@ def test_relaynet_gateway_is_probed_from_the_scanner():
     assert any(ln.startswith('expect_blocked "ping 172.31.78.1') for ln in gw)
     for port in (22, 80, 443, 11434):
         assert any(f"/dev/tcp/172.31.78.1/{port}'" in ln for ln in gw), port
+
+
+@pytest.mark.parametrize("net", [relay.NET_LAB, relay.NET_RELAY])
+@pytest.mark.parametrize("options", [{}, {INHIBIT: "false"}, None])
+def test_check_fails_when_an_internal_network_lets_the_bridge_hold_an_address(net, options):
+    report = _broken("local", lambda t: t["networks"][net].update(Options=options))
+    assert report.exit_code == 1
+    assert any(f"{net} does not set {INHIBIT}=true" in line for line in report.lines)
+
+
+def test_both_check_scripts_probe_ipv6_link_local_and_arp_identically():
+    base = _blocked_lines(LAB / "check_isolation.sh")
+    for needle in ("bash -c v6_foreign_responders", "nc -6 -z -w3", "ARP reply from the labnet gateway",
+                   "an IPv4 route via a gateway", "an IPv6 route via a gateway"):
+        assert any(needle in line for line in base), needle
+    relay_lines = _blocked_lines(LAB / "check_relay_isolation.sh")
+    assert any("ARP reply from the relaynet gateway 172.31.78.1" in line for line in relay_lines)
+    for path in (LAB / "check_isolation.sh", LAB / "check_relay_isolation.sh"):
+        assert "export -f v6_foreign_responders" in path.read_text(encoding="utf-8")
+
+
+def test_every_lab_service_and_the_relay_disable_ipv6():
+    want = {"net.ipv6.conf.all.disable_ipv6": 1, "net.ipv6.conf.default.disable_ipv6": 1}
+    for name, svc in _yaml(LAB / "docker-compose.yml")["services"].items():
+        assert svc.get("sysctls") == want, name
+    for mode in MODES:
+        assert _overlay(mode)["services"]["model-relay"].get("sysctls") == want
+        assert "sysctls" not in _overlay(mode)["services"]["scanner"]  # inherited from the base file

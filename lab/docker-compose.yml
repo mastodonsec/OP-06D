@@ -11,6 +11,9 @@
 #   * `labnet` also sets `inhibit_ipv4`: the bridge gets no address, so the
 #     gateway address 172.31.77.1 is not the Docker host (on native Linux, the
 #     host itself) and host services are not reachable from the lab through it.
+#   * Every service disables IPv6 in its own network namespace (`sysctls`), so
+#     no container has a link-local address to reach the bridge's fe80:: address,
+#     which would reach host services listening on [::].
 #   * Every service is attached to labnet ONLY (no second network, no
 #     network_mode: host, no `ports:` publishing, no extra_hosts, no custom dns).
 #   * Nothing here is trusted on its own: lab/check_isolation.sh and the host-side
@@ -49,6 +52,9 @@ services:
     security_opt:
       - no-new-privileges:true
     mem_limit: 1g
+    sysctls:                  # no IPv6 in the container: no link-local path to the host
+      net.ipv6.conf.all.disable_ipv6: 1
+      net.ipv6.conf.default.disable_ipv6: 1
     networks:
       labnet:
         ipv4_address: 172.31.77.10
@@ -65,6 +71,9 @@ services:
     security_opt:
       - no-new-privileges:true
     mem_limit: 1g
+    sysctls:                  # no IPv6 in the container: no link-local path to the host
+      net.ipv6.conf.all.disable_ipv6: 1
+      net.ipv6.conf.default.disable_ipv6: 1
     networks:
       labnet:
         ipv4_address: 172.31.77.11
@@ -89,6 +98,9 @@ services:
     security_opt:
       - no-new-privileges:true
     mem_limit: 64m
+    sysctls:                  # no IPv6 in the container: no link-local path to the host
+      net.ipv6.conf.all.disable_ipv6: 1
+      net.ipv6.conf.default.disable_ipv6: 1
     networks:
       labnet:
         ipv4_address: 172.31.77.12
@@ -119,6 +131,9 @@ services:
       - ..:/op06d:ro            # the OP-06D code, read-only
       - .:/lab:ro               # these lab files (scripts, engagement), read-only
       - ./captures:/captures    # the ONLY writable mount: real tool outputs
+    sysctls:                  # no IPv6 in the container: no link-local path to the host
+      net.ipv6.conf.all.disable_ipv6: 1
+      net.ipv6.conf.default.disable_ipv6: 1
     networks:
       labnet:
         ipv4_address: 172.31.77.20

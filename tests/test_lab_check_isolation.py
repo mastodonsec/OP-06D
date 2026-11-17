@@ -36,7 +36,9 @@ def _healthy() -> dict:
         "daemon": True,
         "config_rc": 0,
         "services": list(SERVICES),
-        "network": {"exists": True, "internal": "true", "members": list(containers)},
+        "network": {"exists": True, "internal": "true", "members": list(containers),
+                    "options": {"com.docker.network.bridge.inhibit_ipv4": "true",
+                                "com.docker.network.enable_ipv4": "true"}},
         "containers": containers,
         "control_rc": 0,
         "scanner_rc": 0,
@@ -80,6 +82,8 @@ class FakeDocker:
                 return cp(0, "[{}]")
             if fmt == "{{.Internal}}":
                 return cp(0, n["internal"] + "\n")
+            if fmt == "{{json .Options}}":
+                return cp(0, json.dumps(n["options"]) + "\n")
             return cp(0, "".join(f"{m} " for m in n["members"]) + "\n")
         if args[0] == "ps":
             running = [f"{c['service']} {name}" for name, c in s["containers"].items() if c.get("running", True)]
@@ -294,3 +298,26 @@ def test_main_passes_compose_project_and_control_through(monkeypatch):
     assert ci.main(["--compose", "x/c.yml", "--project", "rc-lab", "--with-internet-control"]) == 0
     assert ["compose", "-p", "rc-lab", "-f", "x/c.yml", "config", "--services"] in fake.calls
     assert any(c[0] == "run" for c in fake.calls)
+
+
+# --- the bridge holds no gateway address -----------------------------------------------------
+
+def test_the_inhibit_ipv4_option_present_passes(monkeypatch):
+    report, fake = _check(monkeypatch, _healthy())
+    assert report.exit_code == ci.EXIT_PASS
+    assert ("PASS  network rc-lab_labnet sets com.docker.network.bridge.inhibit_ipv4=true "
+            "(the bridge holds no gateway address)") in report.lines
+    assert ["network", "inspect", "rc-lab_labnet", "--format", "{{json .Options}}"] in fake.calls
+
+
+@pytest.mark.parametrize("options,shown", [
+    ({"com.docker.network.enable_ipv4": "true"}, "None"),
+    ({"com.docker.network.bridge.inhibit_ipv4": "false"}, "'false'"),
+    ({"com.docker.network.bridge.inhibit_ipv4": "True"}, "'True'"),
+    (None, "None"),
+])
+def test_the_inhibit_ipv4_option_missing_or_not_true_fails(monkeypatch, options, shown):
+    report, _ = _check(monkeypatch, _mutated(lambda s: s["network"].update(options=options)))
+    assert report.exit_code == ci.EXIT_FAIL
+    assert any(f"does not set com.docker.network.bridge.inhibit_ipv4=true (got {shown})" in ln
+               for ln in _fails(report)), report.text

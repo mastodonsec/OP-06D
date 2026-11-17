@@ -74,6 +74,7 @@ RELAY_ALLOWED_CAPS = frozenset({"CAP_NET_ADMIN", "CAP_NET_RAW", "CAP_SETUID", "C
 EXPECTED_EXTRA_HOSTS = {"local": [], "anthropic": [f"api.anthropic.com:{RELAY_IP}"]}
 # RC-60: Lab: run on Linux (Kali) and macOS, not only Windows
 EXPECTED_RELAY_EXTRA_HOSTS = {"local": ["host.docker.internal:host-gateway"], "anthropic": []}
+INHIBIT_IPV4 = "com.docker.network.bridge.inhibit_ipv4"
 # RC-44: Recon: report redirects to hostnames outside scope instead of going quiet
 # The redirector is a labnet member like the targets; the planner baseline does not scan it,
 # so wait_for_targets does not wait for it.
@@ -335,6 +336,11 @@ def host_checks(mode: str, run: Runner, report: CheckReport) -> str | None:
         return None
     report.expect(nets[NET_LAB].get("Internal") is True, f"{NET_LAB} is internal", f"{NET_LAB} is NOT internal")
     report.expect(nets[NET_RELAY].get("Internal") is True, f"{NET_RELAY} is internal", f"{NET_RELAY} is NOT internal")
+    for name in (NET_LAB, NET_RELAY):
+        inhibit = (nets[name].get("Options") or {}).get(INHIBIT_IPV4)
+        report.expect(inhibit == "true", f"{name} sets {INHIBIT_IPV4}=true (the bridge holds no gateway address)",
+                      f"{name} does not set {INHIBIT_IPV4}=true (got {inhibit!r}): its gateway address "
+                      "would be an address of the Docker host")
     report.expect(nets[NET_EGRESS].get("Internal") is False, f"{NET_EGRESS} has an outbound route (relay only)",
                   f"{NET_EGRESS} is internal: the relay cannot reach its upstream")
 
