@@ -61,6 +61,46 @@ def test_isolation_abort_skips_every_other_step():
     assert all(r.status == vh.SKIP for r in rest)
 
 
+# -- RC-60: Lab: run on Linux (Kali) and macOS, not only Windows ---------------
+# Step 4 is lab/check_isolation.py's run_checks, imported: the manual gate and
+# the harness cannot drift.
+
+def _report(exit_code, internal="true", scanner_exit=0, lines=()):
+    r = vh.check_isolation.Report(network_internal=internal, scanner_exit=scanner_exit, exit_code=exit_code)
+    r.lines = list(lines)
+    return r
+
+
+def test_isolation_report_passes_only_on_a_clean_gate_pass():
+    assert vh.classify_isolation_report(_report(0)).status == vh.PASS
+
+
+@pytest.mark.parametrize("exit_code,word", [(1, "FAIL"), (2, "INCONCLUSIVE"), (3, "NOT RUN")])
+def test_isolation_report_anything_but_pass_fails(exit_code, word):
+    r = vh.classify_isolation_report(_report(exit_code, lines=["FAIL  rc-lab-dvwa-1 publishes ports"]))
+    assert r.status == vh.FAIL and word in r.detail
+
+
+@pytest.mark.parametrize("internal,scanner_exit", [("false", 0), ("true", 1), ("true", None)])
+def test_isolation_report_pass_with_contradicting_readings_still_fails(internal, scanner_exit):
+    assert vh.classify_isolation_report(_report(0, internal, scanner_exit)).status == vh.FAIL
+
+
+def test_step4_runs_the_imported_gate_and_captures_its_output(monkeypatch, tmp_path):
+    seen = {}
+
+    def fake_run_checks(compose, project, **kw):
+        seen.update(compose=compose, project=project, **kw)
+        return _report(1, lines=["FAIL  network rc-lab_labnet is not internal (got 'false')", "RESULT: FAIL"])
+
+    monkeypatch.setattr(vh.check_isolation, "run_checks", fake_run_checks)
+    h = vh.Harness(tmp_path, "/captures/x", BASELINE)
+    r = h.step4_isolation()
+    assert r.status == vh.FAIL and "not internal" in r.detail
+    assert seen == {"compose": str(vh.COMPOSE_FILE), "project": "rc-lab"}
+    assert "RESULT: FAIL" in (tmp_path / "step04-isolation.txt").read_text(encoding="utf-8")
+
+
 # -- overall result ----------------------------------------------------------
 
 def test_needs_review_does_not_become_a_clean_pass():

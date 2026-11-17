@@ -871,7 +871,7 @@ class PlacementLab:
     def fetch(self, url):
         if url.endswith("/api/version"):
             return {"version": "0.12.3"}
-        assert url == f"{relay.HOST_OLLAMA}/api/ps"  # read-only, loopback, nothing else
+        assert url == f"{relay.host_ollama_url()}/api/ps"  # read-only, the host Ollama, nothing else
         self.ps_reads += 1
         models = [{"name": m, "size": 19_000_000_000, "size_vram": 9_500_000_000} for m in self.loaded] \
             if self.running else []

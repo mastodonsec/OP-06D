@@ -23,9 +23,9 @@
 #
 # LIMIT
 #   From inside a container this cannot see how Docker is configured on the host.
-#   The host-side checks in lab/check_isolation.ps1 and lab/RUNBOOK.md (network is
-#   `internal`, no published ports, one network per container) are part of the
-#   same gate.
+#   The host-side checks in lab/check_isolation.py (network is `internal`, no
+#   published ports, one network per container) are part of the same gate; it
+#   runs this script too.
 
 set -u
 
@@ -178,6 +178,16 @@ expect_blocked "ping 172.17.0.1 (default bridge gateway)" 6 ping -c1 -W3 172.17.
 expect_blocked "TCP 172.17.0.1:80"                       7 bash -c 'exec 3<>/dev/tcp/172.17.0.1/80'
 expect_blocked "ping 192.168.65.254 (Docker Desktop host gateway)" 6 ping -c1 -W3 192.168.65.254
 expect_blocked "ping 192.168.65.1"                       6 ping -c1 -W3 192.168.65.1
+
+# RC-60: Lab: run on Linux (Kali) and macOS, not only Windows
+# The lab network's own gateway address. If the bridge holds it, it is an address
+# of the Docker host (on native Linux, the host itself), and any host service
+# listening on 0.0.0.0 answers there. labnet sets inhibit_ipv4 so nothing holds it.
+expect_blocked "ping 172.31.77.1 (labnet gateway: the Docker host)" 6 ping -c1 -W3 172.31.77.1
+expect_blocked "TCP 172.31.77.1:22 (labnet gateway)"     7 bash -c 'exec 3<>/dev/tcp/172.31.77.1/22'
+expect_blocked "TCP 172.31.77.1:80 (labnet gateway)"     7 bash -c 'exec 3<>/dev/tcp/172.31.77.1/80'
+expect_blocked "TCP 172.31.77.1:443 (labnet gateway)"    7 bash -c 'exec 3<>/dev/tcp/172.31.77.1/443'
+expect_blocked "TCP 172.31.77.1:11434 (labnet gateway)"  7 bash -c 'exec 3<>/dev/tcp/172.31.77.1/11434'
 hr
 
 # --- 5. verdict ----------------------------------------------------------------
@@ -186,12 +196,12 @@ if [ "$FAILS" -gt 0 ]; then
   say ""
   say "STOP. The lab is NOT isolated. Do NOT run any scan."
   say "Tear it down:  docker compose -f lab/docker-compose.yml down"
-  say "Then fix lab/docker-compose.yml (network must be 'internal: true', one network only)"
+  say "Then fix lab/docker-compose.yml (network must be 'internal: true' with no gateway address, one network only)"
   exit 1
 fi
 
 say "RESULT: PASS - no egress. Every outbound attempt was blocked and the in-lab controls worked."
 say ""
 say "This covers the view from INSIDE the scanner only. Also complete the host-side"
-say "checks (lab/check_isolation.ps1 or the RUNBOOK) before the first scan."
+say "checks (uv run python lab/check_isolation.py, which also runs this script) before the first scan."
 exit 0

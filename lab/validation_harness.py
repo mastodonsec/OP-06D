@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """RC-24: Lab runbook polish + validation harness
 RC-28: RC-20 follow-up: make the lab harness teardown idempotent (down-before-up)
+RC-60: Lab: run on Linux (Kali) and macOS, not only Windows
 
 One-command lab validation harness. Runs RUNBOOK.md Steps 4-13 against the
 live lab in order, captures every step's output into a fresh, timestamped
@@ -13,11 +14,14 @@ package module on purpose: a lab fixture, like scan_driver.py.
 
 Safety behaviour:
 
-* **Step 4, the isolation gate, is a hard fail-closed blocker.** Host-side
-  ``.Internal`` inspect + in-scanner ``check_isolation.sh``, judged by the
-  pure ``scan_driver.isolation_failure_reason`` that test_lab_rc20.py uses. Anything but
-  a clean PASS - an error, an ambiguity, a non-zero exit - aborts the run
-  before anything touches a target. Nothing else runs.
+* **Step 4, the isolation gate, is a hard fail-closed blocker.** It is the
+  manual gate itself: ``run_checks`` imported from lab/check_isolation.py
+  (host-side checks, then the in-scanner ``check_isolation.sh``), so the two
+  cannot drift. Its result must be PASS, and its network and in-scanner
+  readings must also pass the pure ``scan_driver.isolation_failure_reason``
+  that test_lab_rc20.py uses. Anything but a clean PASS - an error, an
+  ambiguity, a non-zero exit - aborts the run before anything touches a
+  target. Nothing else runs.
 * **Steps 10 and 11 can never PASS on their own.** They are findings-type
   steps: the harness runs and aggregates them and reports NEEDS-REVIEW (or
   FAIL on a definite problem). The go/no-go to scan stays a human decision
@@ -68,10 +72,11 @@ from typing import Any, Callable
 LAB_DIR = pathlib.Path(__file__).resolve().parent
 ROOT = LAB_DIR.parent
 COMPOSE_FILE = LAB_DIR / "docker-compose.yml"
-NETWORK = "rc-lab_labnet"
+PROJECT = "rc-lab"
 SCANNER_IMAGE = "op06d-lab-scanner:nmap-7.93-nuclei-3.11.1-templates-10.5.1"
 
 sys.path.insert(0, str(LAB_DIR))
+import check_isolation  # noqa: E402
 import lab_asserts  # noqa: E402
 import lab_stack as stack  # noqa: E402
 from scan_driver import RUNS, isolation_failure_reason  # noqa: E402
@@ -116,6 +121,22 @@ def classify_isolation(network_internal: str, isolation_exit_code: int) -> StepR
     if reason is not None:
         return StepResult("4", "isolation", FAIL, reason)
     return StepResult("4", "isolation", PASS, "network internal, check_isolation.sh PASS")
+
+
+def classify_isolation_report(report: check_isolation.Report) -> StepResult:
+    """Fail-closed: PASS only when lab/check_isolation.py PASSed as a whole
+    (host-side and in-scanner) and its readings pass ``classify_isolation``."""
+    if report.exit_code != check_isolation.EXIT_PASS:
+        verdict = {check_isolation.EXIT_FAIL: "FAIL", check_isolation.EXIT_INCONCLUSIVE: "INCONCLUSIVE",
+                   check_isolation.EXIT_NOT_RUN: "NOT RUN"}.get(report.exit_code, f"exit {report.exit_code}")
+        fails = [ln.removeprefix("FAIL  ") for ln in report.lines if ln.startswith("FAIL  ")]
+        detail = f"lab/check_isolation.py: {verdict}" + (f": {'; '.join(fails)}" if fails else "")
+        return StepResult("4", "isolation", FAIL, detail[:600])
+    scanner_exit = report.scanner_exit if report.scanner_exit is not None else -1
+    result = classify_isolation(report.network_internal, scanner_exit)
+    if result.status == PASS:
+        result.detail = "lab/check_isolation.py PASS (host-side checks + check_isolation.sh)"
+    return result
 
 
 def classify_window(now: dt.datetime, start: dt.datetime, end: dt.datetime) -> StepResult:
@@ -719,11 +740,10 @@ class Harness:
                 f.write("\n")
 
     def step4_isolation(self) -> StepResult:
-        inspect = _run(["docker", "network", "inspect", NETWORK, "--format", "{{.Internal}}"], timeout=30)
-        internal = inspect.stdout.strip() if inspect.returncode == 0 else "<inspect failed>"
-        iso = _exec("bash", "/lab/check_isolation.sh", timeout=180)
-        self.capture("step04-isolation.txt", inspect, iso)
-        return classify_isolation(internal, iso.returncode)
+        report = check_isolation.run_checks(str(COMPOSE_FILE), PROJECT)
+        self.capture("step04-isolation.txt", "$ lab/check_isolation.py (imported: run_checks)",
+                     f"# exit {report.exit_code}", report.text)
+        return classify_isolation_report(report)
 
     def step1_window(self) -> StepResult:
         gen = stack.generate_engagement(_exec, self.engagement_ctr)

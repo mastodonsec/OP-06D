@@ -45,6 +45,7 @@ import subprocess
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from dataclasses import dataclass, field
 from typing import Callable, Sequence
@@ -71,6 +72,8 @@ RELAY_IP = "172.31.78.2"
 RELAY_PORT = {"local": 11434, "anthropic": 443}
 RELAY_ALLOWED_CAPS = frozenset({"CAP_NET_ADMIN", "CAP_NET_RAW", "CAP_SETUID", "CAP_SETGID", "CAP_SETPCAP"})
 EXPECTED_EXTRA_HOSTS = {"local": [], "anthropic": [f"api.anthropic.com:{RELAY_IP}"]}
+# RC-60: Lab: run on Linux (Kali) and macOS, not only Windows
+EXPECTED_RELAY_EXTRA_HOSTS = {"local": ["host.docker.internal:host-gateway"], "anthropic": []}
 # RC-44: Recon: report redirects to hostnames outside scope instead of going quiet
 # The redirector is a labnet member like the targets; the planner baseline does not scan it,
 # so wait_for_targets does not wait for it.
@@ -81,6 +84,7 @@ READY_INTERVAL = 3.0
 
 CAPTURE_SUBDIR = "_rc47_ephemeral"
 HOST_OLLAMA = "http://127.0.0.1:11434"
+OLLAMA_DEFAULT_PORT = 11434
 KEY_ENV = "ANTHROPIC_API_KEY"
 KEY_SHAPE = re.compile(rb"sk-ant-[A-Za-z0-9_\-]{8,}")
 LEAK_SCAN_MIN_SECRET_CHARS = 20
@@ -382,6 +386,11 @@ def host_checks(mode: str, run: Runner, report: CheckReport) -> str | None:
                   f"relay command is {cmd}, expected [{mode!r}]")
 
     scanner = info["scanner"]
+    relay_extra = sorted(relay.get("HostConfig", {}).get("ExtraHosts") or [])
+    report.expect(relay_extra == EXPECTED_RELAY_EXTRA_HOSTS[mode],
+                  f"relay extra hosts are {EXPECTED_RELAY_EXTRA_HOSTS[mode]}",
+                  f"relay extra hosts are {relay_extra}, expected {EXPECTED_RELAY_EXTRA_HOSTS[mode]}")
+
     extra = sorted(scanner.get("HostConfig", {}).get("ExtraHosts") or [])
     report.expect(extra == EXPECTED_EXTRA_HOSTS[mode], f"scanner extra hosts are {EXPECTED_EXTRA_HOSTS[mode]}",
                   f"scanner extra hosts are {extra}, expected {EXPECTED_EXTRA_HOSTS[mode]}")
@@ -439,7 +448,31 @@ class RunOutcome:
     problems: list[str]
 
 
-def ollama_has_model(model: str, base: str = HOST_OLLAMA, timeout: float = 5.0) -> bool:
+def host_ollama_url(environ: dict[str, str] | None = None) -> str:
+    """Where this host reaches its Ollama: ``OLLAMA_HOST`` when set (read the way
+    ``ollama serve`` reads it: ``host``, ``host:port`` or ``scheme://host:port``),
+    otherwise 127.0.0.1:11434. A wildcard bind address is probed on loopback."""
+    env = os.environ if environ is None else environ
+    raw = (env.get("OLLAMA_HOST") or "").strip()
+    if not raw:
+        return HOST_OLLAMA
+    scheme, sep, rest = raw.partition("://")
+    if not sep:
+        scheme, rest = "http", raw
+    try:
+        parts = urllib.parse.urlsplit("//" + rest.split("/", 1)[0])
+        host, port = parts.hostname or "", parts.port or OLLAMA_DEFAULT_PORT
+    except ValueError:
+        raise RelayError(f"OLLAMA_HOST={raw!r} is not host, host:port or scheme://host:port") from None
+    if host in ("", "0.0.0.0", "::"):
+        host = "127.0.0.1"
+    if ":" in host:
+        host = f"[{host}]"
+    return f"{scheme}://{host}:{port}"
+
+
+def ollama_has_model(model: str, base: str | None = None, timeout: float = 5.0) -> bool:
+    base = base or host_ollama_url()
     try:
         with urllib.request.urlopen(f"{base}/api/tags", timeout=timeout) as resp:
             names = {m.get("name") for m in json.load(resp).get("models", [])}

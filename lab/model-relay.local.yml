@@ -7,6 +7,7 @@
 #
 #   scanner (172.31.78.20) --relaynet (internal)--> model-relay (172.31.78.2:11434)
 #   model-relay --relay_egress--> host.docker.internal:11434 (host Ollama), nothing else
+#   (host.docker.internal is mapped to host-gateway for the relay only)
 #
 # * relaynet is internal and joins ONLY the scanner and the relay. The targets
 #   stay on labnet only; labnet itself is untouched.
@@ -24,6 +25,7 @@ name: rc-lab
 services:
   scanner:
     image: op06d-lab-scanner-llm:nmap-7.93-nuclei-3.11.1-templates-10.5.1-anthropic-2.8.0
+    platform: linux/amd64     # built FROM the amd64 base scanner image
     build:
       context: ./relay
       dockerfile: scanner-llm.Dockerfile
@@ -59,6 +61,12 @@ services:
     environment:
       RELAY_NET: 172.31.78.0/24
       RELAY_BIND: 172.31.78.2
+    # RC-60: Lab: run on Linux (Kali) and macOS, not only Windows
+    # The relay only. Native Linux Docker has no host.docker.internal; host-gateway
+    # is the docker0 bridge address there (host Ollama must listen on it, see
+    # lab/RUNBOOK.md) and the Docker Desktop host address on Windows and macOS.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     networks:
       relaynet:
         ipv4_address: 172.31.78.2
@@ -68,6 +76,8 @@ networks:
   relaynet:
     driver: bridge
     internal: true
+    driver_opts:
+      com.docker.network.bridge.inhibit_ipv4: "true"   # the bridge holds no address: no path to the host
     ipam:
       config:
         - subnet: 172.31.78.0/24

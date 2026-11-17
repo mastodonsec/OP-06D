@@ -6,8 +6,11 @@
 #                           --->  redirect   (172.31.77.12, port 80)
 #
 # ISOLATION
-#   * `labnet` is declared `internal: true`: Docker attaches no gateway and
-#     installs no NAT/masquerade for it, so containers on it have no route out.
+#   * `labnet` is declared `internal: true`: Docker installs no default route and
+#     no NAT/masquerade for it, so containers on it have no route out.
+#   * `labnet` also sets `inhibit_ipv4`: the bridge gets no address, so the
+#     gateway address 172.31.77.1 is not the Docker host (on native Linux, the
+#     host itself) and host services are not reachable from the lab through it.
 #   * Every service is attached to labnet ONLY (no second network, no
 #     network_mode: host, no `ports:` publishing, no extra_hosts, no custom dns).
 #   * Nothing here is trusted on its own: lab/check_isolation.sh and the host-side
@@ -27,6 +30,11 @@
 #   scanner     debian:bookworm-slim @ sha256:734a72b3...
 #               nmap 7.93+dfsg1-1, nuclei v3.11.1, nuclei-templates v10.5.1
 #               (see lab/scanner/Dockerfile for the checksums)
+#
+# PLATFORM: dvwa and the scanner are pinned to linux/amd64 (dvwa's image is
+# amd64-only; the scanner downloads the amd64 nuclei build). On an ARM host
+# (Apple Silicon, ARM Linux) they run under emulation. juice-shop and nginx
+# are multi-arch and run natively.
 #
 # Usage: see lab/RUNBOOK.md. Run from the repository root:
 #   docker compose -f lab/docker-compose.yml ...
@@ -52,6 +60,7 @@ services:
     # Damn Vulnerable Web Application (Apache + PHP + MariaDB in one container).
     # Old, unmaintained, and very vulnerable: it must stay on labnet only.
     image: vulnerables/web-dvwa@sha256:dae203fe11646a86937bf04db0079adef295f426da68a92b40e3b181f337daa7
+    platform: linux/amd64     # the image has an amd64 build only
     restart: "no"
     security_opt:
       - no-new-privileges:true
@@ -97,6 +106,7 @@ services:
         TEMPLATES_VERSION: "v10.5.1"
         TEMPLATES_TARBALL_SHA256: "30fe1cfaced4635f886e4a2673641bba86998dceec28e468274524e789aa56eb"
     image: op06d-lab-scanner:nmap-7.93-nuclei-3.11.1-templates-10.5.1
+    platform: linux/amd64     # the Dockerfile installs the amd64 nuclei build
     restart: "no"
     init: true
     command: ["sleep", "infinity"]
@@ -119,6 +129,8 @@ networks:
   labnet:
     driver: bridge
     internal: true            # <-- the no-egress guarantee
+    driver_opts:
+      com.docker.network.bridge.inhibit_ipv4: "true"   # the bridge holds no address: no path to the host
     ipam:
       config:
         - subnet: 172.31.77.0/24

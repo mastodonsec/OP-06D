@@ -79,7 +79,8 @@ def test_overlay_relay_is_locked_down_and_has_one_upstream(mode):
     assert r["security_opt"] == ["no-new-privileges:true"] and r["read_only"] is True
     assert r["networks"]["relaynet"]["ipv4_address"] == relay.RELAY_IP
     assert r["environment"] == {"RELAY_NET": "172.31.78.0/24", "RELAY_BIND": relay.RELAY_IP}
-    for key in ("ports", "privileged", "network_mode", "extra_hosts", "volumes", "env_file"):
+    assert r.get("extra_hosts", []) == relay.EXPECTED_RELAY_EXTRA_HOSTS[mode]
+    for key in ("ports", "privileged", "network_mode", "volumes", "env_file"):
         assert key not in r, key
 
 
@@ -123,7 +124,7 @@ def _blocked_lines(path: pathlib.Path) -> list[str]:
 def test_relay_isolation_check_keeps_every_base_egress_attempt():
     base = _blocked_lines(LAB / "check_isolation.sh")
     relay_check = set(_blocked_lines(LAB / "check_relay_isolation.sh"))
-    assert len(base) == 19
+    assert len(base) == 24
     assert [b for b in base if b not in relay_check] == []
 
 
@@ -483,7 +484,8 @@ def _topology(mode: str) -> dict:
         "scanner": container("scanner", {lab: "172.31.77.20", rel: "172.31.78.20"}, cmd=["sleep", "infinity"],
                              extra_hosts=list(relay.EXPECTED_EXTRA_HOSTS[mode]) or None),
         "model-relay": container("model-relay", {rel: "172.31.78.2", egr: "172.18.0.2"}, cmd=[mode],
-                                 caps=["CAP_NET_ADMIN", "CAP_NET_RAW", "CAP_SETUID", "CAP_SETGID", "CAP_SETPCAP"]),
+                                 caps=["CAP_NET_ADMIN", "CAP_NET_RAW", "CAP_SETUID", "CAP_SETGID", "CAP_SETPCAP"],
+                                 extra_hosts=list(relay.EXPECTED_RELAY_EXTRA_HOSTS[mode]) or None),
     }
     networks = {
         lab: {"Internal": True, "Containers": {f"id-{s}": {"Name": NAMES[s]} for s in ("juice-shop", "dvwa", "redirect", "scanner")}},
@@ -615,3 +617,80 @@ def test_check_fails_when_the_redirector_is_missing_from_labnet():
     """RC-44: Recon: report redirects to hostnames outside scope instead of going quiet"""
     report = _broken("local", lambda t: t["networks"][relay.NET_LAB]["Containers"].pop("id-redirect"))
     assert report.exit_code == 1
+
+
+# --- RC-60: Lab: run on Linux (Kali) and macOS, not only Windows ---------------------------
+
+INHIBIT = "com.docker.network.bridge.inhibit_ipv4"
+HOST_GATEWAY = "host.docker.internal:host-gateway"
+
+
+def _services_with_host_gateway(compose: dict) -> list[str]:
+    return sorted(name for name, svc in compose["services"].items()
+                  if any("host-gateway" in str(h) for h in svc.get("extra_hosts", []) or []))
+
+
+def test_only_the_local_relay_is_given_host_gateway():
+    assert _services_with_host_gateway(_yaml(LAB / "docker-compose.yml")) == []
+    assert _services_with_host_gateway(_overlay("local")) == ["model-relay"]
+    assert _overlay("local")["services"]["model-relay"]["extra_hosts"] == [HOST_GATEWAY]
+    assert _services_with_host_gateway(_overlay("anthropic")) == []
+
+
+def test_internal_networks_hold_no_gateway_address_and_the_egress_network_keeps_one():
+    base = _yaml(LAB / "docker-compose.yml")
+    assert base["networks"]["labnet"]["driver_opts"] == {INHIBIT: "true"}
+    for mode in MODES:
+        nets = _overlay(mode)["networks"]
+        assert nets["relaynet"]["driver_opts"] == {INHIBIT: "true"}
+        assert "driver_opts" not in nets["relay_egress"]
+
+
+def test_amd64_only_images_are_pinned_and_multi_arch_ones_are_not():
+    base = _yaml(LAB / "docker-compose.yml")["services"]
+    assert base["dvwa"]["platform"] == base["scanner"]["platform"] == "linux/amd64"
+    assert "platform" not in base["juice-shop"] and "platform" not in base["redirect"]
+    for mode in MODES:
+        svcs = _overlay(mode)["services"]
+        assert svcs["scanner"]["platform"] == "linux/amd64"
+        assert "platform" not in svcs["model-relay"]
+
+
+def test_check_fails_when_the_local_relay_loses_host_gateway_or_the_scanner_gets_it():
+    report = _broken("local", lambda t: t["containers"]["model-relay"]["HostConfig"].update(ExtraHosts=None))
+    assert report.exit_code == 1 and any("relay extra hosts are []" in line for line in report.lines)
+    report = _broken("local", lambda t: t["containers"]["scanner"]["HostConfig"].update(ExtraHosts=[HOST_GATEWAY]))
+    assert report.exit_code == 1 and any("scanner extra hosts are" in line for line in report.lines)
+    report = _broken("anthropic",
+                     lambda t: t["containers"]["model-relay"]["HostConfig"].update(ExtraHosts=[HOST_GATEWAY]))
+    assert report.exit_code == 1
+
+
+@pytest.mark.parametrize("value,expected", [
+    (None, "http://127.0.0.1:11434"),
+    ("", "http://127.0.0.1:11434"),
+    ("172.17.0.1:11434", "http://172.17.0.1:11434"),
+    ("172.17.0.1", "http://172.17.0.1:11434"),
+    ("http://172.17.0.1:11500", "http://172.17.0.1:11500"),
+    ("0.0.0.0", "http://127.0.0.1:11434"),
+    ("0.0.0.0:11434", "http://127.0.0.1:11434"),
+    (":11434", "http://127.0.0.1:11434"),
+    ("[::]:11434", "http://127.0.0.1:11434"),
+    ("[fd00::1]:11434", "http://[fd00::1]:11434"),
+])
+def test_host_ollama_url_honours_ollama_host(value, expected):
+    env = {} if value is None else {"OLLAMA_HOST": value}
+    assert relay.host_ollama_url(env) == expected
+
+
+def test_host_ollama_url_refuses_a_malformed_value():
+    with pytest.raises(relay.RelayError):
+        relay.host_ollama_url({"OLLAMA_HOST": "172.17.0.1:notaport"})
+
+
+def test_relaynet_gateway_is_probed_from_the_scanner():
+    lines = _blocked_lines(LAB / "check_relay_isolation.sh")
+    gw = [ln for ln in lines if "172.31.78.1 " in ln or "172.31.78.1/" in ln]
+    assert any(ln.startswith('expect_blocked "ping 172.31.78.1') for ln in gw)
+    for port in (22, 80, 443, 11434):
+        assert any(f"/dev/tcp/172.31.78.1/{port}'" in ln for ln in gw), port

@@ -504,7 +504,7 @@ class RelayLauncher:
             pass  # no nvidia-smi on this host
         version = "unknown"
         try:
-            found = self._fetch(f"{relay.HOST_OLLAMA}/api/version").get("version")
+            found = self._fetch(f"{relay.host_ollama_url()}/api/version").get("version")
             version = found if isinstance(found, str) and found else "unknown"
         except (OSError, urllib.error.URLError, ValueError, AttributeError):
             pass
@@ -524,7 +524,7 @@ class RelayLauncher:
 
     def _read_placement(self, model: str) -> dict[str, Any]:
         try:
-            for m in self._fetch(f"{relay.HOST_OLLAMA}/api/ps").get("models", []):
+            for m in self._fetch(f"{relay.host_ollama_url()}/api/ps").get("models", []):
                 if m.get("name") in (model, f"{model}:latest") or m.get("model") == model:
                     return {"model_bytes": m.get("size"), "model_bytes_on_gpu": m.get("size_vram")}
         except (OSError, urllib.error.URLError, ValueError, AttributeError):

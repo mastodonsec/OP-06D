@@ -164,6 +164,20 @@ expect_blocked "TCP 172.17.0.1:80"                       7 bash -c 'exec 3<>/dev
 expect_blocked "ping 192.168.65.254 (Docker Desktop host gateway)" 6 ping -c1 -W3 192.168.65.254
 expect_blocked "ping 192.168.65.1"                       6 ping -c1 -W3 192.168.65.1
 
+# RC-60: Lab: run on Linux (Kali) and macOS, not only Windows
+# Each internal network's own gateway address: if a bridge holds it, it is an
+# address of the Docker host. labnet and relaynet set inhibit_ipv4.
+expect_blocked "ping 172.31.77.1 (labnet gateway: the Docker host)" 6 ping -c1 -W3 172.31.77.1
+expect_blocked "TCP 172.31.77.1:22 (labnet gateway)"     7 bash -c 'exec 3<>/dev/tcp/172.31.77.1/22'
+expect_blocked "TCP 172.31.77.1:80 (labnet gateway)"     7 bash -c 'exec 3<>/dev/tcp/172.31.77.1/80'
+expect_blocked "TCP 172.31.77.1:443 (labnet gateway)"    7 bash -c 'exec 3<>/dev/tcp/172.31.77.1/443'
+expect_blocked "TCP 172.31.77.1:11434 (labnet gateway)"  7 bash -c 'exec 3<>/dev/tcp/172.31.77.1/11434'
+expect_blocked "ping 172.31.78.1 (relaynet gateway: the Docker host)" 6 ping -c1 -W3 172.31.78.1
+expect_blocked "TCP 172.31.78.1:22 (relaynet gateway)"   7 bash -c 'exec 3<>/dev/tcp/172.31.78.1/22'
+expect_blocked "TCP 172.31.78.1:80 (relaynet gateway)"   7 bash -c 'exec 3<>/dev/tcp/172.31.78.1/80'
+expect_blocked "TCP 172.31.78.1:443 (relaynet gateway)"  7 bash -c 'exec 3<>/dev/tcp/172.31.78.1/443'
+expect_blocked "TCP 172.31.78.1:11434 (relaynet gateway)" 7 bash -c 'exec 3<>/dev/tcp/172.31.78.1/11434'
+
 say "Relay-specific attempts (ALL EXPECTED TO FAIL):"
 expect_blocked "TCP relay $RELAY_IP:$OTHER_PORT (not its listen port)" 7 bash -c "exec 3<>/dev/tcp/$RELAY_IP/$OTHER_PORT"
 expect_blocked "TCP relay $RELAY_IP:22"                  7 bash -c "exec 3<>/dev/tcp/$RELAY_IP/22"
