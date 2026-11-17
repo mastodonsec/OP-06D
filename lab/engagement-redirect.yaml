@@ -1,0 +1,31 @@
+# OP-06D lab engagement for the redirector (RC-44: Recon: report redirects to
+# hostnames outside scope instead of going quiet). Scoped ONLY to the redirector.
+#
+# Target (see lab/docker-compose.yml):
+#   172.31.77.12 (redirect.lab, HTTP on 80): every request gets
+#   301 Location: http://site-outside.lab/
+# site-outside.lab is deliberately NOT in scope and resolves nowhere. The scanner
+# (172.31.77.20) is explicitly OUT of scope.
+#
+# Separate from lab/engagement.yaml so the fixed-planner and benchmark baselines
+# keep their action count. Only the IP is listed (as the bare IP was on the live
+# run); listing redirect.lab too would scan the same service twice.
+#
+# This file is a TEMPLATE, like lab/engagement.yaml: generate a run copy with a
+# window around "now" with
+#   python3 /lab/make_lab_engagement.py <out.yaml> --template /lab/engagement-redirect.yaml
+engagement: rc-lab-redirect-2026-11
+authorization:
+  client: "OP-06D lab (self-owned, isolated)"
+  signed_scope_ref: "LAB-INTERNAL-NOT-A-CLIENT"
+  authorized_by: "thomas@mastodonsec.com"
+  window: ["2026-11-05T00:00Z", "2026-11-10T00:00Z"]
+scope:
+  in_scope:
+    - 172.31.77.12
+  out_of_scope:
+    - 172.31.77.20
+intensity:
+  max_rps: 50
+  destructive: false
+objective: "Lab validation: recon of the OP-06D lab redirector"

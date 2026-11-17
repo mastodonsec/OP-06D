@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE nmaprun>
+<!-- Captured from nmap 7.93 (lab scanner image) against the lab redirector config; only the address was rewritten. -->
+<!-- Nmap 7.93 scan initiated Tue Nov 17 18:47:57 2026 as: nmap -oX - -&#45;no-stylesheet -n -&#45;max-rate 50 -&#45;host-timeout 300s -sV -p 80 -&#45;script=http-title -&#45; 172.31.77.12 -->
+<nmaprun scanner="nmap" args="nmap -oX - -&#45;no-stylesheet -n -&#45;max-rate 50 -&#45;host-timeout 300s -sV -p 80 -&#45;script=http-title -&#45; 172.31.77.12" start="1794941277" startstr="Tue Nov 17 18:47:57 2026" version="7.93" xmloutputversion="1.05">
+<scaninfo type="syn" protocol="tcp" numservices="1" services="80"/>
+<verbose level="0"/>
+<debugging level="0"/>
+<hosthint><status state="up" reason="arp-response" reason_ttl="0"/>
+<address addr="172.31.77.12" addrtype="ipv4"/>
+<address addr="A2:73:EB:89:29:10" addrtype="mac"/>
+<hostnames>
+</hostnames>
+</hosthint>
+<host starttime="1794941277" endtime="1794941284"><status state="up" reason="arp-response" reason_ttl="0"/>
+<address addr="172.31.77.12" addrtype="ipv4"/>
+<address addr="A2:73:EB:89:29:10" addrtype="mac"/>
+<hostnames>
+</hostnames>
+<ports><port protocol="tcp" portid="80"><state state="open" reason="syn-ack" reason_ttl="64"/><service name="http" product="nginx" method="probed" conf="10"><cpe>cpe:/a:igor_sysoev:nginx</cpe></service><script id="http-title" output="Did not follow redirect to http://site-outside.lab/"><elem key="redirect_url">http://site-outside.lab/</elem>
+</script></port>
+</ports>
+<times srtt="56" rttvar="3783" to="100000"/>
+</host>
+<runstats><finished time="1794941284" timestr="Tue Nov 17 18:48:04 2026" summary="Nmap done at Tue Nov 17 18:48:04 2026; 1 IP address (1 host up) scanned in 6.43 seconds" elapsed="6.43" exit="success"/><hosts up="1" down="0" total="1"/>
+</runstats>
+</nmaprun>

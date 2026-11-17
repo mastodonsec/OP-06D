@@ -79,7 +79,7 @@ def test_a_stack_that_is_not_up_is_not_run_rather_than_an_isolation_fail(tmp_pat
     cp, calls = _run(tmp_path, "no-stack")
     out = _assert_not_run(cp)
     assert "the rc-lab stack is not up" in out and "network rc-lab_labnet does not exist" in out
-    assert "not running: juice-shop, dvwa, scanner" in out and "up -d" in out
+    assert "not running: juice-shop, dvwa, redirect, scanner" in out and "up -d" in out
     assert "exec" not in calls  # the scanner-side check never started
 
 

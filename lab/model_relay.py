@@ -71,7 +71,10 @@ RELAY_IP = "172.31.78.2"
 RELAY_PORT = {"local": 11434, "anthropic": 443}
 RELAY_ALLOWED_CAPS = frozenset({"CAP_NET_ADMIN", "CAP_NET_RAW", "CAP_SETUID", "CAP_SETGID", "CAP_SETPCAP"})
 EXPECTED_EXTRA_HOSTS = {"local": [], "anthropic": [f"api.anthropic.com:{RELAY_IP}"]}
-TARGET_SERVICES = ("juice-shop", "dvwa")
+# RC-44: Recon: report redirects to hostnames outside scope instead of going quiet
+# The redirector is a labnet member like the targets; the planner baseline does not scan it,
+# so wait_for_targets does not wait for it.
+TARGET_SERVICES = ("juice-shop", "dvwa", "redirect")
 TARGET_READY = {"juice-shop": "http://juice-shop.lab:3000/", "dvwa": "http://dvwa.lab/"}
 READY_TIMEOUT = 180.0
 READY_INTERVAL = 3.0
@@ -344,7 +347,7 @@ def host_checks(mode: str, run: Runner, report: CheckReport) -> str | None:
     names = {svc: i.get("Name", "").lstrip("/") for svc, i in info.items()}
 
     expected_members = {
-        NET_LAB: {names["juice-shop"], names["dvwa"], names["scanner"]},
+        NET_LAB: {*(names[t] for t in TARGET_SERVICES), names["scanner"]},
         NET_RELAY: {names["scanner"], names["model-relay"]},
         NET_EGRESS: {names["model-relay"]},
     }
@@ -354,7 +357,7 @@ def host_checks(mode: str, run: Runner, report: CheckReport) -> str | None:
                       f"{net} members are {sorted(have)}, expected exactly {sorted(want)}")
 
     expected_nets = {
-        "juice-shop": {NET_LAB}, "dvwa": {NET_LAB},
+        **{t: {NET_LAB} for t in TARGET_SERVICES},
         "scanner": {NET_LAB, NET_RELAY}, "model-relay": {NET_RELAY, NET_EGRESS},
     }
     for svc, want in expected_nets.items():
