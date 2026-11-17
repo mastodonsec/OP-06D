@@ -244,7 +244,7 @@ def run_engagement(
             declined += 1
 
         if result.executed:
-            normalized = normalize_execution_result(result, engagement=eng.engagement)
+            normalized = normalize_execution_result(result, engagement=eng.engagement, scope=eng.scope)
             store.record_findings(run_id, action_id, normalized)
             for f in normalized.findings:
                 severity_counts[f.severity.value] = severity_counts.get(f.severity.value, 0) + 1

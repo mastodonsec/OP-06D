@@ -32,7 +32,7 @@ from __future__ import annotations
 
 import hashlib
 from enum import Enum
-from typing import Any
+from typing import Any, Callable
 from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -49,6 +49,7 @@ __all__ = [
     "normalize_nuclei",
     "normalize",
     "normalize_execution_result",
+    "host_in_scope",
 ]
 
 
@@ -181,11 +182,67 @@ def _nmap_script_finding(script: dict[str, Any], asset: Asset, provenance: Prove
     )
 
 
+# RC-44: Recon: report redirects to hostnames outside scope instead of going quiet
+
+HostInScope = Callable[[str], bool]
+
+
+def _redirect_host(location: str) -> str | None:
+    """The host of an absolute or scheme-relative URL; None for a relative one."""
+    try:
+        host = urlsplit(location).hostname
+    except ValueError:
+        return None
+    return host.rstrip(".") if host else None
+
+
+def _same_host(host: str, *names: str | None) -> bool:
+    return any(n and host == n.strip().lower().rstrip(".") for n in names)
+
+
+def _redirect_observation(
+    script: dict[str, Any], asset: Asset, provenance: Provenance, in_scope: HostInScope | None,
+) -> tuple[Finding, NormalizationIssue | None] | None:
+    """A finding (and, when the target host is not in scope, a limitation)
+    for an http-title ``redirect_url`` that points to a different host;
+    None for a same-host or relative redirect, or no redirect at all."""
+    location = script.get("redirect_url")
+    if script.get("id") != "http-title" or not isinstance(location, str) or not location:
+        return None
+    host = _redirect_host(location)
+    if host is None or _same_host(host, asset.ip, asset.hostname):
+        return None
+    where = f"{asset.ip or asset.hostname}:{asset.port}"
+    evidence = {"location": location, "redirect_host": host, "redirecting_asset": where,
+                "script": "http-title", "output": script.get("output")}
+    finding = _finding(
+        "nmap", Category.OTHER, f"HTTP redirect to another host: {where} -> {location}",
+        Severity.INFO, asset,
+        f"The HTTP service at {where} answers with a redirect to {location} (host {host}). "
+        "The redirect was recorded, not followed.",
+        evidence, [], [], None, ["http-redirect"], provenance, key=f"http-redirect:{location}",
+    )
+    if in_scope is not None and in_scope(host):
+        return finding, None
+    issue = _malformed(
+        "redirect_target_not_assessed",
+        f"The site at {host} was not assessed: {where} redirects to {location}, and {host} is "
+        f"not in the engagement scope. If {host} belongs to the client and is covered by the "
+        f"signed authorization, add it to the engagement scope to cover it.",
+        {"location": location, "redirect_host": host, "redirecting_asset": where},
+    )
+    return finding, issue
+
+
 def normalize_nmap(
-    findings: object, *, provenance: Provenance,
+    findings: object, *, provenance: Provenance, in_scope: HostInScope | None = None,
 ) -> tuple[list[Finding], list[NormalizationIssue]]:
     """Map one nmap ``ToolOutput.findings`` dict into ``Finding``s. Never
-    raises: anything unmappable becomes a ``NormalizationIssue``."""
+    raises: anything unmappable becomes a ``NormalizationIssue``.
+
+    ``in_scope(host)`` says whether a redirect target host is in the
+    engagement scope; without it every cross-host redirect target is
+    reported as not assessed."""
     issues: list[NormalizationIssue] = []
     if not isinstance(findings, dict):
         issues.append(_malformed("malformed_nmap_output", "findings is not a dict", findings))
@@ -242,7 +299,13 @@ def normalize_nmap(
                 if not isinstance(script, dict):
                     issues.append(_malformed("malformed_nmap_script", "a script entry is not a dict", script))
                     continue
-                out.append(_nmap_script_finding(script, port_asset, provenance))
+                redirect = _redirect_observation(script, port_asset, provenance, in_scope)
+                if redirect is None:
+                    out.append(_nmap_script_finding(script, port_asset, provenance))
+                    continue
+                out.append(redirect[0])
+                if redirect[1] is not None:
+                    issues.append(redirect[1])
 
         host_asset = Asset(hostname=target_hostname, ip=ip, port=None, protocol=None, scheme=None)
         for script in host.get("host_scripts", []) or []:
@@ -380,7 +443,9 @@ def normalize_nuclei(
 _NORMALIZERS = {"nmap": normalize_nmap, "nuclei": normalize_nuclei}
 
 
-def normalize(tool: str, findings: object, *, provenance: Provenance) -> NormalizedResult:
+def normalize(
+    tool: str, findings: object, *, provenance: Provenance, in_scope: HostInScope | None = None,
+) -> NormalizedResult:
     """Dispatch on ``tool`` ("nmap"/"nuclei"). An unknown tool is reported as
     an issue, never a crash - the same "never silently drop" guarantee as
     everything else here."""
@@ -391,11 +456,29 @@ def normalize(tool: str, findings: object, *, provenance: Provenance) -> Normali
             issues=[_malformed("unknown_tool", f"no normalizer for tool {tool!r}", findings)],
             provenance=provenance,
         )
-    found, issues = normalizer(findings, provenance=provenance)
+    if tool == "nmap":
+        found, issues = normalize_nmap(findings, provenance=provenance, in_scope=in_scope)
+    else:
+        found, issues = normalizer(findings, provenance=provenance)
     return NormalizedResult(findings=found, issues=issues, provenance=provenance)
 
 
-def normalize_execution_result(result: object, *, engagement: str, observed_at: str | None = None) -> NormalizedResult:
+def host_in_scope(scope: object) -> HostInScope:
+    """``in_scope`` for ``normalize``, from the engagement's ``Scope``: True
+    when ``op06d.scope.evaluate_scope`` allows the host or would allow it
+    after resolution. Pure: nothing is resolved or contacted."""
+    from op06d.scope import evaluate_scope
+
+    def check(host: str) -> bool:
+        decision = evaluate_scope(host, scope)
+        return decision.allowed or decision.needs_resolution
+
+    return check
+
+
+def normalize_execution_result(
+    result: object, *, engagement: str, observed_at: str | None = None, scope: object | None = None,
+) -> NormalizedResult:
     """Convenience: build a ``NormalizedResult`` straight from a
     ``op06d.tools.ExecutionResult`` (RC-7/RC-8 produce these). Takes
     ``result`` as ``object`` rather than importing ``ExecutionResult`` by
@@ -430,4 +513,5 @@ def normalize_execution_result(result: object, *, engagement: str, observed_at: 
             findings=[], issues=[_malformed("not_executed", str(reason), None)], provenance=provenance,
         )
 
-    return normalize(tool, findings_dict if findings_dict is not None else {}, provenance=provenance)
+    return normalize(tool, findings_dict if findings_dict is not None else {}, provenance=provenance,
+                     in_scope=host_in_scope(scope) if scope is not None else None)

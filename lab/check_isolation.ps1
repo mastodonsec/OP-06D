@@ -51,7 +51,7 @@ docker version --format '{{.Server.Version}}' *> $null
 if ($LASTEXITCODE -ne 0) {
   NotRun "cannot reach the Docker daemon." "Start Docker Desktop, then bring the lab up:  docker compose -f $Compose up -d"
 }
-$expected = @("juice-shop", "dvwa", "scanner")
+$expected = @("juice-shop", "dvwa", "redirect", "scanner")
 docker network inspect $network *> $null
 $networkExists = ($LASTEXITCODE -eq 0)
 $running = @(docker ps --filter "label=com.docker.compose.project=$Project" --filter "status=running" --format '{{.Label "com.docker.compose.service"}}' 2>$null) | Where-Object { $_ }
@@ -72,8 +72,8 @@ else { Fail "network $network is not internal (got '$internal'). Is 'internal: t
 
 # A2. which containers are on it, and what else they are attached to
 $containers = @(docker network inspect $network --format '{{range $id, $c := .Containers}}{{$c.Name}} {{end}}' 2>$null) -split '\s+' | Where-Object { $_ }
-if ($containers.Count -ne 3) { Fail "expected 3 containers on $network (juice-shop, dvwa, scanner), found $($containers.Count): $($containers -join ', ')" }
-else { Pass "3 containers on ${network}: $($containers -join ', ')" }
+if ($containers.Count -ne $expected.Count) { Fail "expected $($expected.Count) containers on $network ($($expected -join ', ')), found $($containers.Count): $($containers -join ', ')" }
+else { Pass "$($expected.Count) containers on ${network}: $($containers -join ', ')" }
 
 foreach ($c in $containers) {
   $nets = (docker inspect $c --format '{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}').Trim()

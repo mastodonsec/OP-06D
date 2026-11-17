@@ -41,7 +41,7 @@ def _overlay(mode: str) -> dict:
 
 def test_base_compose_has_no_relay_and_scanner_stays_on_labnet_only():
     base = _yaml(LAB / "docker-compose.yml")
-    assert set(base["services"]) == {"juice-shop", "dvwa", "scanner"}
+    assert set(base["services"]) == {"juice-shop", "dvwa", "redirect", "scanner"}
     assert set(base["networks"]) == {"labnet"} and base["networks"]["labnet"]["internal"] is True
     for svc in base["services"].values():
         assert set(svc["networks"]) == {"labnet"}
@@ -123,7 +123,7 @@ def _blocked_lines(path: pathlib.Path) -> list[str]:
 def test_relay_isolation_check_keeps_every_base_egress_attempt():
     base = _blocked_lines(LAB / "check_isolation.sh")
     relay_check = set(_blocked_lines(LAB / "check_relay_isolation.sh"))
-    assert len(base) == 18
+    assert len(base) == 19
     assert [b for b in base if b not in relay_check] == []
 
 
@@ -458,7 +458,7 @@ def test_the_key_scan_is_not_vacuous(tmp_path):
 import copy  # noqa: E402
 import json  # noqa: E402
 
-NAMES = {"juice-shop": "rc-lab-juice-shop-1", "dvwa": "rc-lab-dvwa-1",
+NAMES = {"juice-shop": "rc-lab-juice-shop-1", "dvwa": "rc-lab-dvwa-1", "redirect": "rc-lab-redirect-1",
          "scanner": "rc-lab-scanner-1", "model-relay": "rc-lab-model-relay-1"}
 
 
@@ -479,13 +479,14 @@ def _topology(mode: str) -> dict:
     containers = {
         "juice-shop": container("juice-shop", {lab: "172.31.77.10"}),
         "dvwa": container("dvwa", {lab: "172.31.77.11"}),
+        "redirect": container("redirect", {lab: "172.31.77.12"}),
         "scanner": container("scanner", {lab: "172.31.77.20", rel: "172.31.78.20"}, cmd=["sleep", "infinity"],
                              extra_hosts=list(relay.EXPECTED_EXTRA_HOSTS[mode]) or None),
         "model-relay": container("model-relay", {rel: "172.31.78.2", egr: "172.18.0.2"}, cmd=[mode],
                                  caps=["CAP_NET_ADMIN", "CAP_NET_RAW", "CAP_SETUID", "CAP_SETGID", "CAP_SETPCAP"]),
     }
     networks = {
-        lab: {"Internal": True, "Containers": {f"id-{s}": {"Name": NAMES[s]} for s in ("juice-shop", "dvwa", "scanner")}},
+        lab: {"Internal": True, "Containers": {f"id-{s}": {"Name": NAMES[s]} for s in ("juice-shop", "dvwa", "redirect", "scanner")}},
         rel: {"Internal": True, "Containers": {f"id-{s}": {"Name": NAMES[s]} for s in ("scanner", "model-relay")}},
         egr: {"Internal": False, "Containers": {"id-model-relay": {"Name": NAMES["model-relay"]}}},
     }
@@ -598,3 +599,19 @@ def test_check_is_inconclusive_when_the_overlay_is_not_up():
     del topo["networks"][relay.NET_RELAY]
     report = relay.check("local", run=FakeDocker(topo))
     assert report.exit_code == 2
+
+
+def test_check_fails_when_the_redirector_joins_the_relay_network():
+    """RC-44: Recon: report redirects to hostnames outside scope instead of going quiet"""
+    def mutate(t):
+        t["containers"]["redirect"]["NetworkSettings"]["Networks"][relay.NET_RELAY] = {"IPAddress": "172.31.78.12"}
+        t["networks"][relay.NET_RELAY]["Containers"]["id-redirect"] = {"Name": NAMES["redirect"]}
+    report = _broken("local", mutate)
+    assert report.exit_code == 1
+    assert any("redirect is attached to" in line for line in report.lines)
+
+
+def test_check_fails_when_the_redirector_is_missing_from_labnet():
+    """RC-44: Recon: report redirects to hostnames outside scope instead of going quiet"""
+    report = _broken("local", lambda t: t["networks"][relay.NET_LAB]["Containers"].pop("id-redirect"))
+    assert report.exit_code == 1

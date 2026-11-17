@@ -1,8 +1,9 @@
-# OP-06D lab (RC-19): two intentionally vulnerable targets plus a scanner,
+# OP-06D lab (RC-19): two intentionally vulnerable targets, a redirector and a scanner,
 # all on ONE internal Docker network with no route to the internet.
 #
 #   scanner (172.31.77.20)  --->  juice-shop (172.31.77.10, port 3000)
 #                           --->  dvwa       (172.31.77.11, port 80)
+#                           --->  redirect   (172.31.77.12, port 80)
 #
 # ISOLATION
 #   * `labnet` is declared `internal: true`: Docker attaches no gateway and
@@ -22,6 +23,7 @@
 # PINNED VERSIONS (nothing uses `latest`)
 #   juice-shop  OWASP Juice Shop 20.3.0   image digest sha256:42843723...
 #   dvwa        vulnerables/web-dvwa      image digest sha256:dae203fe...
+#   redirect    nginx 1.28.0-alpine       image digest sha256:30f1c0d7...
 #   scanner     debian:bookworm-slim @ sha256:734a72b3...
 #               nmap 7.93+dfsg1-1, nuclei v3.11.1, nuclei-templates v10.5.1
 #               (see lab/scanner/Dockerfile for the checksums)
@@ -59,6 +61,30 @@ services:
         ipv4_address: 172.31.77.11
         aliases:
           - dvwa.lab
+    # Serves HTTP on port 80. No `ports:` on purpose.
+
+  redirect:
+    # RC-44: Recon: report redirects to hostnames outside scope instead of going quiet
+    # nginx 1.28.0 (alpine). Answers every request with
+    # 301 Location: http://site-outside.lab/ (a name that resolves nowhere).
+    # Config mounted read-only; root filesystem read-only, /tmp is a tmpfs.
+    # Scoped by lab/engagement-redirect.yaml.
+    image: nginx@sha256:30f1c0d78e0ad60901648be663a710bdadf19e4c10ac6782c235200619158284
+    restart: "no"
+    entrypoint: ["nginx", "-g", "daemon off;"]
+    read_only: true
+    tmpfs:
+      - /tmp
+    volumes:
+      - ./redirect/nginx.conf:/etc/nginx/nginx.conf:ro
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 64m
+    networks:
+      labnet:
+        ipv4_address: 172.31.77.12
+        aliases:
+          - redirect.lab
     # Serves HTTP on port 80. No `ports:` on purpose.
 
   scanner:

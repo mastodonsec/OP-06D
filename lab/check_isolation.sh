@@ -32,6 +32,7 @@ set -u
 LAB_SUBNET_PREFIX="172.31.77."
 JUICE_IP="172.31.77.10"
 DVWA_IP="172.31.77.11"
+REDIRECT_IP="172.31.77.12"
 
 FAILS=0
 CONTROL_FAILS=0
@@ -92,12 +93,16 @@ hr
 say "Controls (these must work, or the blocked tests prove nothing):"
 expect_works "ping $JUICE_IP (ICMP/raw sockets)"        6 ping -c1 -W3 "$JUICE_IP"
 expect_works "ping $DVWA_IP"                              6 ping -c1 -W3 "$DVWA_IP"
+expect_works "ping $REDIRECT_IP"                          6 ping -c1 -W3 "$REDIRECT_IP"
 expect_works "TCP $JUICE_IP:3000 (bash /dev/tcp)"        6 bash -c "exec 3<>/dev/tcp/$JUICE_IP/3000"
 expect_works "TCP $DVWA_IP:80 (nc)"                       6 nc -z -w3 "$DVWA_IP" 80
+expect_works "TCP $REDIRECT_IP:80 (nc)"                   6 nc -z -w3 "$REDIRECT_IP" 80
 expect_works "name lookup juice-shop.lab"                 6 getent hosts juice-shop.lab
 expect_works "name lookup dvwa.lab"                       6 getent hosts dvwa.lab
+expect_works "name lookup redirect.lab"                   6 getent hosts redirect.lab
 expect_works "HTTP http://juice-shop.lab:3000/ (curl)"   12 curl -sS --noproxy '*' --max-time 10 -o /dev/null http://juice-shop.lab:3000/
 expect_works "HTTP http://dvwa.lab/ (curl)"              12 curl -sS --noproxy '*' --max-time 10 -o /dev/null http://dvwa.lab/
+expect_works "HTTP http://redirect.lab/ (curl, not followed)" 12 curl -sS --noproxy '*' --max-time 10 -o /dev/null http://redirect.lab/
 hr
 
 if [ "$CONTROL_FAILS" -gt 0 ]; then
@@ -155,6 +160,7 @@ expect_blocked "TCP 8.8.8.8:443 (nc)" 7 nc -z -w4 8.8.8.8 443
 # Name resolution of public names (also proves DNS does not forward out)
 expect_blocked "DNS lookup example.com"  8 getent hosts example.com
 expect_blocked "DNS lookup github.com"   8 getent hosts github.com
+expect_blocked "DNS lookup site-outside.lab (the lab redirect target)" 8 getent hosts site-outside.lab
 
 # HTTP(S) by name and by address; --noproxy so no proxy variable can help
 expect_blocked "HTTPS https://example.com"       10 curl -sS --noproxy '*' --max-time 8 -o /dev/null https://example.com

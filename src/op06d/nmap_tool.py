@@ -112,6 +112,13 @@ PROFILES: dict[str, tuple[tuple[str, ...], Risk]] = {
 PROFILES_ALLOWING_PORTS = frozenset({"default", "service"})
 DEFAULT_PROFILE = "default"
 
+# RC-44: Recon: report redirects to hostnames outside scope instead of going quiet
+# Scripts the wrapper itself adds, by name, to the profiles that run -sV.
+# 'aggressive' (-A) already runs the default category, which includes these.
+# A planner can never add a script name: 'scripts' accepts categories only.
+FIXED_SERVICE_SCRIPTS: tuple[str, ...] = ("http-title",)
+PROFILES_WITH_FIXED_SCRIPTS = frozenset({"service", "full"})
+
 # RC-43: timeout sizing. How many ports each profile scans when 'ports' is not
 # given (nmap's defaults: -F is the top 100, no -p is the top 1,000, -p- is
 # 1-65535; -sn scans none).
@@ -177,6 +184,15 @@ def _float(value: object) -> float | None:
         return None
 
 
+def _script_entry(s: ET.Element) -> dict[str, Any]:
+    entry: dict[str, Any] = {"id": _clip(s.get("id"), 100), "output": _clip(s.get("output"))}
+    # RC-44: Recon: report redirects to hostnames outside scope instead of going quiet
+    redirect = s.find("elem[@key='redirect_url']")
+    if redirect is not None and (redirect.text or "").strip():
+        entry["redirect_url"] = _clip(redirect.text.strip())
+    return entry
+
+
 def parse_nmap_xml(text: str) -> dict[str, Any]:
     """Parse nmap ``-oX`` output into plain structured data. Raises
     ``NmapParseError`` on anything malformed, hostile or oversized."""
@@ -223,10 +239,7 @@ def parse_nmap_xml(text: str) -> dict[str, Any]:
                     "tunnel": _clip(svc.get("tunnel"), 20),
                     "cpe": [_clip(c.text, 200) for c in svc.findall("cpe")][:10],
                 }
-            scripts = [
-                {"id": _clip(s.get("id"), 100), "output": _clip(s.get("output"))}
-                for s in p.findall("script")[:MAX_SCRIPTS_PER_PORT]
-            ]
+            scripts = [_script_entry(s) for s in p.findall("script")[:MAX_SCRIPTS_PER_PORT]]
             if scripts:
                 entry["scripts"] = scripts
             ports.append(entry)
@@ -246,10 +259,7 @@ def parse_nmap_xml(text: str) -> dict[str, Any]:
         ]
         if os_matches:
             host["os"] = os_matches
-        host_scripts = [
-            {"id": _clip(s.get("id"), 100), "output": _clip(s.get("output"))}
-            for s in h.findall("hostscript/script")[:MAX_SCRIPTS_PER_PORT]
-        ]
+        host_scripts = [_script_entry(s) for s in h.findall("hostscript/script")[:MAX_SCRIPTS_PER_PORT]]
         if host_scripts:
             host["host_scripts"] = host_scripts
         hosts.append(host)
@@ -461,9 +471,11 @@ class NmapTool:
         ]
         if "ports" in parameters:
             argv += ["-p", parameters["ports"]]
-        cats = self._categories(parameters)
-        if cats:
-            argv.append("--script=" + ",".join(sorted(cats)))
+        scripts = sorted(self._categories(parameters))
+        if profile in PROFILES_WITH_FIXED_SCRIPTS:
+            scripts += [s for s in FIXED_SERVICE_SCRIPTS if s not in scripts]
+        if scripts:
+            argv.append("--script=" + ",".join(scripts))
         argv += ["--", target]
         return argv
 

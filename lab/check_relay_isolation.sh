@@ -145,6 +145,7 @@ expect_blocked "TCP 8.8.8.8:443 (nc)" 7 nc -z -w4 8.8.8.8 443
 # Name resolution of public names (also proves DNS does not forward out)
 expect_blocked "DNS lookup example.com"  8 getent hosts example.com
 expect_blocked "DNS lookup github.com"   8 getent hosts github.com
+expect_blocked "DNS lookup site-outside.lab (the lab redirect target)" 8 getent hosts site-outside.lab
 
 # HTTP(S) by name and by address; --noproxy so no proxy variable can help
 expect_blocked "HTTPS https://example.com"       10 curl -sS --noproxy '*' --max-time 8 -o /dev/null https://example.com
