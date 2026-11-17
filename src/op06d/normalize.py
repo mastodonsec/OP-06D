@@ -227,7 +227,8 @@ def _redirect_observation(
     issue = _malformed(
         "redirect_target_not_assessed",
         f"The site at {host} was not assessed: {where} redirects to {location}, and {host} is "
-        f"not in the engagement scope. Add {host} to the engagement scope to cover it.",
+        f"not in the engagement scope. If {host} belongs to the client and is covered by the "
+        f"signed authorization, add it to the engagement scope to cover it.",
         {"location": location, "redirect_host": host, "redirecting_asset": where},
     )
     return finding, issue

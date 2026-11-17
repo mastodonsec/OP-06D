@@ -90,7 +90,9 @@ def test_cross_host_redirect_out_of_scope_gives_finding_and_limitation():
     assert not [x for x in found if x.title == "nmap script http-title"]  # replaced, not duplicated
     (issue,) = _not_assessed(issues)
     assert issue.detail.startswith(f"The site at {OUTSIDE} was not assessed")
-    assert f"Add {OUTSIDE} to the engagement scope to cover it." in issue.detail
+    assert issue.detail.endswith(
+        f"If {OUTSIDE} belongs to the client and is covered by the signed authorization, "
+        f"add it to the engagement scope to cover it.")
     assert issue.raw == {"location": LOCATION, "redirect_host": OUTSIDE, "redirecting_asset": f"{IP}:80"}
 
 
@@ -261,7 +263,8 @@ def test_fixed_run_reports_the_redirect_finding_and_the_limitation(tmp_path):
     md = _report(summary)
     assert f"HTTP redirect to another host: {IP}:80 -> {LOCATION}" in md
     assert (f"**redirect_target_not_assessed:** The site at {OUTSIDE} was not assessed" in md
-            and f"Add {OUTSIDE} to the engagement scope to cover it." in md)
+            and f"If {OUTSIDE} belongs to the client and is covered by the signed authorization, "
+            f"add it to the engagement scope to cover it." in md)
     assert resolved == []
     assert not any(OUTSIDE in " ".join(argv) for argv in runner.calls)
 

@@ -4,12 +4,8 @@
 # Target (see lab/docker-compose.yml):
 #   172.31.77.12 (redirect.lab, HTTP on 80): every request gets
 #   301 Location: http://site-outside.lab/
-# site-outside.lab is deliberately NOT in scope and resolves nowhere. The scanner
-# (172.31.77.20) is explicitly OUT of scope.
-#
-# Separate from lab/engagement.yaml so the fixed-planner and benchmark baselines
-# keep their action count. Only the IP is listed (as the bare IP was on the live
-# run); listing redirect.lab too would scan the same service twice.
+# site-outside.lab is NOT in scope and resolves nowhere. The scanner
+# (172.31.77.20) is OUT of scope.
 #
 # This file is a TEMPLATE, like lab/engagement.yaml: generate a run copy with a
 # window around "now" with
