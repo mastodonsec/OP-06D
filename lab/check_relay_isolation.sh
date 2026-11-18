@@ -63,6 +63,31 @@ expect_works() {
   fi
 }
 
+# RC-60: Lab: run on Linux (Kali) and macOS, not only Windows
+# Prints "<interface> <address>" for every IPv6 all-nodes (ff02::1) responder on
+# every non-loopback interface that is neither this container nor a lab
+# container (a lab container is recognised by the EUI-64 link-local address of a
+# MAC this container learned over IPv4, i.e. after the controls). Exit 0 when it
+# found one, 1 when not.
+v6_foreign_responders() {
+  local found=1 ifc known a
+  for ifc in $(ip -o link show | awk -F': ' '$2 != "lo" {sub(/@.*/, "", $2); print $2}'); do
+    known=" $(ip -6 -o addr show dev "$ifc" 2>/dev/null | awk '{sub(/\/.*/, "", $4); printf "%s ", $4}')"
+    known="$known$(ip -4 neigh show dev "$ifc" 2>/dev/null | awk '/lladdr/ {print $3}' \
+      | while IFS=: read -r m1 m2 m3 m4 m5 m6; do
+          printf 'fe80::%x:%x:%x:%x ' $(( ((0x$m1 ^ 2) << 8) | 0x$m2 )) $(( (0x$m3 << 8) | 0xff )) \
+            $(( (0xfe << 8) | 0x$m4 )) $(( (0x$m5 << 8) | 0x$m6 ))
+        done)"
+    for a in $(ping -6 -c2 -W2 "ff02::1%$ifc" 2>/dev/null | sed -n 's/.*bytes from \([0-9a-f:]*\)%.*/\1/p' | sort -u); do
+      case "$known" in *" $a "*) continue ;; esac
+      echo "$ifc $a"
+      found=0
+    done
+  done
+  return $found
+}
+export -f v6_foreign_responders
+
 hr
 say "OP-06D lab isolation check WITH the model relay ($MODE)"
 say "Every 'blocked' test below is EXPECTED TO FAIL to connect."
@@ -83,6 +108,13 @@ say "IPv6 routes:"
 ip -6 route 2>&1 | sed 's/^/  /'
 say "Resolver config:"
 sed 's/^/  /' /etc/resolv.conf 2>&1
+say "IPv6 addresses:"
+ip -6 -o addr show 2>&1 | awk '{print "  "$2" "$4}'
+say "IPv6 disabled per interface (1 = disabled):"
+for f in /proc/sys/net/ipv6/conf/*/disable_ipv6; do
+  i="${f#/proc/sys/net/ipv6/conf/}"
+  say "  ${i%/disable_ipv6}=$(cat "$f" 2>/dev/null)"
+done
 hr
 
 say "Controls (these must work, or the blocked tests prove nothing):"
@@ -163,6 +195,34 @@ expect_blocked "ping 172.17.0.1 (default bridge gateway)" 6 ping -c1 -W3 172.17.
 expect_blocked "TCP 172.17.0.1:80"                       7 bash -c 'exec 3<>/dev/tcp/172.17.0.1/80'
 expect_blocked "ping 192.168.65.254 (Docker Desktop host gateway)" 6 ping -c1 -W3 192.168.65.254
 expect_blocked "ping 192.168.65.1"                       6 ping -c1 -W3 192.168.65.1
+
+# RC-60: Lab: run on Linux (Kali) and macOS, not only Windows
+# Each internal network's own gateway address: if a bridge holds it, it is an
+# address of the Docker host. labnet and relaynet set inhibit_ipv4.
+expect_blocked "ping 172.31.77.1 (labnet gateway: the Docker host)" 6 ping -c1 -W3 172.31.77.1
+expect_blocked "TCP 172.31.77.1:22 (labnet gateway)"     7 bash -c 'exec 3<>/dev/tcp/172.31.77.1/22'
+expect_blocked "TCP 172.31.77.1:80 (labnet gateway)"     7 bash -c 'exec 3<>/dev/tcp/172.31.77.1/80'
+expect_blocked "TCP 172.31.77.1:443 (labnet gateway)"    7 bash -c 'exec 3<>/dev/tcp/172.31.77.1/443'
+expect_blocked "TCP 172.31.77.1:11434 (labnet gateway)"  7 bash -c 'exec 3<>/dev/tcp/172.31.77.1/11434'
+expect_blocked "ping 172.31.78.1 (relaynet gateway: the Docker host)" 6 ping -c1 -W3 172.31.78.1
+expect_blocked "TCP 172.31.78.1:22 (relaynet gateway)"   7 bash -c 'exec 3<>/dev/tcp/172.31.78.1/22'
+expect_blocked "TCP 172.31.78.1:80 (relaynet gateway)"   7 bash -c 'exec 3<>/dev/tcp/172.31.78.1/80'
+expect_blocked "TCP 172.31.78.1:443 (relaynet gateway)"  7 bash -c 'exec 3<>/dev/tcp/172.31.78.1/443'
+expect_blocked "TCP 172.31.78.1:11434 (relaynet gateway)" 7 bash -c 'exec 3<>/dev/tcp/172.31.78.1/11434'
+expect_blocked "an IPv4 route via a gateway (ip -4 route)" 3 bash -c "ip -4 route | grep -q ' via '"
+expect_blocked "an IPv6 route via a gateway (ip -6 route)" 3 bash -c "ip -6 route | grep -q ' via '"
+expect_blocked "ARP reply from the labnet gateway 172.31.77.1" 6 bash -c "ping -c1 -W2 172.31.77.1 >/dev/null 2>&1; ip -4 neigh show 172.31.77.1 | grep -q lladdr"
+expect_blocked "ARP reply from the relaynet gateway 172.31.78.1" 6 bash -c "ping -c1 -W2 172.31.78.1 >/dev/null 2>&1; ip -4 neigh show 172.31.78.1 | grep -q lladdr"
+
+# IPv6 link-local: a bridge normally holds an fe80:: address, which reaches host
+# services listening on [::] even when it holds no IPv4 address. The lab
+# services disable IPv6 (compose sysctls), so nothing but lab containers may answer.
+expect_blocked "IPv6 all-nodes ff02::1 reply from a non-lab address (every interface)" 15 bash -c v6_foreign_responders
+for a in $(v6_foreign_responders | awk '{print $2"%"$1}'); do
+  for port in 22 80 443 11434; do
+    expect_blocked "TCP [$a]:$port (IPv6 link-local, not a lab container)" 7 nc -6 -z -w3 "$a" "$port"
+  done
+done
 
 say "Relay-specific attempts (ALL EXPECTED TO FAIL):"
 expect_blocked "TCP relay $RELAY_IP:$OTHER_PORT (not its listen port)" 7 bash -c "exec 3<>/dev/tcp/$RELAY_IP/$OTHER_PORT"

@@ -98,9 +98,19 @@ The `latest` tag is not used anywhere. Step 5 records what is actually installed
 
 - **One network, declared `internal: true`.** Docker installs no NAT and gives
   the containers no default route for an internal network, so there is no way
-  off it. (IPAM still lists a Gateway IP, the `.1`, for a custom subnet; that
-  is normal and does not mean traffic is routed.) This is the same mechanism
-  for all three containers.
+  off it. This is the same mechanism for every container.
+- **No gateway address (RC-60).** labnet also sets
+  `com.docker.network.bridge.inhibit_ipv4`, so the bridge holds no address and
+  IPAM lists no Gateway. Without it, `172.31.77.1` is an address of the Docker
+  host (on native Linux, the host itself): any host service listening on
+  `0.0.0.0` (sshd, Ollama, ...) answered from inside the lab. Step 4 probes it,
+  and the host-side check requires the option.
+- **No IPv6 in the containers (RC-60).** The bridge still holds an IPv6
+  link-local (`fe80::`) address, which reaches host services listening on
+  `[::]`. Every lab service sets `net.ipv6.conf.all.disable_ipv6=1` and
+  `net.ipv6.conf.default.disable_ipv6=1` in its own network namespace, so no
+  container has a link-local address. Step 4 probes the all-nodes address
+  `ff02::1` on every interface.
 - **Every container is on that network only.** No `network_mode: host`, no
   second network, no `ports:` publishing, no custom DNS, no `extra_hosts`, not
   privileged. (Internal networks are also not reachable from the host, so you
@@ -126,6 +136,8 @@ The `latest` tag is not used anywhere. Step 5 records what is actually installed
 ## Step 0. Preconditions
 
 - Docker Desktop is running (Linux containers / WSL2 engine). `docker info` works.
+  On Linux and macOS, see **Linux and macOS hosts** below.
+- `uv` is installed (it runs the host-side checks in Step 4).
 - About 5 GB free disk (images + templates).
 - You are on a network where pulls from Docker Hub and GitHub work. Only the
   **build and pull** steps use the internet.
@@ -140,6 +152,61 @@ Expected output:
 ```
 created lab\captures
 ```
+
+On Linux and macOS: `mkdir -p lab/captures && echo "created lab/captures"`.
+
+### Linux and macOS hosts (RC-60)
+
+RC-60: Lab: run on Linux (Kali) and macOS, not only Windows
+
+> **Untested until Thomas runs them.** The commands in this subsection and the
+> bash equivalents in Step 4 have not been run on Linux or macOS yet.
+
+Every `docker compose -f $LAB ...` line in this runbook works the same in bash
+or zsh once the variable is set the shell's way (`LAB=lab/docker-compose.yml`),
+except that PowerShell's escaped newline (backtick n) inside `-w "..."` is
+`\n` there.
+
+- **Docker Engine plus the Compose v2 plugin.** Commands are `docker compose`
+  (a space), never `docker-compose` (v1, Python, unsupported). Check:
+  `docker compose version` must print v2 or later.
+- **Kali (and Debian testing):** `sudo apt install -y docker.io docker-compose docker-buildx`,
+  then `sudo systemctl enable --now docker`. Kali's `docker-compose` package
+  is meant to be Compose v2 and to install the `docker compose` plugin.
+- **If `docker compose version` does not print v2 or later on Kali,** replace
+  Kali's packages with Docker's own: package `docker-compose-plugin` (with
+  `docker-ce docker-ce-cli containerd.io docker-buildx-plugin`) from Docker's
+  Debian repository `https://download.docker.com/linux/debian`, suite
+  `trixie`, component `stable`. Kali rolling has no suite of its own there,
+  so it uses Debian's current stable one. One command per line:
+
+```bash
+sudo apt remove -y docker.io docker-compose docker-buildx
+sudo apt install -y ca-certificates curl
+sudo install -m 0755 -d /etc/apt/keyrings
+sudo curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc
+sudo chmod a+r /etc/apt/keyrings/docker.asc
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian trixie stable" | sudo tee /etc/apt/sources.list.d/docker.list
+sudo apt update
+sudo apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+sudo systemctl enable --now docker
+docker compose version
+```
+
+- **docker group vs sudo:** either prefix every docker command (and
+  `uv run python lab/check_isolation.py`) with `sudo`, or add yourself to the
+  `docker` group once: `sudo usermod -aG docker "$USER"`, then log out and
+  back in, then continue. Membership of `docker` is equivalent to root on
+  that machine.
+- **uv:** `curl -LsSf https://astral.sh/uv/install.sh | sh` (or `pipx install uv`).
+- **ARM hosts (Apple Silicon, ARM Linux):** dvwa and the scanner are pinned to
+  `linux/amd64` and run under emulation; juice-shop, nginx and the relay run
+  natively. Docker Desktop for Mac emulates amd64 out of the box (Settings >
+  General > "Use Rosetta for x86_64/amd64 emulation on Apple Silicon" makes it
+  faster). On ARM Linux install `qemu-user-static binfmt-support` first.
+  Expect the scanner build to take several times longer, DVWA and the scans to
+  be 2-5x slower, and nmap's timing-sensitive results (`-sV` probes, host
+  timeouts) to vary more than on amd64.
 
 ## Step 1. Review before building
 
@@ -207,20 +274,26 @@ is ever recreated (down/up), the DB resets and this step must be re-run.
 **Do not continue unless the following command prints PASS.**
 
 ```powershell
-pwsh -File lab\check_isolation.ps1 -WithInternetControl
+uv run python lab/check_isolation.py --with-internet-control
 ```
+
+The same command works in bash and zsh on Linux and macOS. The old
+`pwsh -File lab\check_isolation.ps1 -WithInternetControl` still works: it runs
+the command above and passes its exit code through. The expected services are
+read from `lab/docker-compose.yml` (`docker compose config --services`).
 
 What it does:
 
 | Part | Check | Pass means |
 |---|---|---|
 | A (host) | `docker network inspect rc-lab_labnet` `.Internal` | prints `true` |
+| A (host) | `docker network inspect rc-lab_labnet` `.Options` | `com.docker.network.bridge.inhibit_ipv4` is `"true"` |
 | A (host) | each lab container's attached networks | only `rc-lab_labnet` |
 | A (host) | each container's published ports / network mode / privileged | none / not host / not privileged |
 | Control (host, `-WithInternetControl`) | throwaway container on the **default bridge** requests `https://example.com` | **succeeds**: proves the method can detect connectivity (one outbound request, from a throwaway container, not from the lab) |
 | B (scanner) | `lab/check_isolation.sh`: controls inside the lab first (ping, TCP, DNS, curl to the targets must **work**) | controls ok |
 | B (scanner) | no default route, one interface in 172.31.77.0/24 | yes |
-| B (scanner) | ping, raw TCP, DNS, HTTP(S) to public addresses and names, IPv6, Docker host gateways | **every attempt is expected to FAIL**; each prints `PASS  blocked, as expected` |
+| B (scanner) | ping, raw TCP, DNS, HTTP(S) to public addresses and names, IPv6, Docker host gateways, the labnet gateway `172.31.77.1` (ping; TCP 22, 80, 443, 11434; an ARP reply), a route via any gateway, an IPv6 all-nodes (`ff02::1`) reply from anything but a lab container, and TCP 22/80/443/11434 to any such responder | **every attempt is expected to FAIL**; each prints `PASS  blocked, as expected` |
 
 The output you want ends with:
 
@@ -232,21 +305,27 @@ RESULT: PASS - lab isolation confirmed (host-side and from inside). You may proc
 | Result | Exit | What to do |
 |---|---|---|
 | `PASS` | 0 | continue |
-| `FAIL ... REACHABLE` | 1 | **STOP.** `docker compose -f $LAB down`. Fix the compose file (network must be `internal: true`; one network only). Do not scan. |
+| `FAIL ... REACHABLE` | 1 | **STOP.** `docker compose -f $LAB down`. Fix the compose file (network must be `internal: true` with `inhibit_ipv4`; one network only). Do not scan. If only the labnet-gateway lines FAIL, this Docker Engine ignored `inhibit_ipv4`: do not scan, report the engine version. |
 | `INCONCLUSIVE` | 2 | a control failed (stack still starting, or a tool is missing). Wait and rerun; it is not a pass. |
+| `NOT RUN` | 3 | Docker is unreachable, the compose file cannot be read, or the stack is not up. Nothing was checked. |
 
 Save the full output as evidence:
 
 ```powershell
-pwsh -File lab\check_isolation.ps1 -WithInternetControl *>&1 | Tee-Object lab\captures\isolation-check.txt
+uv run python lab/check_isolation.py --with-internet-control *>&1 | Tee-Object lab\captures\isolation-check.txt
+```
+
+bash / zsh:
+
+```bash
+uv run python lab/check_isolation.py --with-internet-control 2>&1 | tee lab/captures/isolation-check.txt
 ```
 
 (Optional, extra paranoia: `docker network inspect rc-lab_labnet` and confirm
-`"Internal": true` and three entries under `Containers`. IPAM will always show
-a Gateway IP (the `.1`) for a custom-subnet network, internal or not; that is
-normal and is **not** a failure. What matters is `"Internal": true` **plus**
-the inside-scanner result: no default route, and every outbound attempt
-blocked.)
+`"Internal": true`, four entries under `Containers`, the option
+`"com.docker.network.bridge.inhibit_ipv4": "true"` and **no** `Gateway` under
+`IPAM.Config`. What matters is that **plus** the inside-scanner result: no
+default route, and every outbound attempt blocked.)
 
 ## Step 4b. Generate this session's engagement
 
@@ -1043,6 +1122,55 @@ Ollama does **not** need to listen on the network for the relay:
   (Docker Desktop's path arrives as loopback, so this does not break the relay.)
 - Pull the RC-40 default local model once: `ollama pull llama3.1:8b-instruct-q5_K_M`
 
+### Ollama on the host (native Linux, e.g. Kali) (RC-60)
+
+> **Untested until Thomas runs it.**
+
+Native Linux Docker has no `host.docker.internal`. The local overlay maps it,
+for the relay container only, to `host-gateway`, which on Linux is the
+`docker0` bridge address (normally `172.17.0.1`), not loopback. A
+127.0.0.1-only Ollama is therefore not reachable from the relay, and
+`0.0.0.0` would put it on the LAN. Bind it to the bridge address instead:
+
+```bash
+ip -4 -br addr show docker0
+sudo systemctl edit ollama
+```
+
+In the editor, add (with the address `ip` printed):
+
+```
+[Unit]
+After=docker.service
+[Service]
+Environment="OLLAMA_HOST=172.17.0.1:11434"
+```
+
+```bash
+sudo systemctl restart ollama
+export OLLAMA_HOST=172.17.0.1:11434
+ss -ltnH 'sport = :11434'
+```
+
+- `ss` must list only `172.17.0.1:11434`: no `0.0.0.0`, `*`, `[::]` or LAN
+  address. Ollama starts after Docker because the address exists only once
+  `docker0` is up.
+- `export OLLAMA_HOST` in the shell you run `ollama pull` and
+  `lab/model_relay.py` from: the launcher's host-side model probe reads it
+  (unset, it probes `127.0.0.1:11434`).
+- Any container on a non-internal Docker network can reach that address too;
+  the lab targets and the scanner cannot (internal networks without a gateway
+  address; `check local` probes it).
+- Linux accepts traffic for `172.17.0.1` on any interface, so a LAN machine
+  that routes `172.17.0.0/16` through yours could reach it. Defence in depth:
+  `sudo iptables -I INPUT -i <your LAN interface> -p tcp --dport 11434 -j DROP`.
+
+### Ollama on the host (macOS)
+
+> **Untested until Thomas runs it.** Docker Desktop for Mac is expected to
+> behave like Windows: leave `OLLAMA_HOST` unset, keep Ollama on `127.0.0.1`,
+> and confirm with `lsof -nP -iTCP:11434 -sTCP:LISTEN` (only `127.0.0.1`).
+
 ### Commands (PowerShell, repository root)
 
 Build once (internet needed; builds the base scanner if missing, then the
@@ -1112,10 +1240,12 @@ any file there.
    only routable network with only the relay on it; exact network membership
    of every container; no published ports, privileges or host networking; the
    relay's command is the one mode; the scanner's name override is exactly
-   `api.anthropic.com -> 172.31.78.2` (anthropic) or none (local); no key in the
-   scanner's container configuration;
+   `api.anthropic.com -> 172.31.78.2` (anthropic) or none (local); the relay's
+   is exactly `host.docker.internal:host-gateway` (local) or none (anthropic);
+   no key in the scanner's container configuration;
 2. inside the scanner (`lab/check_relay_isolation.sh`): every outbound attempt
    of `lab/check_isolation.sh` (a default-suite test keeps them identical), the
+   relaynet gateway `172.31.78.1` (relaynet also sets `inhibit_ipv4`), the
    relay's other ports, the relay's outward address, name resolution, and in
    anthropic mode the SNI filter;
 3. inside the relay, as its unprivileged user (`check_relay_egress.sh`): only

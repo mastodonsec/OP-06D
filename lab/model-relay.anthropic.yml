@@ -28,6 +28,7 @@ name: rc-lab
 services:
   scanner:
     image: op06d-lab-scanner-llm:nmap-7.93-nuclei-3.11.1-templates-10.5.1-anthropic-2.8.0
+    platform: linux/amd64     # built FROM the amd64 base scanner image
     build:
       context: ./relay
       dockerfile: scanner-llm.Dockerfile
@@ -51,6 +52,9 @@ services:
       - /run
       - /tmp
     mem_limit: 64m
+    sysctls:                  # no IPv6 in the container: no link-local path to the host
+      net.ipv6.conf.all.disable_ipv6: 1
+      net.ipv6.conf.default.disable_ipv6: 1
     security_opt:
       - no-new-privileges:true
     cap_drop:
@@ -74,6 +78,8 @@ networks:
   relaynet:
     driver: bridge
     internal: true
+    driver_opts:
+      com.docker.network.bridge.inhibit_ipv4: "true"   # the bridge holds no address: no path to the host
     ipam:
       config:
         - subnet: 172.31.78.0/24

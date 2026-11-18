@@ -1,11 +1,15 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """RC-47: Lab model relay: let the sealed scanner reach the planner model for lab runs
+RC-60: Lab: run on Linux (Kali) and macOS, not only Windows
 
 lab/check_isolation.ps1 must tell "the lab stack is not up" apart from "the
 lab is not isolated": the first is NOT RUN (exit 3), never an isolation FAIL.
+The .ps1 is a wrapper around lab/check_isolation.py, so these tests run the
+whole chain: PowerShell -> uv -> Python -> the stub docker.
 
 The script is run with a stub ``docker`` first on PATH, so no real Docker is
-needed; the tests skip where PowerShell is not installed.
+needed; the tests skip where PowerShell or uv is not installed. The stub
+answers ``docker compose ... config --services`` with the lab's services.
 """
 
 from __future__ import annotations
@@ -22,7 +26,8 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 SCRIPT = ROOT / "lab" / "check_isolation.ps1"
 POWERSHELL = shutil.which("pwsh") or shutil.which("powershell")
 
-pytestmark = pytest.mark.skipif(POWERSHELL is None, reason="PowerShell is not installed")
+pytestmark = [pytest.mark.skipif(POWERSHELL is None, reason="PowerShell is not installed"),
+              pytest.mark.skipif(shutil.which("uv") is None, reason="uv is not installed")]
 
 # The stub answers by first argument. STUB_MODE picks the scenario.
 STUB_SH = """#!/bin/sh
@@ -30,6 +35,11 @@ echo "$@" >> "$STUB_LOG"
 case "$STUB_MODE:$1" in
   no-daemon:*) exit 1 ;;
   *:version) echo 27.0.0; exit 0 ;;
+  *:compose) printf 'juice-shop
+dvwa
+redirect
+scanner
+'; exit 0 ;;
   no-stack:network) exit 1 ;;
   partial:network) exit 0 ;;
   no-stack:ps) exit 0 ;;
@@ -41,6 +51,7 @@ STUB_CMD = """@echo off
 echo %*>> "%STUB_LOG%"
 if "%STUB_MODE%"=="no-daemon" exit /b 1
 if "%1"=="version" (echo 27.0.0& exit /b 0)
+if "%1"=="compose" (echo juice-shop& echo dvwa& echo redirect& echo scanner& exit /b 0)
 if "%STUB_MODE%:%1"=="no-stack:network" exit /b 1
 if "%STUB_MODE%:%1"=="partial:network" exit /b 0
 if "%STUB_MODE%:%1"=="no-stack:ps" exit /b 0
