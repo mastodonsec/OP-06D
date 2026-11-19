@@ -16,10 +16,14 @@
 # update check is disabled by the wrapper and the template set is read-only.
 # If a checksum fails, STOP and investigate before re-pinning.
 
+# The base image is written out on every FROM line, not taken from a build
+# argument, so Dependabot can read and bump its digest (it rewrites FROM lines
+# only, all of them together). BASE_IMAGE records the same reference in the
+# toolchain file; tests/test_container_image.py fails while they disagree.
 ARG BASE_IMAGE=debian:bookworm-slim@sha256:734a72b3d6142a71993b4bc580ca01d8ca687f77a2c422d96a961d3376b179bc
 
 # --- fetch: nuclei and the template set, checksum verified -------------------
-FROM ${BASE_IMAGE} AS fetch
+FROM debian:bookworm-slim@sha256:734a72b3d6142a71993b4bc580ca01d8ca687f77a2c422d96a961d3376b179bc AS fetch
 ARG TARGETARCH
 ARG NUCLEI_VERSION=3.11.1
 # From nuclei_3.11.1_checksums.txt on the v3.11.1 GitHub release.
@@ -51,7 +55,7 @@ RUN curl -fsSL -o /tmp/templates.tgz \
  && chmod -R a-w /out/nuclei-templates
 
 # --- build: OP-06D and its dependencies in a venv ---------------------------
-FROM ${BASE_IMAGE} AS build
+FROM debian:bookworm-slim@sha256:734a72b3d6142a71993b4bc580ca01d8ca687f77a2c422d96a961d3376b179bc AS build
 RUN apt-get update \
  && apt-get install -y --no-install-recommends python3 python3-venv \
  && rm -rf /var/lib/apt/lists/*
@@ -69,7 +73,7 @@ RUN /opt/build/bin/pip wheel --no-cache-dir --no-deps --no-build-isolation -w /t
  && /opt/op06d/bin/pip check
 
 # --- product: what users pull and run ----------------------------------------
-FROM ${BASE_IMAGE} AS product
+FROM debian:bookworm-slim@sha256:734a72b3d6142a71993b4bc580ca01d8ca687f77a2c422d96a961d3376b179bc AS product
 ARG BASE_IMAGE
 ARG NMAP_VERSION=7.93
 ARG NMAP_PACKAGE=7.93+dfsg1-1
