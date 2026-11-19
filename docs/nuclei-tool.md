@@ -1,4 +1,4 @@
-# nuclei tool wrapper (RC-14)
+# nuclei tool wrapper
 
 Modules: [`src/op06d/nuclei_tool.py`](../src/op06d/nuclei_tool.py) ·
 [`src/op06d/tools.py`](../src/op06d/tools.py) ·
@@ -11,13 +11,13 @@ Fixture: [`tests/fixtures/nuclei_findings.jsonl`](../tests/fixtures/nuclei_findi
 The second real tool behind `GatedToolbox`, after nmap ([nmap-tool.md](nmap-tool.md)).
 It runs templated web and service checks against a **gate-approved** target and
 returns **structured findings**, with nuclei's raw JSONL kept separately as
-evidence. It reuses the toolbox scaffolding built for RC-13: `ToolOutput`,
+evidence. It reuses the toolbox scaffolding built for the nmap wrapper: `ToolOutput`,
 per-invocation risk, the parameter-validation hook and secret redaction.
 
 Like nmap, it is imported only by `op06d.tools.default_tools` (a test asserts
 this), so nothing outside the toolbox can construct or call it.
 
-## Scope of RC-14
+## Scope of the wrapper
 
 **In scope:** the nuclei `Tool`, argv construction, JSONL parsing, curated
 template selection, risk derivation, the out-of-band and redirect controls,
@@ -26,12 +26,12 @@ template pinning, the shared helpers moved into `tools.py`, and the optional
 
 **Not here:**
 
-| Concern | Ticket |
+| Concern | Where |
 |---|---|
-| Normalizing findings into the report schema | RC-15 |
-| Persisting raw output as evidence | RC-16 |
-| A real lab, a real nuclei capture, verifying flags against the pinned version | RC-19 |
-| Repeatability tests across runs | RC-20 |
+| Normalizing findings into the report schema | the normalizer, `op06d.normalize` |
+| Persisting raw output as evidence | the evidence store, `op06d.evidence` |
+| A real lab, a real nuclei capture, verifying flags against the pinned version | [lab/RUNBOOK.md](../lab/RUNBOOK.md) |
+| Repeatability tests across runs | `tests/integration/test_lab_repeatability.py` |
 | Maintaining and updating the curated template set (an operator task, outside a run) | operator |
 
 ## How a scan flows
@@ -46,7 +46,7 @@ planner: {"type":"action","tool":"nuclei","target":"app.acme.com","parameters":{
    |- approval         -> only if invocation risk >= threshold (default INTRUSIVE)
    |- NucleiTool.run   -> argv list, no shell, -jsonl, -rate-limit <max_rps>
    |- parse JSONL      -> structured findings; drop and flag anything off the approved target
-   |- sanitize         -> wrapped for the planner (RC-12)
+   |- sanitize         -> wrapped for the planner
    `- audit record     -> status, risk, output sha256, raw sha256
 ```
 
@@ -62,11 +62,11 @@ Five, none of which can carry a host, URL or path:
 | `port` | a strict integer, 1-65535 (default: none - nuclei probes 80/443 against the bare target) |
 | `scheme` | `http` or `https` (default: `https` if `port` is given and `scheme` is not; otherwise the bare target is passed unchanged) |
 
-### `port` / `scheme` (RC-14 follow-up)
+### `port` / `scheme`
 
 The gate approves a bare host, IP or CIDR (never a port), so by default nuclei
 is pointed at the bare target and only reaches 80/443. That misses anything on
-a non-default port - the lab's Juice Shop listens on 3000 (RC-19). `port` and
+a non-default port - the lab's Juice Shop listens on 3000. `port` and
 `scheme` close that gap without opening a host-smuggling path: `port` is a
 strict `int` (never a string, so it cannot carry `;` or a second host) and
 `scheme` is the fixed two-value enum `http`/`https` (never a URL). The wrapper
@@ -116,7 +116,7 @@ data about the client's systems to a third party. This wrapper always passes
 interactsh_server: oast.lab.example-redteam.net   # optional; omit to keep out-of-band off
 ```
 
-The engagement schema (RC-6) rejects public servers (`oast.pro`, `oast.live`,
+The engagement schema rejects public servers (`oast.pro`, `oast.live`,
 `oast.site`, `oast.online`, `oast.fun`, `oast.me`, `interact.sh`,
 `interactsh.com` and their subdomains), URLs, paths, wildcards and IP addresses;
 the wrapper checks again. The server is operator infrastructure and is not
@@ -126,7 +126,7 @@ treated as a scan target. Results report `out_of_band: "off"` or `"self-hosted"`
 `-disable-redirects` is always passed and there is no parameter to change it.
 As a second layer, after parsing, every finding's `host` and `matched-at` must
 be the approved target (an IP or hostname match, or an address inside the
-approved CIDR) - since RC-23, `target` here is the gate-pinned IP for an
+approved CIDR) - with resolve-once DNS, `target` here is the gate-pinned IP for an
 originally-hostname action, so this comparison is against that pinned IP, not
 the hostname. A subdomain or look-alike host does not count. Anything else is
 **removed from the findings** and the run returns status `off_target_activity`
@@ -134,14 +134,14 @@ with the host list. That is a tool error, so it is visible to the loop and in
 the audit log; the raw JSONL keeps everything as evidence. Note the request to
 that host has already happened by then, so this is a tripwire, not prevention.
 
-### 4. The ambient `~/.config/nuclei` config is never read (RC-35)
+### 4. The ambient `~/.config/nuclei` config is never read
 nuclei reads `~/.config/nuclei/config.yaml` (and `~/.config/nuclei/.nuclei-ignore`)
-by default. Confirmed live in the RC-19 lab (RUNBOOK Step 11): a stray or
+by default. Confirmed live in the lab (RUNBOOK Step 11): a stray or
 hostile one is a real problem for the controls above - a conflicting
 `follow-redirects: true` makes nuclei **fatal** on every scan (fail-closed only
 by accident), while a non-conflicting setting (an injected `header:`, nothing
 in `build_argv` conflicts with it) would silently take effect, and a hostile
-`.nuclei-ignore` could silently drop templates (the RC-26 coverage blind spot).
+`.nuclei-ignore` could silently drop templates (a template-coverage blind spot).
 
 Two independent layers now close this:
 
@@ -171,7 +171,7 @@ disk - nuclei fatals on a missing `-config` file. That is intentional
 hand-built argv must pass `config_path=` pointing at a real file, as `run`
 always does.
 
-### 5. Active recon is read-oriented: no HTTP write methods, ever (RC-36)
+### 5. Active recon is read-oriented: no HTTP write methods, ever
 The default active-recon pass sends `GET` and **read-only `POST`** only -
 never `PUT`, `DELETE`, `PATCH` or `PURGE`. Against the pinned v10.5.1 set
 (14,104 templates), 52 templates survive `-exclude-tags` and send a non-GET
@@ -217,37 +217,37 @@ now structural:
 - **Drift guarantee**: `tests/test_nuclei_method_audit.py` (CI, default suite)
   proves the audit catches a selectable write-method template in a synthetic
   tree and passes a clean one - so it is not vacuous.
-  `tests/integration/test_lab_rc36.py` (lab-gated) runs the same audit
+  `tests/integration/test_lab_nuclei_write_methods.py` (lab-gated) runs the same audit
   against the real pinned set with the bundled list and fails if any
   write-method template is uncovered - the check that breaks the day a
   re-pin introduces one without regenerating the list.
 
-## Carried over from RC-13
+## Carried over from the nmap wrapper
 
 | Property | In nuclei |
 |---|---|
 | argv, never a shell | `subprocess.run(argv, shell=False, stdin=DEVNULL, timeout=...)`; the target is the value after `-u`; targets that are URLs, contain `-` first, whitespace, metacharacters, commas or octet ranges are refused before nuclei runs |
 | Rate propagation | `-rate-limit <max_rps>` always, from `intensity.max_rps`; `-c` is `min(max_rps, 10)` (at least 1) and `-bs 1` |
-| Risk from the selection | see the tag table; the toolbox uses `risk_for`, so an intrusive selection trips RC-8 approval |
+| Risk from the selection | see the tag table; the toolbox uses `risk_for`, so an intrusive selection trips operator approval |
 | Secret redaction | done by the toolbox for every audit record, approval request and loop record, including refused actions |
 | Errors do not crash the loop | `run` never raises; failures return a structured non-ok result |
 
 Statuses: `invalid_input`, `nuclei_not_found`, `templates_not_found`, `timeout`
 (partial output kept), `exec_failed`, `nuclei_failed` (non-zero exit),
 `malformed_output` (only non-JSON lines), `output_too_large` (over 5 MB),
-`off_target_activity`, `method_exclusions_unavailable` (RC-36: the write-method
+`off_target_activity`, `method_exclusions_unavailable` (the write-method
 exclusion list could not be loaded - fail-closed), `wrapper_error`. No findings
 with exit 0 is a normal `ok`
 result with an empty list, unlike nmap where a down host is an error.
 
-## Resolve-once (RC-23)
+## Resolve-once
 
 nuclei has no `-n`-style flag to turn off its own DNS the way nmap does, so
 instead the toolbox never gives it a hostname to resolve in the first place:
 `target` is always a literal address - either the original target if it was
 already an IP/CIDR, or the IP the gate resolved and pinned once for the whole
 engagement, if it was a hostname (see
-[gate-rate-and-window.md](gate-rate-and-window.md#resolve-once-rc-23)). `-u`
+[gate-rate-and-window.md](gate-rate-and-window.md#resolve-once)). `-u`
 is therefore always built from a literal address, so nuclei makes no
 request-time lookup.
 
@@ -269,7 +269,7 @@ Templates are never downloaded or updated by the tool: `-disable-update-check`
 is always passed and no update flags exist. The operator supplies a template
 directory (the guard refuses with a clear error if it does not exist) and an
 optional label `templates_pin` that is recorded in every result's findings, so
-two runs are comparable (RC-20). Updating the community templates remains
+two runs are comparable. Updating the community templates remains
 possible, but as a separate operator step between engagements, not mid-run.
 
 ## Output
@@ -292,7 +292,7 @@ sees, after sanitization):
 execution audit record carries `raw_sha256`. Request and response bodies are not
 requested from nuclei and are not copied into the findings.
 
-### Template-coverage instrumentation (RC-26)
+### Template-coverage instrumentation
 
 `summary.templates_loaded` is nuclei's own count of how many templates it
 actually loaded for the scan, captured from `-stats -stats-json -si 1`
@@ -343,7 +343,7 @@ uv run --extra dev pytest tests/test_nuclei_tool.py
 ## Known limits
 
 - **The default tag selection does not cover every template its tags imply**
-  (RC-26, investigated live in the lab against the pinned v10.5.1 set).
+  (investigated live in the lab against the pinned v10.5.1 set).
   `http-missing-security-headers` and `cors-misconfig` - both legitimately
   `misconfig`/`exposure` checks - are excluded from the default run because
   they are ALSO tagged `vuln` upstream, and this wrapper's `-exclude-tags`
@@ -361,19 +361,19 @@ uv run --extra dev pytest tests/test_nuclei_tool.py
   all. See `lab/PLANTED_VULNS.md` correction C-2 for the full investigation.
 - **`summary.templates_loaded` can legitimately be `None`** for a very short
   scan if nuclei's `-stats-json` never ticks before the scan ends and the
-  plain-text fallback line also wasn't printed (see RC-26 above) - treat a
+  plain-text fallback line also wasn't printed (see Template-coverage instrumentation above) - treat a
   `coverage_warning` as "look closer", not necessarily as "nothing ran."
 - **`tests/fixtures/nuclei_findings.jsonl` is hand-written** in nuclei v3
   format, not captured from a live run. Real nuclei v3.11.1 output from the
-  RC-19 lab is in `lab/captures/nuclei_*.jsonl` (`lab/RUNBOOK.md` Step 8), and
+  lab is in `lab/captures/nuclei_*.jsonl` (`lab/RUNBOOK.md` Step 8), and
   Step 9 checks the parser against it.
 - **Flags were verified against the pinned binary** (nuclei v3.11.1) in the
-  RC-19 lab: `lab/RUNBOOK.md` Step 7 prints the argv the wrapper builds and
+  lab: `lab/RUNBOOK.md` Step 7 prints the argv the wrapper builds and
   cross-checks each flag against `nuclei -h`, Step 8 runs them in real scans,
   and Step 11 confirmed that redirects stay off and that a hostile ambient
-  config is ignored (RC-35). Step 11's out-of-band sub-check is still
-  INCONCLUSIVE (RC-38: no local interactsh server that nuclei can register
-  with), so `-no-interactsh` is shown to be accepted but a blocked callback is
+  config is ignored. Step 11's out-of-band sub-check is still
+  INCONCLUSIVE (the lab has no local interactsh server that nuclei can
+  register with yet), so `-no-interactsh` is shown to be accepted but a blocked callback is
   not yet demonstrated. The lab has no egress, so no public interactsh server
   can be reached from it. Re-run Steps 7, 8 and 11 after any change to the
   nuclei pin.

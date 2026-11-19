@@ -1,17 +1,17 @@
-# Planted vulnerabilities: the RC-20 benchmark baseline
+# Planted vulnerabilities: the lab repeatability baseline
 
 What a correct OP-06D run against the lab should (and should not) find.
 
-> **Naming note (RC-37):** everything under `lab/captures/` was recorded under the project's previous name, before the RC-37 rename to OP-06D, and may contain that name; it is frozen and intentionally not updated.
+> **Naming note:** everything under `lab/captures/` was recorded under the project's previous name, before the rename to OP-06D, and may contain that name; it is frozen and intentionally not updated.
 
-> **Prose edit (2026-11-18, RC-66):** the project name in this file's prose was updated to OP-06D and a reference to an unpublished file was removed. No table, no text in Sections 5 and 6 and no baseline value changed.
+> **Prose edits (2026-11-18):** the project name in this file's prose was updated to OP-06D, a reference to an unpublished file was removed, and ticket references were removed from the title and these notes. No table, no text in Sections 5 and 6 and no baseline value changed.
 
 > **Status: FROZEN (2026-11-05).** This list was originally written from the
 > public documentation of OWASP Juice Shop (20.3.0) and DVWA, **before** any run.
 > It has now been reconciled against the **first real capture set** (RUNBOOK
 > steps 8–13, operator thomas@mastodonsec.com, nmap 7.93 / nuclei v3.11.1 /
 > templates v10.5.1). The `Observed` column and Section 5/6 record what the tools
-> actually reported. This is the RC-20 repeatability baseline: a re-run with the
+> actually reported. This is the lab repeatability baseline: a re-run with the
 > same pins must reproduce the same open ports and the same set of matched
 > template ids (timestamps and ordering aside).
 

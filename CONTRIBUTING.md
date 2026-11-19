@@ -26,7 +26,7 @@ Signed-off-by: Your Name <you@example.com>
 Git does this for you with the `-s` flag:
 
 ```
-git commit -s -m "RC-XX: short description"
+git commit -s -m "Add a short imperative subject"
 ```
 
 The full DCO text is reproduced in `DCO.txt`. A sign-off certifies that you agree
@@ -45,11 +45,6 @@ the language):
 
 The `SPDX-License-Identifier` line is machine-readable and is the preferred way to
 mark each file; the full license lives once in `LICENSE`.
-
-## Linking the board
-
-Reference the RC Jira issue key in branch names and commit subjects
-(`RC-23: ...`) so work links back to the board.
 
 ## Before you run anything
 

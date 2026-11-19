@@ -1,4 +1,4 @@
-# Gate: rate cap and time window (RC-10)
+# Gate: rate cap and time window
 
 Modules: [`src/op06d/gate.py`](../src/op06d/gate.py) ·
 [`src/op06d/limits.py`](../src/op06d/limits.py) ·
@@ -6,22 +6,22 @@ Tests: [`tests/test_gate.py`](../tests/test_gate.py)
 
 ## Purpose
 
-RC-9 enforces **where** the tool may act. RC-10 adds **when** (the authorized
-window) and **how fast** (`max_rps`). Both limits come from the validated RC-6
-engagement file; nothing is hard-coded. The model is asked; the gate decides.
+The scope check ([scope-allowlist.md](scope-allowlist.md)) enforces **where** the tool
+may act. The gate adds **when** (the authorized window) and **how fast** (`max_rps`).
+Both limits come from the validated engagement file; nothing is hard-coded. The model is asked; the gate decides.
 
-## Scope of RC-10
+## Scope of the window and rate checks
 
 **In scope:** window check, rate limiter, the `Gate` that combines window,
 scope and rate into one decision with one audit entry, tests.
 
 **Not here:**
 
-| Concern | Ticket |
+| Concern | Where |
 |---|---|
-| Making every tool call go through `Gate.check` (no bypass) | RC-7 |
-| Passing `max_rps` to the tools themselves (e.g. nmap `--max-rate`) | RC-13, RC-14 |
-| Output sanitization | RC-12 |
+| Making every tool call go through `Gate.check` (no bypass) | `GatedToolbox`, [orchestrator.md](orchestrator.md) |
+| Passing `max_rps` to the tools themselves (e.g. nmap `--max-rate`) | the tool wrappers, [nmap-tool.md](nmap-tool.md), [nuclei-tool.md](nuclei-tool.md) |
+| Output sanitization | [output-sanitization.md](output-sanitization.md) |
 
 ## Architecture
 
@@ -30,12 +30,12 @@ Gate.check(target, audit=sink)
    |
    |- engagement window/rate usable?   no -> DENY (stage "limits")
    |- window: now in [start, end)?     no -> DENY (stage "window")   no DNS, no rate used
-   |- scope:  check_scope (RC-9)       no -> DENY (stage "scope")    no rate used
+   |- scope:  check_scope              no -> DENY (stage "scope")    no rate used
    |- rate:   RateLimiter.try_acquire  no -> DENY (stage "rate")     retry_after set
    v
 GateDecision(target, allowed, reason, stage, resolved_ips, retry_after)
    |
-   `- exactly one audit(target, allowed, reason) call (RC-11 sink); failure -> DENY (stage "audit")
+   `- exactly one audit(target, allowed, reason) call (audit sink); failure -> DENY (stage "audit")
 ```
 
 - **Order:** cheapest and most fundamental first, side effects last. Outside the
@@ -49,7 +49,7 @@ GateDecision(target, allowed, reason, stage, resolved_ips, retry_after)
   the sink now records window and rate decisions too.
 - `Gate.check` never raises. Any unexpected error is a deny.
 
-## Resolve-once (RC-23)
+## Resolve-once
 
 **The gap this closes.** The gate used to resolve a hostname to decide scope,
 and the tool (nmap/nuclei) re-resolved the same hostname independently when it
@@ -66,7 +66,7 @@ again. `nmap_tool.py`/`nuclei_tool.py` never resolve anything themselves -
 `resolve.py` is the only place in OP-06D DNS happens.
 
 `GateDecision.resolved_ips` carries the pinned address(es); `GatedToolbox`
-(RC-7/RC-13/RC-14) hands the tool that address to scan, not the hostname -
+hands the tool that address to scan, not the hostname -
 see [`tools.py`](../src/op06d/tools.py), `__execute`. A multi-address
 hostname where *any* address is out of scope denies the whole action (no
 "scan the in-scope subset" fallback); a resolution failure denies, fail-closed,
@@ -99,8 +99,8 @@ The authorized window is the half-open interval **[start, end)**.
 Exclusive end is the conservative side: the instant the booking ends, the tool
 is out of bounds.
 
-Times are compared as timezone-aware instants. RC-6 already normalized the file's
-window to UTC, and the clock may use any offset. A naive clock value, a clock
+Times are compared as timezone-aware instants. The engagement loader already normalized the
+file's window to UTC, and the clock may use any offset. A naive clock value, a clock
 that raises, or a non-datetime result denies.
 
 ## Rate semantics
@@ -125,7 +125,7 @@ If the engagement's window or `max_rps` is missing or malformed, **every**
 reason is audited. Malformed means: window not a pair, naive or non-datetime
 times, end not after start, `max_rps` not a positive integer (booleans, floats,
 strings, `None`, 0 and negatives are rejected), or an object that is not an
-`Engagement`. RC-6 already rejects these at load; the gate re-checks so a
+`Engagement`. The engagement loader already rejects these; the gate re-checks so a
 bypassed or hand-built model cannot open it.
 
 ## Usage
@@ -165,13 +165,13 @@ uv run --extra dev pytest tests/test_gate.py
 
 - **One action = one request.** The gate counts each approved action once. A
   tool such as nmap sends many packets per action, so tools must also be given
-  `max_rps` (RC-13, RC-14). Otherwise the cap limits how often scans start, not
+  `max_rps` (the nmap and nuclei wrappers do). Otherwise the cap limits how often scans start, not
   packets per second. A `cost` parameter could be added if needed.
 - Gate state is in memory: restarting the process resets the rate history.
 - The window is checked at decision time. A long-running action started just
   before `end` is not cancelled when the window ends; it is bounded by its
   tool's own timeouts (nmap: the sized `--host-timeout` and the subprocess
-  timeout, see [nmap-tool.md](nmap-tool.md#host-timeouts-and-timeout-sizing-rc-43);
+  timeout, see [nmap-tool.md](nmap-tool.md#host-timeouts-and-timeout-sizing);
   nuclei: `run_timeout_s`, default 900 s). The orchestrator checks the window
   again before the next LLM call and action (see
   [orchestrator.md](orchestrator.md#known-limits)).

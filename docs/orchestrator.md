@@ -1,4 +1,4 @@
-# Orchestrator loop (RC-7) and approval hook (RC-8)
+# Orchestrator loop and approval hook
 
 Modules: [`src/op06d/orchestrator.py`](../src/op06d/orchestrator.py) ·
 [`src/op06d/tools.py`](../src/op06d/tools.py) ·
@@ -9,8 +9,8 @@ Tests: [`tests/test_orchestrator.py`](../tests/test_orchestrator.py)
 
 The loop that drives an LLM through recon: ask for the next action, route it
 through the gate, execute approved actions, sanitize the result, feed it back,
-repeat. It ties together the gate (RC-9/RC-10), the audit log (RC-11) and output
-sanitization (RC-12). The model proposes; the gate disposes.
+repeat. It ties together the gate (scope, window, rate), the audit log and output
+sanitization. The model proposes; the gate disposes.
 
 ```
 build context -> LLM proposes action -> GatedToolbox.execute -> append SANITIZED result -> repeat
@@ -23,7 +23,7 @@ build context -> LLM proposes action -> GatedToolbox.execute -> append SANITIZED
                                            `- record_execution (audit)
 ```
 
-## Scope of RC-7 / RC-8
+## Scope of the loop and the approval hook
 
 **In scope:** the loop, the gated toolbox, the system prompt, planner-reply
 parsing, termination rules, the approval *hook* and its risk threshold, audit
@@ -31,13 +31,13 @@ traceability, tests with a stub LLM.
 
 **Not here:**
 
-| Concern | Ticket |
+| Concern | Where |
 |---|---|
-| The interactive CLI approval prompt (implements `ApprovalHook`) | RC-8 |
-| Real nmap / nuclei tool wrappers | RC-13, RC-14 |
-| The production LLM adapters (hosted and local) | RC-40 (see [llm-planner.md](llm-planner.md)) |
-| Normalizing raw output into findings; evidence store | RC-15, RC-16 |
-| Live-model injection testing (opt-in `tests/test_live_model_gate.py`) | RC-21, RC-47 (see [Known limits](#known-limits)) |
+| The interactive CLI approval prompt (implements `ApprovalHook`) | `op06d.approval` |
+| Real nmap / nuclei tool wrappers | [nmap-tool.md](nmap-tool.md), [nuclei-tool.md](nuclei-tool.md) |
+| The production LLM adapters (hosted and local) | `op06d.llm`, [llm-planner.md](llm-planner.md) |
+| Normalizing raw output into findings; evidence store | `op06d.normalize`, `op06d.evidence` |
+| Live-model injection testing (opt-in `tests/test_live_model_gate.py`) | see [Known limits](#known-limits) |
 
 ## Design properties
 
@@ -69,8 +69,8 @@ Before the gate, `execute` also refuses (and audits):
 
 `execute` returns both `raw_output` (evidence only) and `sanitized`. The loop
 appends only `sanitized.text` to the context. Raw output stays on the `Step`
-records (`RunResult.evidence`) for RC-15/16. Tool errors are sanitized too.
-Injection flags are written to the audit log by the sanitizer (RC-12).
+records (`RunResult.evidence`) for normalization and the evidence store. Tool errors are sanitized too.
+Injection flags are written to the audit log by the sanitizer.
 
 ### 3. System-prompt data contract
 
@@ -101,19 +101,19 @@ observations are replaced by a one-line elision; the opening message is kept.
 | Termination | When |
 |---|---|
 | `objective_met` | planner replies `{"type": "done", ...}` |
-| `window_expired` | now is at or after the window end (see RC-10: `[start, end)`) |
+| `window_expired` | now is at or after the window end (see [gate-rate-and-window.md](gate-rate-and-window.md): `[start, end)`) |
 | `window_not_open` | now is before the window start |
 | `operator_stop` | the injected `stop()` returns true (or raises) |
 | `max_iterations` | cap reached |
 | `planner_failure` | `max_planner_failures` (default 3) consecutive LLM errors or invalid replies |
 | `gate_unusable` | window/rate config unusable or clock failure |
 | `audit_failure` | an audit record could not be written |
-| `max_actions` | RC-40: `RunLimits.max_actions` tool invocations reached |
-| `max_wall_clock` | RC-40: `RunLimits.max_wall_clock_seconds` elapsed |
-| `max_tokens` | RC-40: the next call could not fit, or reported usage crossed `RunLimits.max_tokens`; each request's output is capped to the remaining budget |
-| `max_cost` | RC-40: same, for `RunLimits.max_cost_usd` |
-| `model_failure` | RC-40: the adapter raised `LLMError` (non-retryable API error, retries exhausted) |
-| `model_refused` | RC-40: the adapter raised `LLMRefused` (the model declined the request) |
+| `max_actions` | `RunLimits.max_actions` tool invocations reached |
+| `max_wall_clock` | `RunLimits.max_wall_clock_seconds` elapsed |
+| `max_tokens` | the next call could not fit, or reported usage crossed `RunLimits.max_tokens`; each request's output is capped to the remaining budget |
+| `max_cost` | same, for `RunLimits.max_cost_usd` |
+| `model_failure` | the adapter raised `LLMError` (non-retryable API error, retries exhausted) |
+| `model_refused` | the adapter raised `LLMRefused` (the model declined the request) |
 
 ### 6. Enforcement stays outside the model
 
@@ -121,7 +121,7 @@ The model only produces a JSON proposal. It is parsed strictly (anything else is
 an invalid reply and counts toward `planner_failure`). Nothing in a reply or in
 tool output can change the engagement, the gate, the window or the rate.
 
-## Approval hook (RC-8) and risk threshold
+## Approval hook and risk threshold
 
 ```python
 class ApprovalHook(Protocol):
@@ -158,7 +158,7 @@ Rules, all tested:
 
 ## Audit trail
 
-One entry type per step, all on the engagement's RC-11 log, all carrying
+One entry type per step, all on the engagement's audit log, all carrying
 `parameters.iteration` so a run can be grouped and reconstructed:
 
 | Event | Written by |
@@ -167,7 +167,7 @@ One entry type per step, all on the engagement's RC-11 log, all carrying
 | `iteration` | the loop: the planner's proposal (tool, target, params, truncated reply), invalid replies, repeats, LLM failures, "done" |
 | `gate_decision` | the gate: allow / deny with stage reason (window, scope, rate, ...) |
 | `approval` | the toolbox: approved / declined |
-| `injection_flag` | the sanitizer (RC-12) |
+| `injection_flag` | the sanitizer |
 | `action_executed` | the toolbox: status, output length and the **sha256 of the raw output** |
 | `loop_terminated` | the loop: the termination reason |
 
@@ -188,14 +188,14 @@ log = AuditLog.for_engagement(eng, "logs/")
 gate = Gate(eng, audit_pin=log.record_dns_pin)     # one per engagement; holds rate state + DNS pins
 toolbox = GatedToolbox(eng, gate, log, default_tools(eng),   # the only place tools are built
 
-                       approver=my_cli_approver,   # RC-8; omit => risky actions are declined
+                       approver=my_cli_approver,   # omit => risky actions are declined
                        approval_threshold=Risk.INTRUSIVE)
 
 orch = Orchestrator(eng, my_llm, toolbox, log, max_iterations=25,
                     stop=operator_stop_event.is_set)
 result = orch.run()
 result.termination   # Termination.OBJECTIVE_MET, ...
-result.evidence      # executed actions with RAW output, for RC-15/16
+result.evidence      # executed actions with RAW output, for the evidence store
 ```
 
 An LLM is anything with `complete(system: str, messages: list[dict]) -> str`
@@ -217,7 +217,7 @@ no real waiting. Run:
 uv run --extra dev pytest tests/test_orchestrator.py
 ```
 
-## Requirements for tool wrappers (RC-13, RC-14)
+## Requirements for tool wrappers
 
 - Build the command as an argv list; never use a shell.
 - Declare only `allowed_parameters` that cannot carry a target, and validate
@@ -243,8 +243,8 @@ uv run --extra dev pytest tests/test_orchestrator.py
   (`tests/test_adversarial_gate.py`, `tests/test_injection_payloads.py`,
   `tests/test_chokepoint_boundary.py`) run in every default `pytest` run.
   Live-model validation is the opt-in
-  `tests/test_live_model_gate.py` (RC-47): it drives the production adapter
-  from `op06d.llm` through the RC-21 injection-payload corpus with the tools
+  `tests/test_live_model_gate.py`: it drives the production adapter
+  from `op06d.llm` through the injection-payload corpus with the tools
   mocked, and asserts that the gate blocks every out-of-scope action the model
   proposes. It is skipped unless `OP06D_LIVE_MODEL=1`; `OP06D_LIVE_PROVIDER`
   selects `anthropic` (the default; needs `ANTHROPIC_API_KEY`) or `local`
@@ -252,4 +252,4 @@ uv run --extra dev pytest tests/test_orchestrator.py
   [output-sanitization.md](output-sanitization.md#known-limits) for the
   command, and `lab/RUNBOOK.md` ("Automated acceptance and the live-model
   gate") for running it through the lab model relay.
-- Production LLM adapters live in `op06d.llm` (RC-40); see [llm-planner.md](llm-planner.md).
+- Production LLM adapters live in `op06d.llm`; see [llm-planner.md](llm-planner.md).

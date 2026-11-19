@@ -1,4 +1,4 @@
-# Scope allowlist enforcement (RC-9)
+# Scope allowlist enforcement
 
 Module: [`src/op06d/scope.py`](../src/op06d/scope.py) ·
 Audit log: [`src/op06d/audit.py`](../src/op06d/audit.py) ·
@@ -7,7 +7,7 @@ Tests: [`tests/test_scope.py`](../tests/test_scope.py)
 ## Purpose
 
 Answers one question: **may we touch this target?** The LLM is asked; this code
-decides. It reads the validated scope from the RC-6 engagement model
+decides. It reads the validated scope from the engagement model
 ([engagement-parser.md](engagement-parser.md)) and nothing the model or a tool
 outputs can change the answer.
 
@@ -20,18 +20,18 @@ Design rules (non-negotiable):
 | Default deny | Malformed target, unexpected type, DNS failure, bad resolver answer, audit failure: deny |
 | Host and IP | A hostname is checked against host scope and every address it resolves to is checked against IP scope |
 
-## Scope of RC-9
+## Scope of this module
 
 **In scope:** the decision function, hostname resolution step, audit call, tests.
 
 **Not here:**
 
-| Concern | Ticket |
+| Concern | Where |
 |---|---|
-| Making every tool call pass through this function (no bypass path) | RC-7 |
-| Time window and rate cap | RC-10 |
-| The real audit log (replaces the stub) | RC-11 |
-| Sanitizing tool output | RC-12 |
+| Making every tool call pass through this function (no bypass path) | `GatedToolbox`, [orchestrator.md](orchestrator.md) |
+| Time window and rate cap | [gate-rate-and-window.md](gate-rate-and-window.md) |
+| The audit log | `op06d.audit` |
+| Sanitizing tool output | [output-sanitization.md](output-sanitization.md) |
 
 This function protects the tool only if it is the **only door**. A scope check
 that some code paths skip is worse than none.
@@ -39,7 +39,7 @@ that some code paths skip is worse than none.
 ## Architecture
 
 ```
-target + Scope (RC-6)
+target + Scope (engagement)
         |
         v
 evaluate_scope()            pure, never raises, no I/O
@@ -122,7 +122,7 @@ Run the tests:
 uv run --extra dev pytest tests/test_scope.py
 ```
 
-## Audit sink (RC-11)
+## Audit sink
 
 The scope code depends only on `AuditSink = Callable[[str, bool, str], None]`
 and takes it as the **required** keyword argument `audit=` (there is no
@@ -140,13 +140,13 @@ recorded must not proceed.
 ## Known limits
 
 - ~~DNS answers can change between the check and the tool's own lookup
-  (rebinding, round-robin).~~ **Fixed by RC-23.** `check_scope`/`evaluate_scope`
+  (rebinding, round-robin).~~ **Fixed by resolve-once DNS pinning.** `check_scope`/`evaluate_scope`
   here are unchanged (still pure, still take `resolved_ips` as given), but
   the one production caller, `Gate`, no longer calls a fresh resolver per
   check - it resolves each hostname once per engagement and reuses that pin
   for every later check, and `GatedToolbox` scans that pinned address, never
   the hostname. See [`resolve.py`](../src/op06d/resolve.py) and
-  [gate-rate-and-window.md](gate-rate-and-window.md#resolve-once-rc-23).
+  [gate-rate-and-window.md](gate-rate-and-window.md#resolve-once).
 - `system_resolver` ([`resolve.py`](../src/op06d/resolve.py), re-exported
   here for compatibility) uses the OS resolver with no timeout control.
 - Redirects, CNAME chains and URLs returned by tools are new targets and must
