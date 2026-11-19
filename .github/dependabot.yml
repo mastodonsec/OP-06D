@@ -7,16 +7,27 @@
 #   docker          the Dockerfile's base image digest (its FROM lines)
 #
 # The hash-pinned files under docker/ are generated from uv.lock and the
-# setuptools pin, so there is deliberately no pip entry for /docker. A uv.lock
-# bump fails CI's "requirements" job until they are regenerated with
+# setuptools pin, so the uv entry is told to skip docker/ (exclude-paths) and
+# there is no pip entry. Every uv bump therefore fails CI's "requirements" job
+# the same predictable way; the fix is always to run
 #   uv run python scripts/update_docker_requirements.py
-# and the result is committed to the Dependabot branch.
+# on the Dependabot branch and commit the result with sign-off.
+#
+# pydantic pins pydantic-core exactly, so the two are grouped into one pull
+# request, for version and security updates alike.
 version: 2
 updates:
   - package-ecosystem: uv
     directory: /
+    exclude-paths: ["docker/**"]
     schedule:
       interval: weekly
+    groups:
+      pydantic:
+        patterns: ["pydantic", "pydantic-core"]
+      pydantic-security:
+        applies-to: security-updates
+        patterns: ["pydantic", "pydantic-core"]
 
   - package-ecosystem: github-actions
     directory: /

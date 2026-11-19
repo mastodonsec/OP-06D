@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Static checks of the GitHub Actions workflows: pinned actions, least
-privilege, and an auto-close workflow that never touches pull-request code."""
+"""Static checks of the GitHub Actions workflows (pinned actions, least
+privilege, and an auto-close workflow that never touches pull-request code)
+and of the Dependabot config (uv skips the generated docker/ files and groups
+pydantic with pydantic-core)."""
 
 from __future__ import annotations
 
@@ -12,6 +14,7 @@ import yaml
 
 WORKFLOWS = Path(__file__).parent.parent / ".github" / "workflows"
 FILES = sorted(WORKFLOWS.glob("*.yml"))
+DEPENDABOT = Path(__file__).parent.parent / ".github" / "dependabot.yml"
 
 
 def _load(name: str) -> dict:
@@ -87,3 +90,32 @@ def test_auto_close_condition_spares_everyone_with_access_and_bots():
     script = _load("close-external-prs.yml")["jobs"]["close"]["steps"][0]["with"]["script"]
     assert "not accepting external pull requests" in script and "AGPL-3.0-or-later" in script
     assert 'state: "closed"' in script
+
+
+def _dependabot_entries() -> dict[str, dict]:
+    data = yaml.safe_load(DEPENDABOT.read_text(encoding="utf-8"))
+    entries = data["updates"]
+    by_ecosystem = {e["package-ecosystem"]: e for e in entries}
+    assert len(by_ecosystem) == len(entries)
+    return by_ecosystem
+
+
+def test_dependabot_covers_exactly_uv_actions_and_docker():
+    entries = _dependabot_entries()
+    assert set(entries) == {"uv", "github-actions", "docker"}
+    assert "pip" not in entries
+
+
+def test_dependabot_uv_skips_the_generated_docker_files():
+    entries = _dependabot_entries()
+    assert entries["uv"]["exclude-paths"] == ["docker/**"]
+    for name in ("github-actions", "docker"):
+        assert "exclude-paths" not in entries[name], name
+
+
+def test_dependabot_groups_pydantic_with_pydantic_core():
+    groups = _dependabot_entries()["uv"]["groups"].values()
+    version = [g for g in groups if g.get("applies-to", "version-updates") == "version-updates"]
+    security = [g for g in groups if g.get("applies-to") == "security-updates"]
+    for kind in (version, security):
+        assert any({"pydantic", "pydantic-core"} <= set(g["patterns"]) for g in kind)

@@ -46,13 +46,15 @@ they disagree with `uv.lock`. setuptools (the wheel's build backend) is not in
 `uv.lock`; bump it with `--setuptools <version>`.
 
 Dependabot (`.github/dependabot.yml`) opens pull requests for `uv.lock`, the
-workflows' pinned actions and the base image digest. On a `uv.lock` pull
-request, run the command above on its branch and push the result; the
-`requirements` job then passes. On a base image pull request, also set
-`ARG BASE_IMAGE` in the `Dockerfile` to the new `FROM` reference
-(`tests/test_container_image.py` fails until it matches). A Dependabot
-security pull request against a file under `docker/` is closed in favour of a
-regenerated bump.
+workflows' pinned actions and the base image digest. Its uv entry excludes
+`docker/`, so a uv pull request only touches `pyproject.toml` and `uv.lock`,
+and every one of them fails the `requirements` job until you run the command
+above on its branch, commit the result with `git commit -s` and push; the job
+then passes. pydantic and pydantic-core arrive together in one grouped pull
+request, because pydantic pins pydantic-core exactly. Security updates come
+the same way and take the same regenerate step. On a base image pull request,
+also set `ARG BASE_IMAGE` in the `Dockerfile` to the new `FROM` reference
+(`tests/test_container_image.py` fails until it matches).
 
 Set the new version in `pyproject.toml` (`[project] version`). The release
 workflow refuses a tag that does not match it.
