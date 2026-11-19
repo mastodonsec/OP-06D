@@ -1,22 +1,22 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""RC-16: the evidence store - a queryable index for one or more runs.
+"""The evidence store - a queryable index for one or more runs.
 
-**Role (read this first).** This is NOT a second source of truth. The RC-11
+**Role (read this first).** This is NOT a second source of truth. The
 audit log (``op06d.audit.AuditLog``: append-only, hash-chained JSONL)
 remains the tamper-evident liability record. This store only *references*
 that log - ``runs.audit_log_path`` / ``runs.audit_log_sha256`` - and is
-itself rebuildable from the audit log plus the RC-15 normalized findings. Its
+itself rebuildable from the audit log plus the normalized findings. Its
 job is reporting-shaped queries: list a run's actions, filter findings by
 severity/category, reconstruct a whole run as one nested object for the
-report generator (RC-17/18). Nothing here ever supersedes what the audit log
+report generator. Nothing here ever supersedes what the audit log
 says happened.
 
-Inputs, already built by earlier tickets:
+Inputs, built elsewhere:
 
-* ``op06d.tools.ExecutionResult`` (RC-7/8) - one action.
-* ``op06d.normalize.NormalizedResult`` / ``Finding`` (RC-15) - the
+* ``op06d.tools.ExecutionResult`` - one action.
+* ``op06d.normalize.NormalizedResult`` / ``Finding`` - the
   findings + issues produced from one action's output.
-* ``op06d.engagement.Engagement`` (RC-6) - the run's authorization, scope
+* ``op06d.engagement.Engagement`` - the run's authorization, scope
   and intensity.
 
 Storage: SQLite (stdlib ``sqlite3``), WAL journal mode, ``foreign_keys=ON``,
@@ -403,8 +403,8 @@ class EvidenceStore:
         return action_id
 
     def record_findings(self, run_id: str, action_id: str, normalized: NormalizedResult) -> None:
-        """Upserts findings on ``(run_id, finding_id)`` (RC-15 ids make this
-        safe - re-recording the same logical finding never duplicates it),
+        """Upserts findings on ``(run_id, finding_id)`` (deterministic finding ids make
+        this safe - re-recording the same logical finding never duplicates it),
         and appends the issues as-is."""
         with self._write() as conn:
             for f in normalized.findings:
@@ -514,7 +514,7 @@ class EvidenceStore:
 
     def reconstruct_run(self, run_id: str) -> ReconstructedRun:
         """The whole run as one nested object: run + every action, finding
-        and issue it produced - what the report generator (RC-17/18) reads."""
+        and issue it produced - what the report generator reads."""
         run = self.get_run(run_id)
         if run is None:
             raise EvidenceError(f"no such run {run_id!r}")

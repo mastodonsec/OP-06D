@@ -1,9 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""RC-35: nuclei: neutralize ambient config + control HOME
-RC-24: Lab runbook polish + validation harness
-
-Replay of RUNBOOK Step 11 (hostile ambient ``~/.config/nuclei/config.yaml``),
-run by tests/integration/test_lab_rc35.py and lab/validation_harness.py. The
+"""Replay of RUNBOOK Step 11 (hostile ambient ``~/.config/nuclei/config.yaml``),
+run by tests/integration/test_lab_nuclei_ambient_config.py and lab/validation_harness.py. The
 pass/fail judgement on its output is lab/lab_asserts.py's
 ``ambient_config_failures``.
 
@@ -56,8 +53,8 @@ HOSTILE_CONFIG = (
 # The probe template (no template-level redirects - the redirect can only
 # come from the ambient config). Used by all three runs.
 PROBE_TEMPLATE = (
-    "id: rc35-probe\n"
-    "info:\n  name: rc35 probe\n  author: lab\n  severity: info\n  tags: tech\n"
+    "id: ambient-config-probe\n"
+    "info:\n  name: ambient config probe\n  author: lab\n  severity: info\n  tags: tech\n"
     "http:\n  - method: GET\n    path:\n      - \"{{BaseURL}}/\"\n"
     "    matchers:\n      - type: status\n        status:\n          - 302\n"
 )
@@ -65,8 +62,8 @@ PROBE_TEMPLATE = (
 # Control-only: asks for an interactsh URL so the control can show OAST contact
 # against the ambient config's loopback interactsh-server.
 OAST_TEMPLATE = (
-    "id: rc35-oast-probe\n"
-    "info:\n  name: rc35 oast probe\n  author: lab\n  severity: info\n  tags: tech\n"
+    "id: ambient-config-oast-probe\n"
+    "info:\n  name: ambient config oast probe\n  author: lab\n  severity: info\n  tags: tech\n"
     "http:\n  - method: GET\n    path:\n      - \"{{BaseURL}}/?u=http://{{interactsh-url}}\"\n"
     "    matchers:\n      - type: word\n        part: interactsh_protocol\n        words:\n          - dns\n          - http\n"
 )
@@ -143,7 +140,7 @@ def main() -> int:
         threading.Thread(target=_Server(("127.0.0.1", port), handler).serve_forever, daemon=True).start()
     time.sleep(0.5)
 
-    work = tempfile.mkdtemp(prefix="rc35-")
+    work = tempfile.mkdtemp(prefix="ambient-config-")
     probe_dir = os.path.join(work, "templates-probe")
     control_dir = os.path.join(work, "templates-control")
     for d, files in ((probe_dir, {"probe.yaml": PROBE_TEMPLATE}),

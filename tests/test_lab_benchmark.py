@@ -1,7 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""RC-46: Planner model benchmark: score candidate models on lab runs
-
-Default-suite tests for lab/benchmark.py and lab/benchmark_metrics.py. No
+"""Default-suite tests for lab/benchmark.py and lab/benchmark_metrics.py. No
 docker, no Ollama, no model: metrics are computed from audit logs and evidence
 stores written by ``run_engagement`` with a scripted model and a fake tool (or
 by ``AuditLog`` directly), and the harness runs against a stub launcher.
@@ -43,7 +41,7 @@ OUT_OF_SCOPE = "198.51.100.7"
 FAKE_KEY = "sk-ant-" + "api03-" + "B" * 48  # built in pieces: never a key-shaped literal in the tree
 DEFAULT_CONFIG = ROOT / "lab" / "benchmark.default.yaml"
 # Actions the --planner fixed baseline executes on the lab: nmap + nuclei on each of
-# the 4 in-scope targets (the RC-46 smoke run, default-20261111T235813Z).
+# the 4 in-scope targets (the first smoke run, default-20261111T235813Z).
 LAB_BASELINE_ACTIONS = 8
 
 
@@ -60,7 +58,7 @@ def _engagement(tmp_path: pathlib.Path) -> pathlib.Path:
     now = datetime.now(timezone.utc)
     path = tmp_path / "engagement.yaml"
     path.write_text(yaml.safe_dump({
-        "engagement": "rc46-test",
+        "engagement": "benchmark-test",
         "authorization": {
             "client": "Test Client", "signed_scope_ref": "SOW-1", "authorized_by": "ops@example.com",
             "window": [(now - timedelta(hours=1)).isoformat(), (now + timedelta(hours=2)).isoformat()],
@@ -128,7 +126,7 @@ def _fixed_run(tmp_path) -> bm.RunMetrics:
 def _synthetic_log(tmp_path, write) -> list:
     """An audit log written entry by entry, with a clock that advances 1.5 s per entry."""
     ticks = iter(datetime(2026, 11, 10, 12, 0, tzinfo=timezone.utc) + timedelta(seconds=1.5 * i) for i in range(1000))
-    log = AuditLog(tmp_path / "synthetic.audit.jsonl", "rc46-synthetic", clock=lambda: next(ticks))
+    log = AuditLog(tmp_path / "synthetic.audit.jsonl", "benchmark-synthetic", clock=lambda: next(ticks))
     write(log)
     return read_log(log.path)
 
@@ -170,7 +168,7 @@ def test_a_fixed_planner_run_has_no_model_turns_and_no_rate(tmp_path):
 
 def test_a_well_formed_proposal_the_tool_rejects_is_counted_apart_from_the_rate(tmp_path):
     # Schema-valid replies can still carry parameters the tool will not take (the
-    # RC-46 smoke run: nuclei with an empty severity list). The rate stays 1.0; the
+    # first smoke run: nuclei with an empty severity list). The rate stays 1.0; the
     # refusal shows up in tool_rejected, and the action never executes.
     m = _llm_run(tmp_path, [
         act(profile="service", bogus="x"),  # well formed, refused by the tool layer
@@ -291,7 +289,7 @@ def test_the_default_config_is_the_shortlist():
     assert hosted[0].model == DEFAULT_ANTHROPIC_MODEL and hosted[0].runs < min(c.runs for c in local)
     assert cfg.budget_max_tokens and cfg.budget_max_cost_usd
     assert cfg.engagements == {"local": "lab/engagement.yaml", "anthropic": "lab/engagement-llm-hosted.yaml"}
-    # RC-47's limits, except the action cap: the lab's --planner fixed baseline
+    # The relay acceptance limits, except the action cap: the lab's --planner fixed baseline
     # executes 8 actions, and a lower cap would make coverage measure the cap.
     assert set(cfg.limits) == set(relay.ACCEPTANCE_LIMITS)
     assert cfg.limits["max_actions"] >= LAB_BASELINE_ACTIONS + 2
@@ -467,7 +465,7 @@ def test_candidates_are_grouped_into_one_stack_per_provider_with_one_baseline(tm
 def test_results_are_written_as_json_csv_and_a_markdown_table(tmp_path):
     _, results_dir = _bench(tmp_path, StubLauncher(tmp_path), providers=["local"])
     data = json.loads((results_dir / "results.json").read_text(encoding="utf-8"))
-    assert data["ticket"] == bench.TICKET and data["finding_identity"] == bm.FINDING_IDENTITY
+    assert "ticket" not in data and data["finding_identity"] == bm.FINDING_IDENTITY
     small = data["summary"][0]
     assert small["candidate"] == "small" and small["n"] == 2 and small["failures"] == 0
     assert small["valid_action_rate"] == {"n": 2, "mean": 1.0, "stdev": 0.0, "min": 1.0, "max": 1.0}
@@ -803,13 +801,13 @@ def test_the_launcher_writes_each_run_to_its_own_capture_directory_and_passes_th
     launcher = bench.RelayLauncher(docker)
     out = launcher.run(bench.RunRequest("anthropic", "lab/engagement-llm-hosted.yaml", "id/hosted/run-01", "llm",
                                         model="claude-x", context_tokens=200_000))
-    assert out.run_dir == ROOT / "lab" / "captures" / "_rc46_benchmark" / "id" / "hosted" / "run-01" / "run"
+    assert out.run_dir == ROOT / "lab" / "captures" / "_benchmark" / "id" / "hosted" / "run-01" / "run"
     mkdir, gen, run = docker.calls
-    assert mkdir[-3:] == ["mkdir", "-p", "/captures/_rc46_benchmark/id/hosted/run-01"]
-    assert gen[-3:] == ["/captures/_rc46_benchmark/id/hosted/run-01/engagement.yaml", "--template",
+    assert mkdir[-3:] == ["mkdir", "-p", "/captures/_benchmark/id/hosted/run-01"]
+    assert gen[-3:] == ["/captures/_benchmark/id/hosted/run-01/engagement.yaml", "--template",
                         "/lab/engagement-llm-hosted.yaml"]
     assert run[run.index("exec"):run.index("scanner")] == ["exec", "-T", "-e", "ANTHROPIC_API_KEY"]
-    assert "/captures/_rc46_benchmark/id/hosted/run-01/run" in run
+    assert "/captures/_benchmark/id/hosted/run-01/run" in run
     docker.calls.clear()
     launcher.run(bench.RunRequest("anthropic", "lab/engagement-llm-hosted.yaml", "id/baseline-fixed", "fixed"))
     launcher.run(bench.RunRequest("local", "lab/engagement.yaml", "id/small/run-01", "llm", model="m:8b"))
@@ -1030,7 +1028,8 @@ def test_a_results_write_that_fails_after_the_teardown_of_a_completed_benchmark_
 
 def test_benchmark_output_directories_are_git_ignored_and_apart_from_the_evidence():
     ignore = (ROOT / ".gitignore").read_text(encoding="utf-8").splitlines()
-    assert "benchmark-results/" in ignore and "lab/captures/_rc46_benchmark/" in ignore
+    assert "benchmark-results/" in ignore and "lab/captures/_benchmark/" in ignore
+    assert "lab/captures/_rc*_benchmark/" in ignore  # older checkouts' folder name
     assert bench.DEFAULT_RESULTS_DIR == ROOT / "benchmark-results"
     assert (ROOT / "lab" / "captures") not in bench.DEFAULT_RESULTS_DIR.parents
 

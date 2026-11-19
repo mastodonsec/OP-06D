@@ -1,4 +1,4 @@
-# RC-47: Lab model relay: let the sealed scanner reach the planner model for lab runs
+# Lab model relay (local mode).
 #
 # OPT-IN overlay, upstream = host Ollama. Never part of the base lab.
 # Start it ONLY through the launcher, which checks the engagement policy and
@@ -17,7 +17,7 @@
 #   (lab/relay/relay-entrypoint.sh).
 # * Point op06d at the relay explicitly:
 #     --llm-provider local --llm-endpoint http://172.31.78.2:11434 --llm-allow-private 172.31.78.2
-# * The scanner image here is the RC-19 image plus the anthropic SDK
+# * The scanner image here is the base lab scanner image plus the anthropic SDK
 #   (lab/relay/scanner-llm.Dockerfile); it is the same image in both modes.
 
 name: rc-lab
@@ -64,7 +64,6 @@ services:
     environment:
       RELAY_NET: 172.31.78.0/24
       RELAY_BIND: 172.31.78.2
-    # RC-60: Lab: run on Linux (Kali) and macOS, not only Windows
     # The relay only. Native Linux Docker has no host.docker.internal; host-gateway
     # is the docker0 bridge address there (host Ollama must listen on it, see
     # lab/RUNBOOK.md) and the Docker Desktop host address on Windows and macOS.

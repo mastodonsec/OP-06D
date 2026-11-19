@@ -1,7 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""RC-60: Lab: run on Linux (Kali) and macOS, not only Windows
-
-lab/check_isolation.py, the host-side isolation gate, with docker mocked at
+"""lab/check_isolation.py, the host-side isolation gate, with docker mocked at
 the subprocess boundary (``subprocess.run`` and ``shutil.which`` inside the
 module): PASS, each FAIL kind, INCONCLUSIVE and NOT RUN. The expected services
 always come from the mocked ``docker compose config --services``.

@@ -1,5 +1,5 @@
 #!/bin/sh
-# RC-47: Lab model relay: let the sealed scanner reach the planner model for lab runs
+# Model relay entrypoint.
 #
 # Usage (as the container command): relay-entrypoint.sh local|anthropic
 #

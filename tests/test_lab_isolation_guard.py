@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Fast, docker-free proof of RC-20's isolation precondition: a failed
+"""Fast, docker-free proof of the lab harness's isolation precondition: a failed
 isolation check must abort before any scan. This is the pure decision
 function (`lab/scan_driver.isolation_failure_reason`) that
-tests/integration/test_lab_rc20.py's real docker-backed fixture also calls;
+tests/integration/test_lab_repeatability.py's real docker-backed fixture also calls;
 testing it here means the "isolation-fail aborts" guarantee has a check that
 runs in the default suite, with no lab and no Docker required."""
 

@@ -1,15 +1,15 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""RC-36: gated lab verification of the write-method backstop against the
+"""Gated lab verification of the nuclei write-method backstop against the
 real pinned v10.5.1 template set - the bundled exclusion list actually
 covers every write-method template nuclei has today (the "regenerated and
-verified when the set is re-pinned" half of RC-36), and the read-oriented
+verified when the set is re-pinned" half of the backstop), and the read-oriented
 survivors (query-style POST, GET) are untouched.
 
 NOT part of the default suite: excluded via the `lab` marker and skipped
 unless OP06D_LAB=1 is set, or docker/compose is unavailable - same gating
 as the other tests/integration/test_lab_rc*.py files.
 
-    OP06D_LAB=1 uv run pytest -m lab tests/integration/test_lab_rc36.py
+    OP06D_LAB=1 uv run pytest -m lab tests/integration/test_lab_nuclei_write_methods.py
 """
 
 from __future__ import annotations
@@ -47,7 +47,7 @@ print(json.dumps({{"offenders": offenders, "excluded_count": len(excluded)}}))
 
 def _require_lab_enabled() -> None:
     if os.environ.get("OP06D_LAB") != "1":
-        pytest.skip("set OP06D_LAB=1 to run the gated lab check (RC-36)")
+        pytest.skip("set OP06D_LAB=1 to run the gated lab check")
 
 
 def _require_docker() -> None:
@@ -156,7 +156,7 @@ def test_real_nuclei_actually_excludes_a_known_write_method_template(lab_stack):
     The tag filters are stripped in BOTH arms: a known write-method template
     like put-method-enabled also carries a danger tag, so the default
     -exclude-tags already drops it - which is exactly the tag-dependent
-    accident RC-36 replaces. With the tag filters out of the picture, -eid
+    accident the backstop replaces. With the tag filters out of the picture, -eid
     is the only thing that can exclude it. Positive control first (no -eid
     -> exactly 1 template listed), so the 0 means "excluded by -eid", not
     "typo'd id" or "nuclei never started"."""

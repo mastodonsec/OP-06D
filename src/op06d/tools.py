@@ -1,4 +1,4 @@
-"""The gated tool layer: the only way from the loop to a tool (RC-7, RC-8, RC-13).
+"""The gated tool layer: the only way from the loop to a tool.
 
 ``GatedToolbox`` owns the tools. It exposes exactly one way to run one:
 ``execute(action)``, which always goes
@@ -13,7 +13,7 @@ Concrete tools (e.g. ``op06d.nmap_tool``) are constructed only by
 ``default_tools`` below; nothing else imports them.
 
 Sanitization happens here too: ``execute`` returns the raw output (for
-evidence, RC-15/16) alongside the sanitized, wrapped version of the tool's
+evidence) alongside the sanitized, wrapped version of the tool's
 findings, and the loop only ever puts the sanitized version in the planning
 context.
 
@@ -31,8 +31,8 @@ like a secret (password, token, key, ...) are replaced by ``[REDACTED]``. This
 includes actions the toolbox refuses, so a secret in a rejected action cannot
 leak into the client-facing log either.
 
-Approval (RC-8 hook)
---------------------
+Approval hook
+-------------
 An action whose invocation risk is at or above ``approval_threshold`` pauses for
 operator approval *after* the gate allows it. Declined, timed-out, errored or
 unrecordable approvals all mean the action does not run. Default threshold:
@@ -43,7 +43,7 @@ that cannot carry a second target (the gate checks ``target`` only); validate
 parameter values in ``validate_parameters``; and bound the traffic the tool
 itself sends using the engagement's ``max_rps``.
 
-RC-23 (resolve-once): ``__execute`` never hands a tool the hostname it was
+Resolve-once DNS: ``__execute`` never hands a tool the hostname it was
 given. If ``action.target`` was a hostname, the gate already resolved and
 pinned it (``op06d.resolve.DnsPinner``) to decide scope, and
 ``GateDecision.resolved_ips`` carries that pinned address; ``__execute`` scans
@@ -117,7 +117,7 @@ class Tool(Protocol):
 
     def run(self, target: str, parameters: Mapping[str, Any], *, hostname: str | None = None) -> object: ...
     # ``target``: the address to actually scan - the IP the gate resolved and
-    # approved (RC-23), or the original target unchanged if it was already an
+    # approved (resolve-once), or the original target unchanged if it was already an
     # IP/CIDR. ``hostname``: the original hostname when ``target`` is its
     # pinned IP, else None. A tool must never resolve ``target`` itself; it
     # may use ``hostname`` only for vhost/SNI correctness (nuclei), never as
@@ -129,7 +129,7 @@ class ToolOutput:
     """A structured tool result.
 
     ``findings`` is parsed, structured data: it is what is sanitized and shown
-    to the planner (and later normalized by RC-15). ``raw`` is the tool's
+    to the planner (and later normalized). ``raw`` is the tool's
     unmodified output, kept only as evidence. ``status`` is "ok" or an error
     code; a non-ok status is a tool error the loop handles, not an exception.
     """
@@ -140,8 +140,8 @@ class ToolOutput:
 
 
 class ApprovalHook(Protocol):
-    """RC-8 implements this (CLI prompt). It must enforce its own timeout and
-    return False on timeout; any exception is treated as a decline."""
+    """``op06d.approval.ConsoleApprover`` implements this (CLI prompt). It
+    must enforce its own timeout and return False on timeout; any exception is treated as a decline."""
 
     def approve(self, request: "ApprovalRequest") -> bool: ...
 
@@ -189,7 +189,7 @@ class ExecutionResult:
     sanitized: SanitizedOutput | None = None  # the only form the planner may see
     status: str = ""
     recorded: bool = True  # False if the execution record could not be written
-    findings: object = None  # structured, unsanitized: for RC-15 normalization only
+    findings: object = None  # structured, unsanitized: for normalization only
     risk: Risk | None = None  # the invocation's risk
 
 
@@ -258,8 +258,8 @@ def run_subprocess(
     """The only place a process is started: argv list, no shell, no stdin.
 
     ``env=None`` (the default) means inherit the current process environment
-    unchanged - this is exactly nmap's call path (RC-13), untouched. A caller
-    that needs a controlled environment (RC-35: nuclei's ambient
+    unchanged - this is exactly nmap's call path, untouched. A caller
+    that needs a controlled environment (nuclei, against its ambient
     ``~/.config/nuclei``) passes an explicit mapping instead."""
     proc = subprocess.run(
         argv,
@@ -411,7 +411,7 @@ class GatedToolbox:
                 executed=False, risk=risk,
             )
 
-        # RC-23 resolve-once: scan exactly the IP the gate approved, never the
+        # Resolve-once: scan exactly the IP the gate approved, never the
         # hostname. ``resolved_ips`` is populated only when ``action.target``
         # was a hostname (scope.py never sets it for an IP/CIDR target), so
         # this also leaves IP/CIDR actions byte-for-byte unchanged.

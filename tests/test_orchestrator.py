@@ -449,7 +449,7 @@ def test_context_is_bounded(tmp_path):
     assert last[0]["content"].startswith("Begin.")
 
 
-# --- approval hook (RC-8) ---------------------------------------------------
+# --- approval hook ---------------------------------------------------------
 
 def test_recon_tools_do_not_require_approval_by_default(tmp_path):
     approver = Approver()

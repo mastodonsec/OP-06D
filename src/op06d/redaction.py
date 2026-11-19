@@ -1,7 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""RC-40: LLM planner: wire a real model into the orchestrator and `op06d run`
-
-Value-based secret scrubbing shared by the audit log, the evidence store and
+"""Value-based secret scrubbing shared by the audit log, the evidence store and
 the toolbox's parameter redaction. Registered secrets and anything shaped like
 an Anthropic API key are replaced with ``REDACTED`` wherever they appear in a
 string, at any depth of a dict/list/tuple.

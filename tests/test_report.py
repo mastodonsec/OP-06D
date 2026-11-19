@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Tests for RC-17 (op06d.report): build_report + render_markdown against
+"""Tests for the client report (op06d.report): build_report + render_markdown against
 a real evidence store, covering the empty-run, determinism, redaction and
 severity-ordering acceptance criteria."""
 
@@ -135,7 +135,7 @@ def test_empty_run_still_produces_a_valid_coherent_report(tmp_path):
     assert "No findings were recorded" in markdown
 
 
-# --- an incomplete nmap scan is disclosed (RC-43) --------------------------------
+# --- an incomplete nmap scan is disclosed --------------------------------------
 
 def test_an_nmap_host_timeout_is_listed_under_limitations(tmp_path):
     from op06d.nmap_tool import NmapTool

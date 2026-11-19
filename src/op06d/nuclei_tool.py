@@ -1,18 +1,18 @@
-"""nuclei tool wrapper (RC-14).
+"""nuclei tool wrapper.
 
 A ``Tool`` for ``GatedToolbox``. Construct it only through
 ``op06d.tools.default_tools`` (nothing else imports this module). By the time
 ``run`` is called the action has passed validate -> Gate.check -> approval.
 
-Carried over from RC-13 (each tested): argv with ``shell=False``; a parameter
+Carried over from the nmap wrapper (each tested): argv with ``shell=False``; a parameter
 allow-list whose members cannot carry a host or URL; the rate limit derived from
 ``intensity.max_rps`` and always passed; risk derived from the template
 selection; secrets redacted before they reach the audit log; errors returned as
 structured results, never raised.
 
-RC-14 follow-up: the gate approves a bare host/IP/CIDR, so by default nuclei is
+Non-default ports: the gate approves a bare host/IP/CIDR, so by default nuclei is
 pointed at the bare target and probes 80/443, which cannot reach a service on a
-non-default port (e.g. Juice Shop on 3000 in the lab, RC-19). Two optional
+non-default port (e.g. Juice Shop on 3000 in the lab). Two optional
 parameters fix this without opening a host-smuggling path: ``port`` (a strict
 int, 1-65535) and ``scheme`` (the fixed enum ``http``/``https``). Neither can
 hold a host string, so the request's host is always exactly the gate-approved
@@ -37,19 +37,19 @@ The three nuclei-specific controls:
    any result whose host is not the approved target is removed from the findings
    and reported as ``off_target_activity``.
 
-Reproducibility (RC-20): templates come from the pinned ``template_dir`` and are
+Reproducibility: templates come from the pinned ``template_dir`` and are
 never updated by the tool (``-disable-update-check``); an optional
 ``templates_pin`` label is recorded in every result.
 
-RC-35 (ambient config / HOME): nuclei reads ``~/.config/nuclei/config.yaml``
+Ambient config / HOME: nuclei reads ``~/.config/nuclei/config.yaml``
 (and ``~/.config/nuclei/.nuclei-ignore``) by default. A stray or hostile home
 config is a real problem for the controls above: a conflicting
 ``follow-redirects: true`` makes nuclei fatal (``[FTL] both follow redirects
 and disable redirects specified``) on every single scan - fail-closed only by
 accident - while a NON-conflicting setting (an injected ``header:``, nothing
 in ``build_argv`` conflicts with it) would silently take effect, and a
-hostile ``.nuclei-ignore`` could silently drop templates (the RC-26 coverage
-blind spot). Confirmed live in the RC-19 lab (Step 11): a wrapper-owned
+hostile ``.nuclei-ignore`` could silently drop templates (a template-coverage
+blind spot). Confirmed live in the lab (RUNBOOK Step 11): a wrapper-owned
 ``-config`` is always passed now (an empty file when the operator did not
 configure one - lab run C, clean), and ``run`` executes nuclei with ``HOME``
 and ``XDG_CONFIG_HOME`` pointed at a fresh, per-run, auto-cleaned-up temporary
@@ -59,7 +59,7 @@ nuclei does not honor a proxy env var on its own). ``op06d.tools.
 run_subprocess`` gained an ``env=`` parameter for this; nmap's call path does
 not use it and is unaffected.
 
-RC-23 (resolve-once): this wrapper has no header flag to disable nuclei's own
+Resolve-once DNS: this wrapper has no header flag to disable nuclei's own
 DNS the way nmap's ``-n`` does, so instead the toolbox never gives it a
 hostname to resolve in the first place - ``target`` is always the gate-pinned
 IP literal (a hostname target's own resolution happened once, in the gate).
@@ -71,9 +71,9 @@ as ``hostname``, and this wrapper restores correctness with ``-H "Host:
 gate approved, but is addressed, and TLS-negotiated, as the right site.
 
 Flag names follow nuclei v3; verify them against the pinned nuclei version in the
-lab (RC-19).
+lab.
 
-RC-26 (template-coverage instrumentation): the first real lab run (RC-19/RC-20)
+Template-coverage instrumentation: the first real lab run
 advertised ``exposure``/``misconfig``/``config`` in ``selection.tags`` but the
 capture had no way to say how many templates actually loaded - "loaded and
 matched nothing" and "never loaded" looked identical. This wrapper now always
@@ -96,7 +96,7 @@ redirects - an unreviewed, unacceptable widening of what "low-impact default"
 means. This is a documented, intentional coverage limit, not fixed by widening
 the selection - see docs/nuclei-tool.md and lab/PLANTED_VULNS.md correction C-2.
 
-RC-36 (HTTP write-method backstop): the default active-recon pass is read-
+HTTP write-method backstop: the default active-recon pass is read-
 oriented but not tag-dependently guaranteed to be - against the pinned
 v10.5.1 set (14,104 templates), 52 templates survive ``-exclude-tags`` and
 send a non-GET request, all of them query-style ``POST`` (GraphQL
@@ -171,7 +171,7 @@ MAX_RAW_BYTES = 5_000_000
 MAX_FINDINGS = 5_000
 _ID_RE = re.compile(r"[a-z0-9][a-z0-9_.-]{0,100}")
 
-# RC-36: the bundled write-method exclusion list, shipped next to this
+# The bundled write-method exclusion list, shipped next to this
 # module so it resolves whether run from the repo or an installed package.
 # Regenerate with scripts/generate_nuclei_write_method_exclusions.py when
 # the pinned template set changes.
@@ -391,12 +391,12 @@ class NucleiTool:
                     or any(host == d or host.endswith("." + d) for d in PUBLIC_INTERACTSH_DOMAINS)):
                 raise ValueError("interactsh_server must be a self-hosted hostname, never a public server")
             interactsh_server = host
-        # RC-36: load once at construction, fail-closed. A missing/corrupt
+        # Load once at construction, fail-closed. A missing/corrupt
         # exclusion list stores None (a per-action structured refusal, not a
         # constructor crash - every other NucleiTool failure mode works the
         # same way) UNLESS the operator also supplied curated_ids, in which
         # case we cannot validate them safely and refuse construction
-        # outright - "refuse it at manifest load", per RC-36's own wording.
+        # outright: refuse it at manifest load.
         try:
             write_method_exclusion_ids: frozenset[str] | None = load_write_method_exclusions(
                 write_method_exclusions_path,
@@ -423,11 +423,11 @@ class NucleiTool:
         self._curated = {k: Risk(v) for k, v in (curated_ids or {}).items()}
         self._interactsh = interactsh_server
         self._nuclei_path = nuclei_path
-        self._config = config_path  # operator-supplied; None means the wrapper owns one (RC-35)
+        self._config = config_path  # operator-supplied; None means the wrapper owns one
         self._run_timeout = float(run_timeout_s)
         self._request_timeout = int(request_timeout_s)
         self._runner, self._which, self._isdir = runner, which, isdir
-        # RC-35: a deterministic, no-I/O placeholder so build_argv() always
+        # A deterministic, no-I/O placeholder so build_argv() always
         # shows a wrapper-owned -config even when called directly, without
         # ever touching the filesystem itself (build_argv stays pure). The
         # real run always supplies the actual per-run path explicitly instead
@@ -557,7 +557,7 @@ class NucleiTool:
         overrides what ``-config`` points at for this call (``_run`` always
         passes the real per-run path here); otherwise falls back to the
         operator's ``config_path`` or, failing that, a deterministic
-        placeholder (RC-35) - either way, ``-config`` is now unconditional."""
+        placeholder - either way, ``-config`` is now unconditional."""
         resolved_config = config_path or self._config or self._fallback_config_path
         concurrency = max(1, min(self.max_rps, 10))
         argv = [nuclei, "-config", resolved_config]
@@ -572,15 +572,15 @@ class NucleiTool:
             "-timeout", str(self._request_timeout),
             "-retries", "1",
             "-disable-redirects",
-            "-stats", "-stats-json", "-si", "1",  # RC-26: templates-loaded instrumentation, stderr only
+            "-stats", "-stats-json", "-si", "1",  # templates-loaded instrumentation, stderr only
         ]
         if self._write_method_exclusion_ids:
-            # RC-36: structural, regardless of tags or template_ids - a
+            # Structural, regardless of tags or template_ids - a
             # write-method template is excluded even if it carries no
             # danger tag at all.
             argv += ["-eid", _csv(sorted(self._write_method_exclusion_ids))]
         if hostname:
-            # RC-23: ``target`` is the gate-pinned IP, never a hostname (the
+            # ``target`` is the gate-pinned IP, never a hostname (the
             # tool performs no DNS of its own), so vhost routing and TLS SNI
             # have to be told the original hostname explicitly - otherwise a
             # name-based vhost (exactly the lab's juice-shop.lab/dvwa.lab)
@@ -612,7 +612,7 @@ class NucleiTool:
         if problem:
             return _error("invalid_input", problem)
         if self._write_method_exclusion_ids is None:
-            # RC-36: fail-closed. Without the exclusion list we cannot
+            # Fail-closed. Without the exclusion list we cannot
             # guarantee a write-method template can't run - refuse the
             # whole action rather than silently proceed without the
             # backstop, for every selection path (tags or template_ids).
@@ -628,13 +628,13 @@ class NucleiTool:
         except NotADirectoryError as exc:
             return _error("templates_not_found", str(exc))
 
-        # RC-35: a fresh, per-run, auto-cleaned-up directory stands in for
+        # A fresh, per-run, auto-cleaned-up directory stands in for
         # the ambient $HOME/$XDG_CONFIG_HOME, so nuclei's own
         # ~/.config/nuclei/config.yaml and .nuclei-ignore are never read -
         # neutralizing a stray or hostile one (a conflicting setting like
         # follow-redirects:true used to fatal every scan; a non-conflicting
         # one, e.g. an injected header, would silently take effect; a
-        # hostile .nuclei-ignore could silently drop templates, the RC-26
+        # hostile .nuclei-ignore could silently drop templates, a template-
         # coverage blind spot). Cleaned up even on a timeout/exec error: the
         # context manager's __exit__ still runs on every exception path
         # below, before it propagates.
@@ -690,9 +690,9 @@ class NucleiTool:
                         "unparsed_lines": bad, "templates_loaded": templates_loaded},
         }
         if hostname:
-            result["target_hostname"] = hostname  # RC-23: which name this pinned IP was
+            result["target_hostname"] = hostname  # which name this pinned IP was
         if not templates_loaded:
-            # RC-26: a scan that loaded zero templates (or whose stats we
+            # A scan that loaded zero templates (or whose stats we
             # could not read at all) must never look like a clean "no
             # findings" result - that is exactly the blind spot this field
             # closes. Loud, but not a tool error: findings (if any; there

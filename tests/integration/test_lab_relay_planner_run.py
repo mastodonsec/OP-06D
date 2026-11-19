@@ -1,16 +1,14 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""RC-47: Lab model relay: let the sealed scanner reach the planner model for lab runs
-
-Gated lab acceptance: `op06d run --planner llm` end to end against the sealed
+"""Gated lab acceptance of the model relay: `op06d run --planner llm` end to end against the sealed
 lab targets, with the model reached only through the opt-in model relay.
 
 NOT part of the default suite (`lab` marker) and skipped unless OP06D_LAB=1.
 One upstream per run, chosen by OP06D_LLM_PROVIDER:
 
-    OP06D_LAB=1 OP06D_LLM_PROVIDER=local     uv run pytest -m lab tests/integration/test_lab_rc47.py
-    OP06D_LAB=1 OP06D_LLM_PROVIDER=anthropic uv run pytest -m lab tests/integration/test_lab_rc47.py
+    OP06D_LAB=1 OP06D_LLM_PROVIDER=local     uv run pytest -m lab tests/integration/test_lab_relay_planner_run.py
+    OP06D_LAB=1 OP06D_LLM_PROVIDER=anthropic uv run pytest -m lab tests/integration/test_lab_relay_planner_run.py
 
-local needs host Ollama with the model (OP06D_LLM_MODEL, default the RC-40
+local needs host Ollama with the model (OP06D_LLM_MODEL, default the planner's
 local default); anthropic needs ANTHROPIC_API_KEY in the environment, passed
 to the scanner by name only. The stack is brought up with
 lab/docker-compose.yml + the one overlay (down first, down again at the end),
@@ -45,7 +43,7 @@ ENGAGEMENT = {"local": "lab/engagement.yaml", "anthropic": "lab/engagement-llm-h
 
 def _require_prerequisites() -> None:
     if os.environ.get("OP06D_LAB") != "1":
-        pytest.skip("set OP06D_LAB=1 to run the gated lab acceptance (RC-47)")
+        pytest.skip("set OP06D_LAB=1 to run the gated lab acceptance")
     if MODE not in relay.MODES:
         pytest.skip("set OP06D_LLM_PROVIDER=local or OP06D_LLM_PROVIDER=anthropic (one upstream per run)")
     if shutil.which("docker") is None:

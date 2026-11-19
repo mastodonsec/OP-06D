@@ -1,8 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""RC-47: Lab model relay: let the sealed scanner reach the planner model for lab runs
-RC-60: Lab: run on Linux (Kali) and macOS, not only Windows
-
-lab/check_isolation.ps1 must tell "the lab stack is not up" apart from "the
+"""lab/check_isolation.ps1 must tell "the lab stack is not up" apart from "the
 lab is not isolated": the first is NOT RUN (exit 3), never an isolation FAIL.
 The .ps1 is a wrapper around lab/check_isolation.py, so these tests run the
 whole chain: PowerShell -> uv -> Python -> the stub docker.

@@ -1,7 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""RC-40: LLM planner: wire a real model into the orchestrator and `op06d run`
-
-Unit tests for the production model adapters in ``op06d.llm``: endpoint
+"""Unit tests for the production model adapters in ``op06d.llm``: endpoint
 policy, constrained-output request shapes, retry/backoff and key handling.
 No network: every call goes through an injected transport or fake client.
 """

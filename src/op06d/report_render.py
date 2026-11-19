@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""RC-18: render the RC-17 ``Report`` model to a self-contained HTML
+"""Render the ``Report`` model to a self-contained HTML
 document, and (optionally) to PDF.
 
-**Builds on the model, not the Markdown.** RC-17 split the report into a
+**Builds on the model, not the Markdown.** ``op06d.report`` splits the report into a
 pure ``Report`` model (``op06d.report.build_report``) and
 ``render_markdown``. This module renders that SAME model to HTML -
 ``render_html`` never reparses or depends on the Markdown text, so the two
@@ -66,7 +66,7 @@ _SEVERITY_COLORS = {
 def _e(text: object) -> str:
     """HTML-escape. Every piece of text in this document - including
     anything originating from a scanned target's banners/output via the
-    RC-16 store - goes through this before it reaches the page."""
+    evidence store - goes through this before it reaches the page."""
     return _html.escape("" if text is None else str(text), quote=True)
 
 
@@ -462,7 +462,7 @@ def render_pdf(report: Report, out_path: str | Path) -> Path:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="Render a stored OP-06D run to a client report (RC-17/18)."
+        description="Render a stored OP-06D run to a client report."
     )
     parser.add_argument("--db", required=True, help="path to the evidence store (.db)")
     parser.add_argument("--run", required=True, help="run_id to render")

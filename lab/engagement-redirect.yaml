@@ -1,5 +1,5 @@
-# OP-06D lab engagement for the redirector (RC-44: Recon: report redirects to
-# hostnames outside scope instead of going quiet). Scoped ONLY to the redirector.
+# OP-06D lab engagement for the redirector (the redirect observation check).
+# Scoped ONLY to the redirector.
 #
 # Target (see lab/docker-compose.yml):
 #   172.31.77.12 (redirect.lab, HTTP on 80): every request gets

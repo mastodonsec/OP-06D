@@ -1,9 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""RC-24: Lab runbook polish + validation harness
-RC-28: RC-20 follow-up: make the lab harness teardown idempotent (down-before-up)
-RC-60: Lab: run on Linux (Kali) and macOS, not only Windows
-
-One-command lab validation harness. Runs RUNBOOK.md Steps 4-13 against the
+"""One-command lab validation harness. Runs RUNBOOK.md Steps 4-13 against the
 live lab in order, captures every step's output into a fresh, timestamped
 evidence bundle, and prints a PASS / FAIL / NEEDS-REVIEW summary.
 
@@ -19,7 +15,7 @@ Safety behaviour:
   (host-side checks, then the in-scanner ``check_isolation.sh``), so the two
   cannot drift. Its result must be PASS, and its network and in-scanner
   readings must also pass the pure ``scan_driver.isolation_failure_reason``
-  that test_lab_rc20.py uses. Anything but a clean PASS - an error, an
+  that test_lab_repeatability.py uses. Anything but a clean PASS - an error, an
   ambiguity, a non-zero exit - aborts the run before anything touches a
   target. Nothing else runs.
 * **Steps 10 and 11 can never PASS on their own.** They are findings-type
@@ -49,7 +45,7 @@ Code shared with the gated tests: the scan set is
 ``lab/scan_driver.py``, the baseline + ambient-config assertions are
 ``lab/lab_asserts.py``, the Step 11 replay is ``lab/ambient_config_probe.py``.
 The small docker helpers (``_compose``/``_exec``/``_wait_for_targets``) are
-copied from tests/integration/test_lab_rc20.py (they call ``pytest.fail``
+copied from tests/integration/test_lab_repeatability.py (they call ``pytest.fail``
 there, so they can't be imported into a non-pytest script).
 """
 
@@ -290,7 +286,7 @@ def ambient_subchecks(result: dict) -> dict[str, str]:
 def classify_ambient(result: dict) -> StepResult:
     """Never PASS. FAIL if the wrapper-as-built run shows redirect / header /
     OAST / crash (lab_asserts.ambient_config_failures - the same judgement
-    test_lab_rc35.py makes) or the hostile config lingered. Otherwise
+    test_lab_nuclei_ambient_config.py makes) or the hostile config lingered. Otherwise
     NEEDS-REVIEW, with each sub-check reported on its own: one the control
     could not demonstrate is INCONCLUSIVE, not clean."""
     wrapper = result.get("wrapper", {})
@@ -398,7 +394,7 @@ def overall(results: list[StepResult], *, teardown_failed: bool = False) -> tupl
 
 
 def format_report(results: list[StepResult], started: str, final_line: str) -> str:
-    lines = [f"=== OP-06D lab validation (RC-24) {started} ==="]
+    lines = [f"=== OP-06D lab validation {started} ==="]
     for r in results:
         label = f"Step {r.step:<3}{r.name} "
         lines.append(f"{label:.<30} {r.status}" + (f"  ({r.detail})" if r.detail else ""))
@@ -628,7 +624,7 @@ print(json.dumps({
 
 
 # ============================================================================
-# Docker plumbing (copied from tests/integration/test_lab_rc20.py, minus pytest)
+# Docker plumbing (copied from tests/integration/test_lab_repeatability.py, minus pytest)
 # ============================================================================
 
 def _say(msg: str) -> None:
@@ -697,9 +693,9 @@ def _last_json(cp: subprocess.CompletedProcess) -> Any:
 
 
 def skip_reason() -> str | None:
-    """Same gating as tests/integration/test_lab_rc20.py: OP06D_LAB=1, docker, a valid compose file."""
+    """Same gating as tests/integration/test_lab_repeatability.py: OP06D_LAB=1, docker, a valid compose file."""
     if os.environ.get("OP06D_LAB") != "1":
-        return "set OP06D_LAB=1 to run the lab validation harness (RC-24)"
+        return "set OP06D_LAB=1 to run the lab validation harness"
     if shutil.which("docker") is None:
         return "docker is not available"
     try:
@@ -880,7 +876,7 @@ def run_steps(h: Harness) -> list[StepResult]:
         ("8", "real scans vs frozen baseline (a few minutes)", h.step8_scans),
         ("9", "parsers on the Step 8 captures", h.step9_parsers),
         ("10", "tag audit (~14k templates)", h.step10_tag_audit),
-        ("11", "ambient-config replay (RC-35)", h.step11_ambient),
+        ("11", "ambient-config replay", h.step11_ambient),
         ("12", "nmap privilege (root vs unprivileged; slowest step)", h.step12_priv),
         ("13", "scripted-planner end to end", h.step13_e2e),
     ]
@@ -898,7 +894,7 @@ def run_steps(h: Harness) -> list[StepResult]:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="RC-24 one-command lab validation (RUNBOOK Steps 4-13).")
+    parser = argparse.ArgumentParser(description="One-command lab validation (RUNBOOK Steps 4-13).")
     parser.add_argument("--json", dest="json_path", default=None,
                         help="also write the machine-readable summary here (it is always in the bundle)")
     parser.add_argument("--keep-stack", action="store_true", help="skip teardown (debugging only)")
@@ -909,7 +905,7 @@ def main(argv: list[str] | None = None) -> int:
 
     reason = skip_reason()
     if reason:
-        _say(f"=== OP-06D lab validation (RC-24) {started_iso} ===\nRESULT: SKIPPED - {reason}")
+        _say(f"=== OP-06D lab validation {started_iso} ===\nRESULT: SKIPPED - {reason}")
         return EXIT_SKIPPED
 
     stamp = started.strftime("%Y%m%dT%H%M%SZ")
@@ -943,7 +939,6 @@ def main(argv: list[str] | None = None) -> int:
     code, final_line = overall(results, teardown_failed=teardown_error is not None)
     report = format_report(results, started_iso, final_line)
     summary = {
-        "ticket": "RC-24",
         "started": started_iso,
         "bundle": str(bundle_host),
         "exit_code": code,
@@ -952,7 +947,7 @@ def main(argv: list[str] | None = None) -> int:
         "human_review_required": [r.step for r in results if r.status == NEEDS_REVIEW],
         "steps": [asdict(r) for r in results],
         "versions": h.extra.get("versions"),
-        "rc20_fingerprint": next((r.data.get("fingerprint") for r in results if r.step == "8"), None),
+        "repeatability_fingerprint": next((r.data.get("fingerprint") for r in results if r.step == "8"), None),
     }
     text = json.dumps(summary, indent=2, default=repr)
     (bundle_host / "summary.json").write_text(text, encoding="utf-8", newline="\n")

@@ -1,7 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""RC-28: RC-20 follow-up: make the lab harness teardown idempotent (down-before-up)
-
-lab/scan_driver.py requires --engagement: omitting it is an argparse error
+"""lab/scan_driver.py requires --engagement: omitting it is an argparse error
 before anything runs or is written."""
 
 from __future__ import annotations

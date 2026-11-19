@@ -1,10 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""RC-24: Lab runbook polish + validation harness
-RC-20: Functional and repeatability tests against the lab
-RC-35: nuclei: neutralize ambient config + control HOME
-
-The lab-result assertions used by tests/integration/test_lab_rc20.py,
-tests/integration/test_lab_rc35.py and lab/validation_harness.py.
+"""The lab-result assertions used by tests/integration/test_lab_repeatability.py,
+tests/integration/test_lab_nuclei_ambient_config.py and lab/validation_harness.py.
 
 Host-side, stdlib-only, pure: every function takes already-parsed JSON
 (a ``lab/scan_driver.py`` summary, or a ``lab/ambient_config_probe.py``

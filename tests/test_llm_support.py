@@ -1,7 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""RC-40: LLM planner: wire a real model into the orchestrator and `op06d run`
-
-Unit tests for the pieces the LLM planner adds around the loop: value-based
+"""Unit tests for the pieces the LLM planner adds around the loop: value-based
 secret scrubbing, observation fitting, strict reply parsing and the
 engagement's planner policy.
 """

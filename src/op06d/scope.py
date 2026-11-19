@@ -1,4 +1,4 @@
-"""Scope allowlist enforcement (RC-9).
+"""Scope allowlist enforcement.
 
 The single decision point for "may we touch this target?". The LLM is asked;
 this module decides. Rules (non-negotiable):
@@ -242,7 +242,7 @@ def _evaluate(
 
 # --- orchestration (DNS + audit) -------------------------------------------
 #
-# RC-23: DNS itself is centralized in ``op06d.resolve`` (``system_resolver``,
+# Resolve-once DNS: DNS itself is centralized in ``op06d.resolve`` (``system_resolver``,
 # re-exported above for compatibility); this module no longer calls it
 # directly. ``Gate`` is the only caller of ``check_scope``/``is_in_scope`` in
 # production, and it passes a ``DnsPinner.resolve`` (resolve-once, pinned for

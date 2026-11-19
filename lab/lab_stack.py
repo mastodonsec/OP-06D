@@ -1,7 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""RC-28: RC-20 follow-up: make the lab harness teardown idempotent (down-before-up)
-
-Lab stack lifecycle shared by the gated integration-test fixtures
+"""Lab stack lifecycle shared by the gated integration-test fixtures
 (tests/integration/test_lab_rc*.py) and lab/validation_harness.py, plus the
 call that generates a run-specific engagement file inside the scanner.
 

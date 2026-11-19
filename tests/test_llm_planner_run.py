@@ -1,7 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""RC-40: LLM planner: wire a real model into the orchestrator and `op06d run`
-
-``run_engagement(planner_mode="llm")`` end to end with a scripted model and
+"""``run_engagement(planner_mode="llm")`` end to end with a scripted model and
 fake tools (no subprocess, no network, no real model): engagement policy,
 every run limit, model failures, malformed and out-of-scope proposals,
 approval, context fitting, the report's planner section, and that the API
@@ -44,7 +42,7 @@ def _clean_secrets():
 def _engagement(tmp_path: Path, planner: dict | None = None) -> Path:
     now = datetime.now(timezone.utc)
     data = {
-        "engagement": "rc40-test",
+        "engagement": "planner-test",
         "authorization": {
             "client": "Test Client", "signed_scope_ref": "SOW-1", "authorized_by": "ops@example.com",
             "window": [(now - timedelta(hours=1)).isoformat(), (now + timedelta(hours=2)).isoformat()],
@@ -384,7 +382,6 @@ def test_a_failure_without_a_known_status_records_the_error_class_only(tmp_path)
 
 
 def test_the_report_planner_section_shows_the_output_mode_from_the_run_record(tmp_path):
-    # RC-46: Planner model benchmark: score candidate models on lab runs
     llm = ScriptLLM([DONE])
     llm.output_mode = "json_schema"
     summary, _, _ = _run(tmp_path, [], llm=llm)

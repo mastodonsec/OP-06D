@@ -1,5 +1,3 @@
-# RC-47: Lab model relay: let the sealed scanner reach the planner model for lab runs
-#
 # The anthropic SDK and its dependencies for the overlay scanner image
 # (lab/relay/scanner-llm.Dockerfile), installed with --require-hashes.
 # Regenerate from uv.lock, never by hand:

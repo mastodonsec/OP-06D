@@ -93,7 +93,7 @@ def test_hostname_allowed_with_resolved_ips():
     assert d.allowed and d.resolved_ips == ("198.51.100.7",)
 
 
-# --- RC-23: resolve-once (one DnsPinner per Gate, i.e. per engagement) ------
+# --- resolve-once (one DnsPinner per Gate, i.e. per engagement) ------
 
 def test_hostname_is_resolved_once_no_matter_how_many_actions_check_it():
     calls = []
@@ -283,7 +283,7 @@ def test_window_boundaries(offset_from, delta, expected):
 # --- timezone handling ------------------------------------------------------
 
 def test_window_honors_offsets_in_file_and_clock():
-    # 03:00+01:00 == 02:00Z ; RC-6 normalized this to UTC
+    # 03:00+01:00 == 02:00Z ; the loader normalized this to UTC
     eng = make_engagement(window=["2026-11-10T03:00+01:00", "2026-11-10T07:00+01:00"])
     assert eng.authorization.window[0] == START
     gate, clock = make_gate(eng)
@@ -372,7 +372,7 @@ def test_scope_denial_through_gate():
     assert not check(gate, None)[0].allowed
 
 
-# --- every decision is audited, via the RC-11 log ---------------------------
+# --- every decision is audited, via the audit log ---------------------------
 
 def test_denials_and_allows_are_recorded_in_the_audit_log(tmp_path):
     clock = Clock()

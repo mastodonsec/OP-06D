@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Tests for RC-15 (op06d.normalize), exercised against the frozen RC-20
-real captures in lab/captures/*.findings.json so the schema is proven
+"""Tests for the normalizer (op06d.normalize), exercised against the frozen
+real lab captures in lab/captures/*.findings.json so the schema is proven
 against actual tool output, not just hand-written samples."""
 
 from __future__ import annotations
@@ -95,7 +95,7 @@ def test_juice_shop_nuclei_findings_categorize_as_exposure_and_technology():
     assert by_id["tech-detect"].category == Category.TECHNOLOGY
     for f in findings:
         assert f.severity == Severity.INFO
-        # this frozen capture predates RC-23's target_hostname field, so the
+        # this frozen capture predates the resolve-once target_hostname field, so the
         # hostname is legitimately absent here; see the dedicated test below
         # for the case where target_hostname is present.
         assert f.asset.hostname is None
@@ -105,8 +105,8 @@ def test_juice_shop_nuclei_findings_categorize_as_exposure_and_technology():
 
 
 def test_hostname_target_populates_asset_hostname_when_present():
-    # RC-23 adds target_hostname only for hostname-targeted actions (the
-    # frozen RC-20 captures above predate it); confirm it flows into asset.
+    # Resolve-once adds target_hostname only for hostname-targeted actions
+    # (the frozen lab captures above predate it); confirm it flows into asset.
     data = {
         "scanner": "nuclei", "out_of_band": "off", "target_hostname": "dvwa.lab",
         "findings": [{"template_id": "php-detect", "host": "dvwa.lab", "matched_at": "http://172.31.77.11",
@@ -127,7 +127,7 @@ def test_dvwa_nuclei_findings_all_technology():
 
 
 def test_dvwa_exposure_run_matches_same_template_ids_as_default_run():
-    # RC-23/RC-20: the IP+Host substitution must not change what matches.
+    # Resolve-once: the IP+Host substitution must not change what matches.
     a, _ = normalize_nuclei(_load("nuclei_dvwa_default.findings.json"), provenance=_provenance())
     b, _ = normalize_nuclei(_load("nuclei_dvwa_exposure.findings.json"), provenance=_provenance())
     assert {f.evidence["template_id"] for f in a} == {f.evidence["template_id"] for f in b}

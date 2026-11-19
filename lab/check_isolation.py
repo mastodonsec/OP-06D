@@ -1,7 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""RC-60: Lab: run on Linux (Kali) and macOS, not only Windows
-
-OP-06D lab isolation gate, host side. Run BEFORE any scan, from the repository
+"""OP-06D lab isolation gate, host side. Run BEFORE any scan, from the repository
 root, on Windows, Linux or macOS:
 
     uv run python lab/check_isolation.py [--with-internet-control] [--compose lab/docker-compose.yml] [--project rc-lab]

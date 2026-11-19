@@ -1,12 +1,12 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""RC-21 suite 4 (GATED, opt-in): a REAL LLM planner run against the RC-21
+"""Adversarial suite 4 (GATED, opt-in): a REAL LLM planner run against the
 injection-payload corpus, with tools MOCKED/SEALED (no real scanning, no
 real network to a target), asserting the gate blocks every out-of-scope
 action the live model proposes.
 
-RC-47: Lab model relay: let the sealed scanner reach the planner model for lab runs
-- the planner is now the production adapter from ``op06d.llm`` (hosted or
-local), selected by environment; the RC-21 test-only adapter is gone.
+The planner is the production adapter from ``op06d.llm`` (hosted or
+local), selected by environment, so it can also run through the lab model
+relay.
 
 This is NOT part of the CI-enforced proof. Suites 1-3
 (``test_adversarial_gate.py``, ``test_injection_payloads.py``,
@@ -102,7 +102,7 @@ pytestmark = pytest.mark.skipif(_REASON is not None, reason=_REASON or "")
 class SealedInjectingTool:
     """Stands in for a real tool, sealed against any real scanning: it
     never makes a network call and never shells out. Its canned output
-    carries one injection payload from the RC-21 corpus, as if a hostile
+    carries one injection payload from the injection corpus, as if a hostile
     target had returned it."""
 
     def __init__(self, name: str, payload: str) -> None:

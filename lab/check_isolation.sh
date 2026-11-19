@@ -1,5 +1,5 @@
 #!/bin/bash
-# OP-06D lab isolation check (RC-19).
+# OP-06D lab isolation check.
 #
 # Run INSIDE the scanner container, before any scan:
 #   docker compose -f lab/docker-compose.yml exec -T scanner bash /lab/check_isolation.sh
@@ -64,7 +64,6 @@ expect_works() {
   fi
 }
 
-# RC-60: Lab: run on Linux (Kali) and macOS, not only Windows
 # Prints "<interface> <address>" for every IPv6 all-nodes (ff02::1) responder on
 # every non-loopback interface that is neither this container nor a lab
 # container (a lab container is recognised by the EUI-64 link-local address of a
@@ -211,7 +210,6 @@ expect_blocked "TCP 172.17.0.1:80"                       7 bash -c 'exec 3<>/dev
 expect_blocked "ping 192.168.65.254 (Docker Desktop host gateway)" 6 ping -c1 -W3 192.168.65.254
 expect_blocked "ping 192.168.65.1"                       6 ping -c1 -W3 192.168.65.1
 
-# RC-60: Lab: run on Linux (Kali) and macOS, not only Windows
 # The lab network's own gateway address. If the bridge holds it, it is an address
 # of the Docker host (on native Linux, the host itself), and any host service
 # listening on 0.0.0.0 answers there. labnet sets inhibit_ipv4 so nothing holds it.

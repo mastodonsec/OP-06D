@@ -24,19 +24,19 @@ op06d = "op06d.cli:main"
 
 [project.optional-dependencies]
 dev = ["pytest>=7"]
-# RC-18: enables op06d.report_render.render_pdf via weasyprint. The alternative
+# Enables op06d.report_render.render_pdf via weasyprint. The alternative
 # backend (Playwright + Chromium) is not listed here since it needs a separate
 # `playwright install chromium` step beyond `pip install`; see
 # report_render.NoPdfBackendAvailable for exact instructions for either.
 report-pdf = ["weasyprint"]
-# RC-40: LLM planner: wire a real model into the orchestrator and `op06d run`
+# The hosted (Anthropic) provider for the LLM planner (op06d run --planner llm)
 llm-anthropic = ["anthropic>=2.8"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
 [tool.setuptools.package-data]
-# RC-36: the bundled write-method exclusion list must ship with the package,
+# The bundled write-method exclusion list must ship with the package,
 # or every nuclei run fails closed (method_exclusions_unavailable).
 op06d = ["nuclei_write_method_exclusions.json"]
 
@@ -47,5 +47,5 @@ pythonpath = ["src"]
 # A later --basetemp on the command line (e.g. /tmp/live-gate in the scanner) wins.
 addopts = "-m 'not lab' --basetemp .pytest-tmp"
 markers = [
-    "lab: gated lab integration test (RC-20) - needs Docker/compose and OP06D_LAB=1; excluded by default",
+    "lab: gated lab integration test - needs Docker/compose and OP06D_LAB=1; excluded by default",
 ]

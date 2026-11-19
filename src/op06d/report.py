@@ -1,20 +1,20 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""RC-17: the client report, built from the evidence store.
+"""The client report, built from the evidence store.
 
 **Role.** This is where the methodology becomes the product: the document a
 paying client reads, authored on behalf of Mastodon Security. Everything in
-it comes FROM ``op06d.evidence.ReconstructedRun`` (RC-16) - there is no
+it comes FROM ``op06d.evidence.ReconstructedRun`` - there is no
 hand-assembled content, no invented finding, and no re-scored severity. If a
 fact is not in the reconstructed run, it is not in the report.
 
-**Split structure (sets up RC-18):**
+**Split structure (shared with the HTML renderer):**
 
 * ``build_report(run) -> Report`` - a structured, pure model of the report
   (sections, grouped findings, counts). No Markdown, no HTML, no
   presentation decisions.
 * ``render_markdown(report) -> str`` - ``Report`` -> Markdown text.
 
-RC-18 adds ``render_html(report)`` against the SAME ``Report`` model, so
+``op06d.report_render`` adds ``render_html(report)`` against the SAME ``Report`` model, so
 nothing Markdown-specific belongs in ``build_report``.
 
 **Non-negotiables, each with a test:**
@@ -24,7 +24,7 @@ nothing Markdown-specific belongs in ``build_report``.
   section renders; the executive summary says plainly that nothing was
   found).
 * No invented data: severities and categories are presented exactly as
-  RC-15 stored them (nmap's "info" baseline is not escalated; nuclei's
+  normalization stored them (nmap's "info" baseline is not escalated; nuclei's
   passthrough severity is not re-judged). The report describes, it does not
   re-score.
 * Deterministic: rendering the same ``ReconstructedRun`` twice yields
@@ -177,7 +177,7 @@ class LimitationsSection(_Frozen):
 
 
 class PlannerSection(_Frozen):
-    """RC-40: LLM planner: wire a real model into the orchestrator and `op06d run`"""
+    """The LLM planner run: provider, model, usage, termination and limits."""
 
     planner: str
     provider: str | None = None
@@ -190,7 +190,7 @@ class PlannerSection(_Frozen):
     input_tokens: int | None = None
     output_tokens: int | None = None
     failure_cause: dict[str, Any] | None = None
-    # RC-46: Planner model benchmark: score candidate models on lab runs
+    # How the local model's replies were constrained (schema, grammar or plain JSON).
     output_mode: str | None = None
     limits: dict[str, Any] = Field(default_factory=dict)
 
@@ -415,7 +415,7 @@ def planner_rows(p: PlannerSection) -> list[tuple[str, str]]:
 def _md_escape(text: str) -> str:
     # Just enough to keep a hostile title/description from breaking table
     # layout or accidentally forming Markdown syntax; this is a client
-    # report, not a security boundary (RC-12 sanitization already covers
+    # report, not a security boundary (output sanitization already covers
     # anything that reaches the planner).
     return text.replace("|", "\\|").replace("\n", " ").strip()
 

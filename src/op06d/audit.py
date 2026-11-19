@@ -1,8 +1,8 @@
-"""Audit log (RC-11): the liability record.
+"""Audit log: the liability record.
 
 One append-only JSONL file per engagement, keyed to the engagement ID from the
-RC-6 model, so a client's trail is self-contained and handoverable as evidence.
-The reporting layer (RC-17) reads it back with ``read_log``.
+engagement model, so a client's trail is self-contained and handoverable as evidence.
+The reporting layer reads it back with ``read_log``.
 
 Each line is one ``AuditEntry``. Entries form a hash chain (``prev_hash`` ->
 ``hash``), so edits, deletions, reordering or truncation of earlier entries are
@@ -43,14 +43,14 @@ MAX_TARGET_CHARS = 1024
 EVENT_LOG_OPENED = "log_opened"
 EVENT_GATE_DECISION = "gate_decision"
 EVENT_INJECTION_FLAG = "injection_flag"
-EVENT_ITERATION = "iteration"  # RC-7: the planner's proposal for one loop iteration
-EVENT_APPROVAL = "approval"  # RC-8: operator approved/declined a higher-risk action
-EVENT_LOOP_END = "loop_terminated"  # RC-7: why and when the loop stopped
-# RC-23: a hostname's first (and only) resolution for this engagement - the
+EVENT_ITERATION = "iteration"  # the planner's proposal for one loop iteration
+EVENT_APPROVAL = "approval"  # operator approved/declined a higher-risk action
+EVENT_LOOP_END = "loop_terminated"  # why and when the loop stopped
+# A hostname's first (and only) resolution for this engagement - the
 # resolve-once pin. Written once per hostname, never again, even if DNS for
 # that name changes later in the same engagement.
 EVENT_DNS_PINNED = "dns_pinned"
-# RC-40: LLM planner: wire a real model into the orchestrator and `op06d run`
+# The LLM planner's configuration for this run (provider, model, limits).
 EVENT_PLANNER_CONFIG = "planner_config"
 # Events whose ``allowed`` flag is meaningful (an allow/deny or approve/decline).
 _ALLOWED_EVENTS = frozenset({EVENT_GATE_DECISION, EVENT_APPROVAL})
@@ -135,7 +135,7 @@ class AuditLog:
         *,
         clock: Callable[[], datetime] | None = None,
     ) -> None:
-        # Second line of defense (RC-22): same shared rule the RC-6 schema
+        # Second line of defense: same shared engagement-id rule the schema
         # enforces at load, so a hand-built id can't escape the log directory.
         if not is_valid_engagement_id(engagement_id):
             raise AuditError(f"engagement id {engagement_id!r} is not safe to use in a log")
@@ -238,7 +238,7 @@ class AuditLog:
 
         ``event`` selects the entry type. For gate decisions and approvals the
         ``allowed`` flag is stored; for any other event (e.g. an injection
-        flag, RC-12) there is no allow/deny, so it is stored as null."""
+        flag) there is no allow/deny, so it is stored as null."""
 
         def write(target: str, allowed: bool, reason: str) -> None:
             self.record(
@@ -253,7 +253,7 @@ class AuditLog:
         return write
 
     def record_dns_pin(self, hostname: str, resolved_ips: object) -> AuditEntry:
-        """Record a hostname's resolve-once pin (RC-23): the first, and only,
+        """Record a hostname's resolve-once pin: the first, and only,
         resolution of ``hostname`` for this engagement. Matches the
         ``PinAuditor`` shape ``DnsPinner`` expects, so it can be passed
         straight through as ``Gate(..., audit_pin=log.record_dns_pin)``.

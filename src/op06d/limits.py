@@ -1,6 +1,6 @@
-"""Time-window and rate-cap primitives (RC-10).
+"""Time-window and rate-cap primitives.
 
-Both limits come from the validated RC-6 engagement (``authorization.window``
+Both limits come from the validated engagement (``authorization.window``
 and ``intensity.max_rps``); nothing here is hard-coded. Clocks are injected so
 behavior is deterministic in tests.
 
@@ -9,7 +9,7 @@ interval **[start, end)**. An action at exactly ``start`` is allowed; an action
 at exactly ``end`` is denied. Choosing exclusive-end is the conservative side:
 the instant the booking ends, the tool is out of bounds. Times are compared as
 timezone-aware instants, so any offset on the clock or in the file is honored;
-RC-6 already normalized the window to UTC.
+the engagement loader already normalized the window to UTC.
 
 Rate semantics: a sliding one-second log. At most ``max_rps`` actions are
 admitted in any rolling one-second period (an action admitted at ``t`` stops

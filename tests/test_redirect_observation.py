@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""RC-44: Recon: report redirects to hostnames outside scope instead of going quiet"""
+"""Redirect observation: a cross-host HTTP redirect is reported (and, out of scope, a limitation), never followed."""
 
 from __future__ import annotations
 
@@ -29,7 +29,7 @@ IP = "172.31.77.12"
 LOCATION = "http://site-outside.lab/"
 OUTSIDE = "site-outside.lab"
 NMAP_PATH = "/usr/bin/nmap"
-PROV = Provenance(engagement="rc44-test", scanner="nmap")
+PROV = Provenance(engagement="redirect-test", scanner="nmap")
 
 
 def _http_title(xml: str) -> dict:
@@ -211,7 +211,7 @@ class FixtureRunner:
 def _engagement(tmp_path: Path) -> Path:
     now = datetime.now(timezone.utc)
     data = {
-        "engagement": "rc44-test",
+        "engagement": "redirect-test",
         "authorization": {
             "client": "Test Client", "signed_scope_ref": "SOW-1", "authorized_by": "ops@example.com",
             "window": [(now - timedelta(hours=1)).isoformat(), (now + timedelta(hours=2)).isoformat()],

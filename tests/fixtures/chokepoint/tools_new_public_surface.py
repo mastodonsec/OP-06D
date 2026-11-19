@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""RC-48: Gate chokepoint test: prove GatedToolbox.execute() is the only path to the tools
+"""Gate chokepoint test fixture: GatedToolbox.execute() must be the only path to the tools.
 
 Negative fixture for tests/test_gate_chokepoint.py: new public names on GatedToolbox. Parsed, never imported.
 """

@@ -1,7 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""RC-40: LLM planner: wire a real model into the orchestrator and `op06d run`
-
-Production adapters for the ``op06d.orchestrator.LLM`` protocol:
+"""Production adapters for the ``op06d.orchestrator.LLM`` protocol:
 
 * ``AnthropicLLM`` - the hosted Claude Messages API (official ``anthropic``
   SDK, optional extra ``llm-anthropic``). The API key is read only from the

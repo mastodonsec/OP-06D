@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""RC-8: the operator approval prompt.
+"""The operator approval prompt.
 
 ``ConsoleApprover`` implements ``op06d.tools.ApprovalHook`` for an
 interactive terminal session. It is used ONLY when a run is actually
