@@ -34,9 +34,25 @@ change, also:
   `--templates-pin`/version flags in `lab/model_relay.py`.
 
 When Python dependencies change (`uv.lock`), regenerate the image's
-requirement files with the commands in their headers
-(`docker/requirements.txt`, `docker/requirements-lab.txt`);
-`tests/test_container_image.py` fails while they disagree with `uv.lock`.
+requirement files (`docker/requirements.txt`, `docker/requirements-lab.txt`,
+`docker/build-requirements.txt`):
+
+```bash
+uv run python scripts/update_docker_requirements.py
+```
+
+CI's `requirements` job runs the same script with `--check` and fails while
+they disagree with `uv.lock`. setuptools (the wheel's build backend) is not in
+`uv.lock`; bump it with `--setuptools <version>`.
+
+Dependabot (`.github/dependabot.yml`) opens pull requests for `uv.lock`, the
+workflows' pinned actions and the base image digest. On a `uv.lock` pull
+request, run the command above on its branch and push the result; the
+`requirements` job then passes. On a base image pull request, also set
+`ARG BASE_IMAGE` in the `Dockerfile` to the new `FROM` reference
+(`tests/test_container_image.py` fails until it matches). A Dependabot
+security pull request against a file under `docker/` is closed in favour of a
+regenerated bump.
 
 Set the new version in `pyproject.toml` (`[project] version`). The release
 workflow refuses a tag that does not match it.
