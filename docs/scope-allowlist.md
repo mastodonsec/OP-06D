@@ -139,13 +139,12 @@ recorded must not proceed.
 
 ## Known limits
 
-- ~~DNS answers can change between the check and the tool's own lookup
-  (rebinding, round-robin).~~ **Fixed by resolve-once DNS pinning.** `check_scope`/`evaluate_scope`
-  here are unchanged (still pure, still take `resolved_ips` as given), but
-  the one production caller, `Gate`, no longer calls a fresh resolver per
-  check - it resolves each hostname once per engagement and reuses that pin
-  for every later check, and `GatedToolbox` scans that pinned address, never
-  the hostname. See [`resolve.py`](../src/op06d/resolve.py) and
+- `check_scope`/`evaluate_scope` are pure and take `resolved_ips` as given;
+  they do not resolve anything. The one production caller, `Gate`, resolves
+  each hostname once per engagement and reuses that pin for every later
+  check, and `GatedToolbox` scans that pinned address, never the hostname, so
+  a DNS change (rebinding, round-robin) after the check cannot redirect the
+  scan. See [`resolve.py`](../src/op06d/resolve.py) and
   [gate-rate-and-window.md](gate-rate-and-window.md#resolve-once).
 - `system_resolver` ([`resolve.py`](../src/op06d/resolve.py), re-exported
   here for compatibility) uses the OS resolver with no timeout control.
