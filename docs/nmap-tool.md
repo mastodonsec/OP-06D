@@ -31,7 +31,6 @@ risk/destructiveness, parameter validation hook, secret redaction, structured
 | Normalizing findings into the report schema | the normalizer, `op06d.normalize` |
 | Persisting raw output as evidence | the evidence store, `op06d.evidence` |
 | Real lab to validate against a live nmap | [lab/RUNBOOK.md](../lab/RUNBOOK.md) |
-| MCP transport (the wrapper is a plain Python `Tool` behind the toolbox) | later |
 
 ## How a scan flows
 
@@ -350,4 +349,4 @@ does, so nothing else is done with it.
   (the live run's raw XML was not kept, only its hash).
 - The secret-key pattern is name-based. A secret in a parameter with an innocuous
   name is not detected, which is why secrets must not be given to the planner.
-- Output is plain text/XML; there is no MCP transport yet.
+- The wrapper is a plain Python `Tool` behind the toolbox; its output is plain text/XML.

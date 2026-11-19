@@ -135,14 +135,15 @@ Every tool declares a `Risk`:
 | `PASSIVE_RECON` (0) | reads public data, never touches the target | cert transparency lookup |
 | `ACTIVE_RECON` (1) | probes the target like a normal client | nmap, nuclei default templates |
 | `INTRUSIVE` (2) | may degrade a service or send attack-shaped traffic | fuzzing, intrusive templates |
-| `EXPLOIT` (3) | attempts access or state change | Metasploit (future tier) |
+| `EXPLOIT` (3) | attempts access or state change | none: no OP-06D tool is in this class |
 
 **Threshold:** an action needs operator approval when `tool.risk >=
 approval_threshold`. The default is `Risk.INTRUSIVE`, and it is configurable per
-toolbox. **Decision for the recon MVP: nothing crosses it.** nmap and nuclei
+toolbox. **With the shipped tools, nothing crosses it by default.** nmap and nuclei
 (default templates) are `ACTIVE_RECON`; a test pins that they never ask. A
 nuclei configuration that enables intrusive templates must be registered as
-`INTRUSIVE`. The exploit tier will hook in by registering `EXPLOIT` tools.
+`INTRUSIVE`. An `EXPLOIT` tool would need approval and an engagement with
+`destructive: true`.
 
 Rules, all tested:
 - Approval is asked **after** the gate allows the action, so the operator is

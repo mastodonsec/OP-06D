@@ -1,16 +1,13 @@
 ![alt text](OP-06D-v2.png)
 # OP-06D
 
-An AI-driven security validation tool. An LLM plans reconnaissance actions and drives
-real security tools against **authorized** targets, with every action forced through a
+An AI-driven security validation tool. A fixed recon plan or an LLM planner chooses
+reconnaissance actions and drives real security tools against **authorized** targets, with every action forced through a
 hard guardrail layer, and produces a client-grade report.
 
-> **Status: recon MVP complete, validated in an isolated lab.** The engagement parser,
-> guardrail gate, orchestrator loop, nmap and nuclei wrappers, evidence store, reports
-> and the `op06d` CLI (fixed or LLM planner) are built, unit-tested and validated
-> against the pinned real tools in an isolated lab. **Authorized use only:** run it
-> only against systems you own or hold signed authorization to test. See
-> [Project status](#project-status).
+> **OP-06D runs reconnaissance with nmap and nuclei, driven by a fixed or an LLM planner,
+> and is validated against the pinned tools in an isolated lab.** Authorized use only:
+> run it only against systems you own or hold signed authorization to test.
 
 ---
 
@@ -26,6 +23,8 @@ against systems you own or have **explicit, written authorization** to test.
   third party's own testing policies.
 - You are responsible for operating within your authorization. The guardrails reduce the
   chance of a mistake; they do not transfer that responsibility.
+
+To report a vulnerability in OP-06D itself, see [`SECURITY.md`](SECURITY.md).
 
 ---
 
@@ -161,6 +160,13 @@ Scope rules worth knowing:
   does **not** cover the apex `acme.com`. List what you mean.
 - An explicit `out_of_scope` entry always wins over any `in_scope` match.
 
+## Limitations
+
+- Before a live engagement you need a signed, authorized scope, referenced in the
+  engagement file.
+- Not supported: exploitation, breach-and-attack simulation, cloud posture auditing,
+  authenticated app testing, and a web UI.
+
 ## Demo
 
 [`examples/demo_gate.py`](examples/demo_gate.py) shows the scope check making
@@ -247,54 +253,6 @@ lab/                     isolated Docker lab for live validation (see lab/RUNBOO
                          - PLANTED_VULNS.md: the frozen baseline; captures/: frozen evidence
 ```
 
-## Project status
-
-**Recon MVP: complete.** Engagement-file parser, guardrail gate (scope allowlist, rate cap,
-time window, audit log, output sanitizer), resolve-once DNS pinning, orchestrator loop,
-nmap and nuclei wrappers, result normalization, evidence store, Markdown/HTML/PDF reports,
-and the `op06d` CLI with operator approval for intrusive actions.
-
-**Validated against an isolated lab** (pinned nmap 7.93, nuclei v3.11.1, templates v10.5.1):
-real-tool flags and output confirmed, functional and repeatability tests against a frozen
-baseline, and adversarial gate testing — no bypass found. A one-command validation harness
-(`lab/validation_harness.py`) re-runs the whole lab check, with the isolation gate as a hard,
-fail-closed precondition.
-
-**Pre-live hardening: done.** nuclei coverage instrumentation, nmap privilege-degradation
-reporting, neutralized ambient nuclei config, and a write-method template exclusion backstop.
-
-**Merged since the MVP:**
-
-- **LLM planner:** `op06d run --planner llm` with a hosted (Anthropic) or local
-  model, run limits, strict reply validation and an engagement-level provider policy.
-- **Planner parameter schema:** each tool's parameter types and allowed values
-  reach the planner prompt and the constrained-output schema.
-- **Gate chokepoint suite:** a codebase-wide test that `GatedToolbox.execute()` is
-  the only path to the tools.
-- **Lab model relay:** an opt-in overlay that lets the sealed lab scanner reach
-  exactly one model upstream; the opt-in live-model gate test runs through it.
-- **Planner model benchmark:** `lab/benchmark.py` scores candidate models on lab runs;
-  the local shortlist has been run with it.
-- **nmap host timeouts:** host timeouts are sized per call and a skipped host is
-  reported as a limitation, not as an empty result.
-- **Redirect observation:** a cross-host HTTP redirect is reported as a finding,
-  and as a limitation when its target is out of scope; it is never followed.
-- **Cross-platform lab:** the lab and its isolation gate run on Linux and macOS
-  as well as Windows.
-
-**Before any live client engagement, still required:** a signed, authorized scope, and a
-check of the project board for any newly filed blockers. No known blockers remain in code.
-
-**Open:** handling targets that resolve to several IPs, optional VPN egress, report
-remediation and risk narrative, the planner putting the port in the target, a
-hostname-to-IP mapping for vhosts without DNS, and a container image. Product backlog:
-deployable sensor appliance, web UI, plugin arsenal, engagement-driven tool selection,
-one-command cloud deploy, and smaller lab, report and benchmark follow-ups.
-
-**Deliberately out of the MVP** (later iterations): exploitation tier (Metasploit),
-breach-and-attack simulation (CALDERA), cloud posture auditing, authenticated app testing,
-and any web UI. OP-06D is config-file + CLI for now.
-
 ## License
 
 OP-06D is licensed under the **GNU Affero General Public License v3.0 or later
@@ -305,6 +263,5 @@ run a modified OP-06D as a service for others, you must offer them its source.
 
 Copyright (c) 2026 Thomas Pavan / Mastodon Security.
 
-Contributions are accepted under the AGPL via the Developer Certificate of Origin;
-see [`CONTRIBUTING.md`](CONTRIBUTING.md). Read [`NOTICE`](NOTICE) before running the
-tool — it is for authorized testing only.
+For how the project is run, see [`CONTRIBUTING.md`](CONTRIBUTING.md). Read
+[`NOTICE`](NOTICE) before running the tool — it is for authorized testing only.
