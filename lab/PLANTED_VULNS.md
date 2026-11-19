@@ -2,18 +2,9 @@
 
 What a correct unauthenticated-recon run of OP-06D against the lab should (and should not) find.
 
-> **Naming note:** everything under `lab/captures/` was recorded under the project's previous name, before the rename to OP-06D, and may contain that name; it is frozen and intentionally not updated.
-
-> **Prose edits (2026-11-18):** the project name in this file's prose was updated to OP-06D, a reference to an unpublished file was removed, ticket references were removed from the title and these notes, and the earlier project-stage wording in the prose, the Expectation legend and the Section 2a/2b/3b headings now reads "unauthenticated recon". In Section 4 (rows G-8, G-9) and Section 6, ticket keys were reworded as plain words; nothing else in those sections, and nothing in Section 5 or any baseline value, changed.
-
-> **Status: FROZEN (2026-11-05).** This list was originally written from the
-> public documentation of OWASP Juice Shop (20.3.0) and DVWA, **before** any run.
-> It has now been reconciled against the **first real capture set** (RUNBOOK
-> steps 8–13, operator thomas@mastodonsec.com, nmap 7.93 / nuclei v3.11.1 /
-> templates v10.5.1). The `Observed` column and Section 5/6 record what the tools
-> actually reported. This is the lab repeatability baseline: a re-run with the
-> same pins must reproduce the same open ports and the same set of matched
-> template ids (timestamps and ordering aside).
+This is the lab repeatability baseline: a re-run with the same pins (nmap
+7.93, nuclei v3.11.1, templates v10.5.1) must reproduce the same open ports
+and the same set of matched template ids, timestamps and ordering aside.
 
 ## How to read this
 
@@ -36,11 +27,9 @@ Targets, from `lab/docker-compose.yml`:
 | OWASP Juice Shop 20.3.0 | `juice-shop.lab` / 172.31.77.10 | HTTP on **3000** (Node/Express + Angular) |
 | DVWA | `dvwa.lab` / 172.31.77.11 | HTTP on **80** (Apache 2.4.x, PHP, MariaDB; Debian-based) |
 
-> **DVWA state note:** in this capture set DVWA appears **un-initialized** (no
-> `/setup.php`, `/phpinfo.php`, or login-panel findings surfaced). RUNBOOK 3b (DB
-> init) was left optional and evidently not run. The DVWA rows below are therefore
-> baselined against the **uninitialized** state. Re-running 3b before a future
-> capture would change D-1/D-3/D-4 and should be treated as a different baseline.
+The DVWA rows are baselined against an uninitialised DVWA database (RUNBOOK
+Step 3b not run); initialising it changes D-1, D-3 and D-4 and makes a
+different baseline.
 
 ## 1. Network and service layer (nmap)
 
@@ -72,13 +61,14 @@ Targets, from `lab/docker-compose.yml`:
 
 ### 2b. Needs interaction or authentication (**OUT** for unauthenticated recon)
 
-(unchanged — Injection, XSS, broken auth/access-control, sensitive-data exposure,
+Injection, XSS, broken auth/access-control, sensitive-data exposure,
 misconfig, improper input validation, XXE/deserialization, vulnerable components,
-crypto issues, unvalidated redirects. None are covered by unauthenticated recon.)
+crypto issues, unvalidated redirects. None are covered by unauthenticated recon.
 
 ## 3. DVWA
 
-> Baselined against the **uninitialized** DVWA state (see state note above).
+Baselined against an uninitialised DVWA database (see the note under the
+targets table above).
 
 ### 3a. Visible to unauthenticated recon
 
@@ -96,7 +86,8 @@ crypto issues, unvalidated redirects. None are covered by unauthenticated recon.
 
 ### 3b. Needs interaction or authentication (**OUT** for unauthenticated recon)
 
-(unchanged.)
+DVWA's modules (the same classes as 2b) need a logged-in session. None are
+covered by unauthenticated recon.
 
 ## 4. Negative expectations (a correct run must NOT do these)
 
@@ -136,16 +127,15 @@ crypto issues, unvalidated redirects. None are covered by unauthenticated recon.
   identity (Juice Shop, Swagger) came only from nuclei. The report/normalization
   layer (`op06d.normalize`) must treat nmap's service name on non-standard ports as low
   confidence and corroborate with nuclei before asserting a service.
-- **C-2 — RESOLVED (nuclei template-coverage investigation, 2026-11-07): root cause identified, coverage limit
-  confirmed intentional, not fixed by widening the selection.** Both nuclei
-  runs listed `exposure`/`misconfig`/`config` in `selection.tags`, yet no
-  CORS / missing-security-headers / metrics / `/ftp` findings surfaced. The template-coverage investigation
-  added `summary.templates_loaded` instrumentation (`-stats -stats-json`) and
-  used it, plus a live lab investigation against the pinned v10.5.1 template
-  set, to resolve the blind spot:
-  - The default selection loaded **2,820** templates against DVWA (confirmed
-    via `summary.templates_loaded`, not a guess) — so the gap was never
-    "nothing loaded," it was specific exclusions.
+- **C-2 — nuclei template coverage: the limit is intentional, and the
+  selection is not widened.** Both nuclei runs list
+  `exposure`/`misconfig`/`config` in `selection.tags`, yet no CORS /
+  missing-security-headers / metrics / `/ftp` findings surface. Against the
+  pinned v10.5.1 template set, `summary.templates_loaded`
+  (`-stats -stats-json`) shows why:
+  - The default selection loads **2,820** templates against DVWA (from
+    `summary.templates_loaded`), so the gap is not "nothing loaded"; it is
+    specific exclusions.
   - `http-missing-security-headers` (`tags: misconfig,headers,generic,vuln`)
     and `cors-misconfig` (`tags: cors,generic,misconfig,vuln`) are both
     legitimately `misconfig`/`exposure`-class checks, but BOTH also carry
@@ -153,19 +143,19 @@ crypto issues, unvalidated redirects. None are covered by unauthenticated recon.
     not explicitly selected, including `vuln`) always wins over `-tags` in
     nuclei regardless of a template's other tags — so they are excluded by
     design, not by accident.
-  - Fix considered and **rejected**: dropping `vuln` from the exclude list
+  - Widening is **rejected**: dropping `vuln` from the exclude list
     would recover these two but pulls in **~1,479** additional templates
     from the pinned set, including malware C2-panel fingerprinting templates
     (Caldera, Empire, Covenant, Mythic, etc.) and **~102** templates that use
     POST requests, fuzzing/payloads, or follow redirects — an unreviewed,
     unacceptable widening of what "low-impact default" is supposed to mean.
-  - `/ftp`, `/metrics`, J-6/J-7/J-8/D-6/D-7/D-9 etc. remain genuinely
-    unmatched for a different reason: no template in the pinned set targets
-    those specific paths/behaviors at all (confirmed by the same `-tl`
-    listing — this is template-set coverage, not a selection-logic bug).
+  - `/ftp`, `/metrics`, J-6/J-7/J-8/D-6/D-7/D-9 etc. are unmatched for a
+    different reason: no template in the pinned set targets those specific
+    paths/behaviors at all (template-set coverage, not a selection-logic
+    bug).
   - **Decision: document, don't widen** (see `docs/nuclei-tool.md`'s Known
-    Limits). J-9/J-10/D-8 stay **not found** in Section 5/1, now with a
-    precise, confirmed reason instead of an open question. An operator who
+    Limits). J-9/J-10/D-8 stay **not found** in Section 5/1, for the reasons
+    above. An operator who
     wants these two specific checks can add them via `curated_ids` +
     `template_ids` (bypasses the default tag selection entirely, no change
     to default behavior).

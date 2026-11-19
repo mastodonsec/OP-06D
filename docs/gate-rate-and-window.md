@@ -45,19 +45,20 @@ GateDecision(target, allowed, reason, stage, resolved_ips, retry_after)
   `AuditSink(target, allowed, reason)`; there is no second logging path. The
   gate passes `check_scope` a no-op sink and writes the final decision itself,
   so an action does not produce a scope "allow" followed by a rate "deny".
-- The audit event name is `gate_decision` (previously `scope_decision`), since
-  the sink now records window and rate decisions too.
+- The audit event name is `gate_decision`, since the sink records window and
+  rate decisions as well as scope.
 - `Gate.check` never raises. Any unexpected error is a deny.
 
 ## Resolve-once
 
-**The gap this closes.** The gate used to resolve a hostname to decide scope,
-and the tool (nmap/nuclei) re-resolved the same hostname independently when it
-ran. If DNS changed in between - attacker-controlled rebinding, a short-TTL
-failover, ordinary drift - the tool could scan an address the gate never saw,
-let alone approved: a time-of-check/time-of-use bypass of the scope control.
+**Why.** If the gate resolved a hostname to decide scope and the tool
+(nmap/nuclei) resolved it again when it ran, a DNS change in between -
+attacker-controlled rebinding, a short-TTL failover, ordinary drift - would let
+the tool scan an address the gate never saw, let alone approved: a
+time-of-check/time-of-use bypass of the scope control. Resolve-once makes the
+gate's answer the only one.
 
-**The fix.** Each `Gate` owns one `DnsPinner` ([`src/op06d/resolve.py`](../src/op06d/resolve.py))
+**How.** Each `Gate` owns one `DnsPinner` ([`src/op06d/resolve.py`](../src/op06d/resolve.py))
 for its whole life - one `Gate` per engagement run, so one pinner per
 engagement. The first scope check of a hostname resolves and pins it; every
 later check of that same hostname, no matter how much later or how many other

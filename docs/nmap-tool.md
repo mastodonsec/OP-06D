@@ -180,9 +180,9 @@ fields), and host, port and script counts are capped.
 
 `summary.scan_types` records every `<scaninfo>` technique nmap actually used
 (`syn`, `connect`, ... - empty for a profile with no port-scan phase, e.g.
-`ping`). `warnings` is now populated whenever stderr has content, not only on
-a non-zero exit - a successful-but-degraded run used to report `status=ok`
-with no signal at all, which is exactly the gap this closes.
+`ping`). `warnings` is populated whenever stderr has content, not only on a
+non-zero exit, so a successful-but-degraded run reports `status=ok` with a
+signal rather than none.
 
 **Connect-scan fallback (every profile).** Without raw-socket privileges
 nmap does not fail: it uses a TCP connect scan instead of a SYN scan, and its
@@ -212,9 +212,9 @@ NET_ADMIN; otherwise the plain nmap runs. The probe is injectable
 **OS detection.** The `aggressive` profile implies `-O` (OS detection), which
 needs root/raw-socket privileges. Running unprivileged, nmap falls back to a
 connect scan and simply omits OS detection, still exiting 0 with valid XML
-(confirmed live in the lab against the pinned nmap 7.93: **stderr was
-completely empty** in both the privileged and unprivileged case, so there is
-no warning text to rely on for this specific fallback). The result then adds
+(with the pinned nmap 7.93, **stderr is empty** in both the privileged and
+unprivileged case, so there is no warning text to rely on for this specific
+fallback). The result then adds
 `os_detection`:
 
 ```json
@@ -347,10 +347,9 @@ uv run --extra dev pytest tests/test_nmap_tool.py
 for an originally-hostname action (see
 [gate-rate-and-window.md](gate-rate-and-window.md#resolve-once)). nmap
 never resolves anything itself: `-n` (disabling nmap's own forward *and*
-reverse DNS) is always in `build_argv`'s output, for every profile. This
-closes what used to be a real gap - nmap used to resolve a hostname target
-independently of the gate, so a DNS change between the gate's check and
-nmap's own lookup could make it scan an address the gate never saw.
+reverse DNS) is always in `build_argv`'s output, for every profile, so a DNS
+change after the gate's check cannot make nmap scan an address the gate never
+saw.
 `hostname`, when given, is only recorded in the result (`target_hostname`,
 for the report); nmap has no vhost/SNI concept to preserve the way nuclei
 does, so nothing else is done with it.

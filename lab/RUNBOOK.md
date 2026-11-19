@@ -3,9 +3,7 @@
 The maintainer's validation reference for the lab: the ordered steps that
 stand up the lab, **prove it is isolated**, validate the nmap and nuclei
 wrappers against the real, pinned tools, and run the whole chain once. Nothing
-in this repository runs them for you: the validation harness below runs Steps
-5-13 when you start it, with the isolation gate (Step 4) as a fail-closed
-precondition.
+in this repository runs them for you.
 
 Run all commands from the repository root. **Shells:** `powershell` blocks are
 for **PowerShell 7** (`pwsh`); snippets are piped into the container, which
@@ -14,44 +12,9 @@ blocks (for Linux and macOS) are for bash or zsh; for the
 `docker compose -f $LAB ...` lines in the PowerShell blocks, see
 [Linux and macOS hosts](#linux-and-macos-hosts).
 
-> **There is a gated, automated version of Steps 4+8+9** (isolation
-> precondition, the real scan set, and a repeatability check), driven by
-> `tests/integration/test_lab_repeatability.py` against the frozen baseline in
-> `tests/integration/baseline.json`. It is excluded from the default test
-> suite and needs `OP06D_LAB=1`:
-> `OP06D_LAB=1 pytest -m lab --basetemp .pytest-tmp tests/integration/test_lab_repeatability.py`
-> (`.pytest-tmp/` is pytest's scratch directory for the run; it is git-ignored).
-> It does not replace the exploratory one-off steps below (10/11/12) or the
-> scripted-orchestrator end-to-end in Step 13.
-
-> **A single-command validation harness runs Steps 5–13 and prints
-> PASS/FAIL/NEEDS-REVIEW** — `OP06D_LAB=1 python lab/validation_harness.py`.
-> The isolation gate (Step 4) is a hard fail-closed precondition; Steps 10
-> and 11 are reported as NEEDS-REVIEW, so the go/no-go to scan remains a human
-> decision. It does not replace reading the exploratory steps the first time
-> through. (PowerShell: `$env:OP06D_LAB = "1"; python lab/validation_harness.py`.
-> It brings the stack up, always tears it down at the end unless you pass
-> `--keep-stack`, and writes every step's output, the tool versions, the
-> template-set hash and a `summary.json` to a fresh
-> `lab/captures/validation-<UTC-timestamp>/` folder. Exit 0 = nothing FAILed;
-> 1 = a step FAILed; 2 = the isolation gate did not PASS and nothing was scanned.)
-
 ```powershell
 $LAB = "lab/docker-compose.yml"
 ```
-
-> **Set `$LAB` at the start of every new terminal session — PowerShell
-> variables do not persist.** If a command errors with a usage / `-T` error
-> (for example `docker compose -f  exec ...` complaining about its arguments),
-> you probably opened a fresh shell: re-run the `$LAB = ...` line above.
-
-> **Reading this runbook.** Lines to type are in `powershell` (PowerShell 7) or `bash` (bash/zsh) code blocks. When a step also shows what you should see, the expected output follows under an **Expected output:** label, in its own plain block — that block is the result to compare against, never something to run. An Expected result that does not match is a deviation: keep the full output, with the step number, next to the other captures in `lab/captures/`, and do not scan with OP-06D until it is understood.
-
-> **Here-string blocks are single commands.** A block that starts with `@'`
-> and ends with `'@ | docker compose -f $LAB exec -T scanner python3 -` (or
-> `... sh -c "..."`) is **one pasteable command**: paste the whole block at
-> once, from the repository root, in **PowerShell 7 (`pwsh`), not Windows
-> PowerShell 5.1**. The closing `'@` must stay at the start of its line.
 
 ---
 

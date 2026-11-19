@@ -136,33 +136,31 @@ that host has already happened by then, so this is a tripwire, not prevention.
 
 ### 4. The ambient `~/.config/nuclei` config is never read
 nuclei reads `~/.config/nuclei/config.yaml` (and `~/.config/nuclei/.nuclei-ignore`)
-by default. Confirmed live in the lab (RUNBOOK Step 11): a stray or
-hostile one is a real problem for the controls above - a conflicting
-`follow-redirects: true` makes nuclei **fatal** on every scan (fail-closed only
-by accident), while a non-conflicting setting (an injected `header:`, nothing
-in `build_argv` conflicts with it) would silently take effect, and a hostile
-`.nuclei-ignore` could silently drop templates (a template-coverage blind spot).
+by default (RUNBOOK Step 11 replays this). A stray or hostile one would undermine
+the controls above: a conflicting `follow-redirects: true` makes nuclei
+**fatal** on every scan, a non-conflicting setting (an injected `header:`,
+nothing in `build_argv` conflicts with it) would silently take effect, and a
+hostile `.nuclei-ignore` could silently drop templates (a template-coverage
+blind spot).
 
-Two independent layers now close this:
+Two independent layers keep it out:
 
 - `-config` is **always** passed - a wrapper-owned file, never the ambient
-  one. If the operator set `config_path`, that file is used as-is (unchanged
-  behavior); otherwise the wrapper writes a fresh, empty config into a
-  per-run temporary directory (validated safe against the lab's hostile
-  config - RUNBOOK Step 11 run C).
+  one. If the operator set `config_path`, that file is used as-is; otherwise
+  the wrapper writes a fresh, empty config into a per-run temporary directory
+  (RUNBOOK Step 11 run C exercises it against a hostile config).
 - `run` executes nuclei with `HOME` and `XDG_CONFIG_HOME` pointed at that same
   per-run temporary directory instead of the real ones, so nuclei cannot find
   the ambient config or ignore-file even if `-config` were somehow bypassed.
-  `op06d.tools.run_subprocess` gained an `env=` parameter for this; it
-  defaults to `None` (inherit), so nmap's call path is unchanged.
+  `op06d.tools.run_subprocess` takes an `env=` parameter for this; it
+  defaults to `None` (inherit), which is what nmap's call path uses.
 
 The directory is created fresh for each `run()` call and removed afterward
 (`tempfile.TemporaryDirectory`, cleaned up even on a timeout or exec error) -
-nothing persists or leaks between runs. A hostile `HTTP_PROXY`/`HTTPS_PROXY`
-in the ambient environment was also tested (lab run D/E): nuclei does not
-honor a proxy variable on its own, so scrubbing `HOME`, not the whole
-environment, is the targeted fix - `PATH` is still passed through unchanged
-so nuclei itself can be found and executed.
+nothing persists or leaks between runs. nuclei does not honor a hostile
+`HTTP_PROXY`/`HTTPS_PROXY` in the ambient environment on its own (RUNBOOK
+Step 11 runs D/E), so the wrapper scrubs `HOME`, not the whole environment -
+`PATH` is passed through so nuclei itself can be found and executed.
 
 Note: `build_argv` called directly (without going through `run`) points
 `-config` at a deterministic placeholder path that does **not** exist on
@@ -179,11 +177,10 @@ request; all are query-style `POST` (GraphQL introspection, JSON-RPC reads,
 SAP SOAP disclosure, API fingerprinting) - `POST` because the query protocol
 needs it, not to change state - and they are deliberately kept.
 
-That used to be true only because every write-method template also happened
-to carry a danger tag `-exclude-tags` drops - safe, but an accident of
-tagging, not a guarantee. A future re-pin adding a write-method template
-without a danger tag would have silently entered the default pass. It is
-now structural:
+In the pinned set every write-method template also carries a danger tag that
+`-exclude-tags` drops, but that is an accident of tagging, not a guarantee: a
+re-pin could add a write-method template without one. The exclusion is
+therefore structural:
 
 - **Detection** (`op06d.nuclei_method_audit`): a template declares a write
   method if an `http`/`requests` block has `method: PUT|DELETE|PATCH|PURGE`,
@@ -193,8 +190,8 @@ now structural:
   write-method template id in the pinned set, **regardless of tags or
   `template_ids`**. nuclei has no runtime exclude-by-method flag, and
   `-tc`/`-template-condition` is an *include* expression, so a pinned id list
-  is the mechanism - verified live that `-eid` excludes a write-method
-  template even when it is explicitly `-id`-included.
+  is the mechanism. `-eid` excludes a write-method template even when it is
+  explicitly `-id`-included.
 - **The list is a pinned artifact**, not a 14k-file scan per construction:
   `src/op06d/nuclei_write_method_exclusions.json` (69 ids for v10.5.1),
   tied to `templates_pin`. Regenerate it whenever the template set is
