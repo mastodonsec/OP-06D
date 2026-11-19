@@ -7,12 +7,6 @@ in this repository runs them for you: the validation harness below runs Steps
 5-13 when you start it, with the isolation gate (Step 4) as a fail-closed
 precondition.
 
-> The frozen baseline (`lab/PLANTED_VULNS.md`) and the evidence in
-> `lab/captures/` come from a run on Windows with Docker Desktop (WSL2
-> backend). An "Expected" result that does not match is a deviation: keep the
-> full output, with the step number, next to the other captures in
-> `lab/captures/`, and do not scan with OP-06D until it is understood.
-
 Run all commands from the repository root. **Shells:** `powershell` blocks are
 for **PowerShell 7** (`pwsh`); snippets are piped into the container, which
 needs UTF-8 handling that Windows PowerShell 5.1 does not do reliably. `bash`
@@ -51,7 +45,7 @@ $LAB = "lab/docker-compose.yml"
 > (for example `docker compose -f  exec ...` complaining about its arguments),
 > you probably opened a fresh shell: re-run the `$LAB = ...` line above.
 
-> **Reading this runbook.** Lines to type are in `powershell` (PowerShell 7) or `bash` (bash/zsh) code blocks. When a step also shows what you should see, the expected output follows under an **Expected output:** label, in its own plain block — that block is the result to compare against, never something to run.
+> **Reading this runbook.** Lines to type are in `powershell` (PowerShell 7) or `bash` (bash/zsh) code blocks. When a step also shows what you should see, the expected output follows under an **Expected output:** label, in its own plain block — that block is the result to compare against, never something to run. An Expected result that does not match is a deviation: keep the full output, with the step number, next to the other captures in `lab/captures/`, and do not scan with OP-06D until it is understood.
 
 > **Here-string blocks are single commands.** A block that starts with `@'`
 > and ends with `'@ | docker compose -f $LAB exec -T scanner python3 -` (or
