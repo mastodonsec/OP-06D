@@ -1,6 +1,6 @@
 # Build-only: setuptools to build the OP-06D wheel (pyproject build-system), hash-pinned.
 # Not part of uv.lock (build backends are not locked there). Regenerate with:
-#   echo setuptools==80.9.0 | uv pip compile - --generate-hashes --python-version 3.11 --no-header
-setuptools==80.9.0 \
+#   echo setuptools==84.1.0 | uv pip compile - --generate-hashes --python-version 3.11 --no-header
+setuptools==84.1.0 \
     --hash=sha256:062d34222ad13e0cc312a4c02d73f059e86a4acbfbdea8f8f76b28c99f306922 \
     --hash=sha256:f36b47402ecde768dbfafc46e8e4207b4360c654f1f3bb84475f0a28628fb19c
