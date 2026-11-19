@@ -40,6 +40,41 @@ the LLM emits can widen scope, exceed the authorized rate, run outside the booke
 or escape the audit trail. Enforcement lives in code, outside the model, and cannot be
 altered by model output or by anything a scanned target says back.
 
+## Prerequisites
+
+OP-06D is a tool for security professionals. It assists a skilled operator; it doesn't
+replace one, and it isn't a one-click scanner. To use it well you need:
+
+### Knowledge
+
+- Networking: TCP/IP, DNS, HTTP and TLS, CIDR notation.
+- nmap and nuclei: what they do and how to read their output.
+- Penetration-testing practice: scoping, rules of engagement, and written authorization
+  from the system owner.
+- Judgment: telling real findings from false positives, and knowing what a finding means
+  for the client.
+- The law on security testing where you work.
+
+### Skills
+
+- The command line (bash or PowerShell).
+- Docker: images, volumes, networks and container capabilities.
+- YAML, to write the engagement file.
+- git and Python ([`uv`](https://github.com/astral-sh/uv)), to install OP-06D from a
+  checkout, run the lab, or work on OP-06D.
+
+### For the optional LLM planner
+
+- With the hosted model (Anthropic's API), scan results are sent to the model provider.
+  Understand that, the API key and the cost before you use it on client work.
+- With a local model: running a local model server (Ollama, llama.cpp or another
+  OpenAI-compatible server), ideally on a machine with a GPU.
+
+### Who it's not for
+
+- Anyone expecting point-and-click results, a graphical interface, or a report that's
+  ready to hand to a client without review.
+
 ## Architecture
 
 ```
@@ -209,6 +244,28 @@ host.** Real-tool behavior is validated separately in the isolated lab
 ([`lab/RUNBOOK.md`](lab/RUNBOOK.md)). The lab-gated integration tests are deselected
 by default (they need `-m lab`, `OP06D_LAB=1` and the lab), and the live-model test
 is skipped unless `OP06D_LIVE_MODEL=1`.
+
+## The lab
+
+The lab is optional: OP-06D runs against any authorized target without it. It's a sealed
+Docker network with deliberately vulnerable targets (OWASP Juice Shop, DVWA and a small
+nginx redirect service) and a scanner built from the OP-06D image itself (the
+`Dockerfile`'s `lab` stage: the same image plus test tools), so it runs the same pinned
+nmap, nuclei and templates. Nothing in the lab can reach the internet, your network or
+your host, and an isolation check proves that before anything scans. The one exception
+is opt-in: for LLM planner runs, a model relay opens a single path, to Anthropic's API
+or to Ollama on your host, and has its own isolation check.
+
+It has two jobs:
+
+1. **A practice range:** learn how OP-06D works and what its output, report and audit
+   log look like, against targets you're allowed to break.
+2. **The project's reference environment:** changes are validated here against known,
+   planted vulnerabilities ([`lab/PLANTED_VULNS.md`](lab/PLANTED_VULNS.md)), so results
+   are repeatable. It's also where planner models are compared.
+
+Run it once after installing, before your first authorized engagement, to confirm your
+setup works and to see real output. See [`lab/RUNBOOK.md`](lab/RUNBOOK.md).
 
 ## Project layout
 
