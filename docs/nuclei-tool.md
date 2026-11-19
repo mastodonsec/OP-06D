@@ -373,8 +373,8 @@ uv run --extra dev pytest tests/test_nuclei_tool.py
   and Step 11 confirmed that redirects stay off and that a hostile ambient
   config is ignored. Step 11's out-of-band sub-check is still
   INCONCLUSIVE (the lab has no local interactsh server that nuclei can
-  register with yet), so `-no-interactsh` is shown to be accepted but a blocked callback is
-  not yet demonstrated. The lab has no egress, so no public interactsh server
+  register with), so `-no-interactsh` is shown to be accepted but a blocked callback is
+  not demonstrated. The lab has no egress, so no public interactsh server
   can be reached from it. Re-run Steps 7, 8 and 11 after any change to the
   nuclei pin.
 - The curated set is as safe as its contents: a template can still do more than

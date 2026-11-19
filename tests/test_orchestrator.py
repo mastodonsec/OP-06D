@@ -455,7 +455,7 @@ def test_recon_tools_do_not_require_approval_by_default(tmp_path):
     approver = Approver()
     rig = Rig(tmp_path, [act(), DONE], approver=approver)
     rig.run()
-    assert approver.requests == [] and len(rig.tools[0].calls) == 1  # documented MVP decision
+    assert approver.requests == [] and len(rig.tools[0].calls) == 1  # nmap/nuclei are ACTIVE_RECON: below the default threshold
 
 
 @pytest.mark.parametrize("answer, runs", [(True, 1), (False, 0), (RuntimeError("ui died"), 0)])

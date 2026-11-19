@@ -17,11 +17,11 @@ Design rules, each load-bearing:
   the evidence store both depend on this).
 * **No cross-tool reconciliation.** nmap and nuclei disagreeing about a
   service's identity (PLANTED_VULNS correction C-1: nmap calls port 3000
-  `ppp`, nuclei says `http`) is real and reported as-is, as two findings.
-  Correlating/reconciling tool identities is a later ticket.
+  `ppp`, nuclei says `http`) is real and reported as-is, as two findings;
+  tool identities are not correlated or reconciled.
 * **Severity is not invented.** nuclei's severity is a direct passthrough;
-  nmap-derived findings get the "info" baseline. Escalation rules are a
-  later concern.
+  nmap-derived findings get the "info" baseline. Nothing escalates
+  severity.
 * **Nothing is silently dropped.** Anything that cannot be mapped - a
   malformed dict, a host reported down, an off-target nuclei hit, unparsed
   lines - becomes a ``NormalizationIssue`` carrying the raw snippet, never a

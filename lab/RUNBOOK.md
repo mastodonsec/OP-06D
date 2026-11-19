@@ -272,7 +272,7 @@ docker compose -f $LAB exec -T scanner curl -sS -o /dev/null -w "dvwa HTTP %{htt
 ```
 
 **Step 3b (optional): initialise the DVWA database.** Only needed for the
-authenticated DVWA modules (out of the MVP). Browse is not possible (no published
+authenticated DVWA modules (not covered by OP-06D's unauthenticated recon). Browse is not possible (no published
 port); do it with curl from the scanner: fetch `/setup.php`, read the
 `user_token` hidden field, then POST `create_db=Create / Reset Database` with
 that token and the same session cookie. If the page changes, skip this step.

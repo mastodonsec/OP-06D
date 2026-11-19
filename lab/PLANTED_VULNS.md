@@ -1,10 +1,10 @@
 # Planted vulnerabilities: the lab repeatability baseline
 
-What a correct OP-06D run against the lab should (and should not) find.
+What a correct unauthenticated-recon run of OP-06D against the lab should (and should not) find.
 
 > **Naming note:** everything under `lab/captures/` was recorded under the project's previous name, before the rename to OP-06D, and may contain that name; it is frozen and intentionally not updated.
 
-> **Prose edits (2026-11-18):** the project name in this file's prose was updated to OP-06D, a reference to an unpublished file was removed, and ticket references were removed from the title and these notes. In Section 4 (rows G-8, G-9) and Section 6, ticket keys were reworded as plain words; nothing else in those sections, and nothing in Section 5 or any baseline value, changed.
+> **Prose edits (2026-11-18):** the project name in this file's prose was updated to OP-06D, a reference to an unpublished file was removed, ticket references were removed from the title and these notes, and the earlier project-stage wording in the prose, the Expectation legend and the Section 2a/2b/3b headings now reads "unauthenticated recon". In Section 4 (rows G-8, G-9) and Section 6, ticket keys were reworded as plain words; nothing else in those sections, and nothing in Section 5 or any baseline value, changed.
 
 > **Status: FROZEN (2026-11-05).** This list was originally written from the
 > public documentation of OWASP Juice Shop (20.3.0) and DVWA, **before** any run.
@@ -17,15 +17,15 @@ What a correct OP-06D run against the lab should (and should not) find.
 
 ## How to read this
 
-The MVP is **unauthenticated external recon** with nmap and nuclei. Most
+OP-06D performs **unauthenticated external recon** with nmap and nuclei. Most
 planted vulnerabilities in both apps need a logged-in session or
 hand-crafted requests (SQL injection, XSS, CSRF, file upload...). OP-06D is
-**not expected to find those** in the MVP. They are listed so the baseline is
-complete and so later iterations (authenticated app testing) have a target list.
+**not expected to find those** with unauthenticated recon. They are listed so the
+baseline is complete.
 
 | Column | Meaning |
 |---|---|
-| Expectation | **MUST** a correct MVP run reports it · **SHOULD** it usually does, depending on templates · **MAY** possible, not required · **OUT** needs authentication or manual exploitation, not an MVP goal |
+| Expectation | **MUST** a correct unauthenticated-recon run reports it · **SHOULD** it usually does, depending on templates · **MAY** possible, not required · **OUT** needs authentication or manual exploitation, not covered by unauthenticated recon |
 | Tool | which tool is expected to surface it (nmap / nuclei / none) |
 | Observed | what the first real run actually did: **FOUND** / **not found** / **n/a** |
 
@@ -54,7 +54,7 @@ Targets, from `lab/docker-compose.yml`:
 
 ## 2. OWASP Juice Shop
 
-### 2a. Visible to unauthenticated recon (the MVP-relevant set)
+### 2a. Visible to unauthenticated recon (the relevant set)
 
 | ID | Finding | Where | Expectation | Tool | Observed |
 |---|---|---|---|---|---|
@@ -70,11 +70,11 @@ Targets, from `lab/docker-compose.yml`:
 | J-10 | Missing/weak security headers (no CSP, HSTS absent over HTTP) | all responses | **SHOULD** | nuclei `misconfig` | **not found** — no missing-security-headers finding despite `misconfig` in selection. See C-2. |
 | J-11 | Open redirect with weak allow-list | `/redirect?to=` | **MAY**; `redirect` tag is INTRUSIVE | nuclei (needs approval) | **n/a** — not in a default run; not selected. |
 
-### 2b. Needs interaction or authentication (**OUT** for the MVP)
+### 2b. Needs interaction or authentication (**OUT** for unauthenticated recon)
 
 (unchanged — Injection, XSS, broken auth/access-control, sensitive-data exposure,
 misconfig, improper input validation, XXE/deserialization, vulnerable components,
-crypto issues, unvalidated redirects. None are MVP goals.)
+crypto issues, unvalidated redirects. None are covered by unauthenticated recon.)
 
 ## 3. DVWA
 
@@ -94,7 +94,7 @@ crypto issues, unvalidated redirects. None are MVP goals.)
 | D-8 | Missing security headers | all responses | **SHOULD** | nuclei `misconfig` | **not found** — nmap `http-security-headers` script returned empty output; no nuclei finding. See C-2. |
 | D-9 | Known-CVE matches for old Apache/PHP | n/a | **MAY**; `cve` tag INTRUSIVE | nuclei (needs approval) | **n/a** — not selected. |
 
-### 3b. Needs interaction or authentication (**OUT** for the MVP)
+### 3b. Needs interaction or authentication (**OUT** for unauthenticated recon)
 
 (unchanged.)
 
