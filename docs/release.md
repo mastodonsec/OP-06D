@@ -75,7 +75,7 @@ Follow [lab/RUNBOOK.md](../lab/RUNBOOK.md): rebuild the scanner
 gate (Step 4), and run the repeatability test and an `op06d run` with the
 installed copy (`OP06D_LAB_CODE=./installed-only`, see "Mounted code and the
 installed copy"). A new template pin changes what nuclei finds: if the
-repeatability baseline no longer matches, reconcile it deliberately before
+repeatability baseline does not match, reconcile it deliberately before
 releasing.
 
 ## 4. Tag

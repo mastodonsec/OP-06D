@@ -55,6 +55,85 @@ def test_roadmap_wording_is_caught_in_markdown_only(tmp_path, phrase):
     assert _scan(tmp_path, {"code.py": f"# {line}"}) == []
 
 
+SAME = "un" + "changed"
+HISTORY_SAMPLES = {
+    "resolution marker": ("**" + "RESOL" + "VED.** It works.", "RESOL" + "VED"),
+    "dated test note": ("Test" + "ed 2026 on Kali.", "Test" + "ed 2026"),
+    "parenthesised date": ("Frozen " + "(2026" + "-11-05).", "(2026" + "-11-05)"),
+    "past behaviour": ("It " + "used" + " to do that.", "used" + " to"),
+    "stopped behaviour": ("It " + "no" + " longer does that.", "no" + " longer"),
+    "since a fix": ("Since" + " the ambient-config fix, it works.", "Since" + " the ambient-config fix"),
+    "pointer to later work": ("A " + "follow" + "-up will add it.", "follow" + "-up"),
+    "first run": ("On the " + "first" + " run it failed.", "first" + " run"),
+    "first real run": ("From the " + "first" + " real run.", "first" + " real run"),
+    "future run": ("A " + "future" + " run may differ.", "future" + " run"),
+    "live confirmation": ("Confirmed" + " live in the lab.", "Confirmed" + " live"),
+    "strikethrough": ("~" + "~old~" + "~ new", "~" + "~"),
+    "parenthesised same": ("`fixed` (default, " + SAME + ")", "(default, " + SAME + ")"),
+    "are same": ("The reports are " + SAME + ".", "are " + SAME),
+    "is same": ("The output is " + SAME + ".", "is " + SAME),
+}
+
+
+@pytest.mark.parametrize("line,matched", list(HISTORY_SAMPLES.values()), ids=list(HISTORY_SAMPLES))
+def test_history_wording_is_caught_in_markdown_with_file_and_line(tmp_path, line, matched):
+    problems = _scan(tmp_path, {"doc.md": f"# Title\n\n{line}\n"})
+    assert [(p.path, p.line) for p in problems] == [("doc.md", 3)]
+    assert problems[0].what == f"history wording: {matched!r}"
+
+
+def test_a_call_out_is_caught_in_markdown_with_file_and_line(tmp_path):
+    problems = _scan(tmp_path, {"doc.md": "Intro.\n\n" + ">" + " **Note:** it changed.\n"})
+    assert [(p.path, p.line, p.what) for p in problems] == [("doc.md", 3, "call-out note: '>'")]
+
+
+ALL_NEW = [line for line, _ in HISTORY_SAMPLES.values()] + [">" + " a call-out"]
+
+
+@pytest.mark.parametrize("line", ALL_NEW)
+@pytest.mark.parametrize("name", ["code.py", "conf.yml"])
+def test_history_and_call_outs_are_not_caught_outside_markdown(tmp_path, line, name):
+    assert _scan(tmp_path, {name: f"{line}\n"}) == []
+
+
+@pytest.mark.parametrize("fence", ["```", "~~~", "````", "```bash"])
+@pytest.mark.parametrize("line", ALL_NEW)
+def test_fenced_code_is_not_scanned_but_prose_after_it_is(tmp_path, fence, line):
+    close = fence.rstrip("bash")
+    text = f"Intro.\n\n{fence}\n{line}\n{close}\n\n{line}\n"
+    assert [p.line for p in _scan(tmp_path, {"doc.md": text})] == [7]
+
+
+def test_a_shorter_or_other_fence_does_not_close_the_block(tmp_path):
+    line = "It " + "no" + " longer works."
+    text = f"````\n```\n~~~\n{line}\n````\n{line}\n"
+    assert [p.line for p in _scan(tmp_path, {"doc.md": text})] == [6]
+
+
+def test_an_inline_triple_backtick_span_is_not_a_fence(tmp_path):
+    line = "It " + "no" + " longer works."
+    text = f"``` docker compose ps ```\n{line}\n"
+    assert [p.line for p in _scan(tmp_path, {"doc.md": text})] == [2]
+
+
+def test_existing_markdown_rules_still_scan_fenced_code(tmp_path):
+    text = "```\n" + "road" + "map\n```\n"
+    assert [p.what.split(":")[0] for p in _scan(tmp_path, {"doc.md": text})] == ["roadmap or status wording"]
+
+
+@pytest.mark.parametrize("ok", [
+    "the overlay leaves this network " + SAME + ".",
+    "the bare target is passed " + SAME + ".",
+    "if a > b the gate denies",
+    "the follow step comes next",
+    "resolved IPs are pinned once",
+    "the first scan and the run that follows",
+    "a ~ in a path, or ~/.config",
+])
+def test_ordinary_text_is_not_caught_as_history(tmp_path, ok):
+    assert _scan(tmp_path, {"doc.md": ok + "\n"}) == []
+
+
 def test_a_ticket_number_in_a_path_is_caught(tmp_path):
     name = f"tests/integration/test_lab_{KEY.lower()}20.py"
     problems = _scan(tmp_path, {name: "clean\n"})
