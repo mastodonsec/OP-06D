@@ -30,14 +30,19 @@
 #   juice-shop  OWASP Juice Shop 20.3.0   image digest sha256:42843723...
 #   dvwa        vulnerables/web-dvwa      image digest sha256:dae203fe...
 #   redirect    nginx 1.28.0-alpine       image digest sha256:30f1c0d7...
-#   scanner     debian:bookworm-slim @ sha256:734a72b3...
-#               nmap 7.93+dfsg1-1, nuclei v3.11.1, nuclei-templates v10.5.1
-#               (see lab/scanner/Dockerfile for the checksums)
+#   scanner     the OP-06D image (repository Dockerfile, `lab` stage):
+#               debian:bookworm-slim @ sha256:734a72b3..., nmap 7.93+dfsg1-1,
+#               nuclei v3.11.1, nuclei-templates v10.5.1 (checksums in the Dockerfile)
 #
-# PLATFORM: dvwa and the scanner are pinned to linux/amd64 (dvwa's image is
-# amd64-only; the scanner downloads the amd64 nuclei build). On an ARM host
-# (Apple Silicon, ARM Linux) they run under emulation. juice-shop and nginx
-# are multi-arch and run natively.
+# PLATFORM: dvwa is pinned to linux/amd64 (its image is amd64-only) and runs
+# under emulation on an ARM host (Apple Silicon, ARM Linux). The scanner image
+# is built for the host's own architecture (amd64 or arm64); juice-shop and
+# nginx are multi-arch. All three run natively.
+#
+# CODE: the scanner mounts the working tree read-only at /op06d and puts
+# /op06d/src first on PYTHONPATH, so the mounted code runs, not the copy
+# installed in the image. For a release validation against the installed copy,
+# set OP06D_LAB_CODE=./installed-only (an empty directory) before `up`.
 #
 # Usage: see lab/RUNBOOK.md. Run from the repository root:
 #   docker compose -f lab/docker-compose.yml ...
@@ -108,16 +113,12 @@ services:
     # Serves HTTP on port 80. No `ports:` on purpose.
 
   scanner:
+    # The OP-06D product image plus the isolation-check tools and pytest.
     build:
-      context: ./scanner
-      args:
-        NMAP_VERSION: "7.93+dfsg1-1"
-        NUCLEI_VERSION: "3.11.1"
-        NUCLEI_ZIP_SHA256: "ea63d4ae232808cd7c6bc00d0142428e231fab59dae01042246097d195835ab6"
-        TEMPLATES_VERSION: "v10.5.1"
-        TEMPLATES_TARBALL_SHA256: "30fe1cfaced4635f886e4a2673641bba86998dceec28e468274524e789aa56eb"
+      context: ..
+      target: lab
     image: op06d-lab-scanner:nmap-7.93-nuclei-3.11.1-templates-10.5.1
-    platform: linux/amd64     # the Dockerfile installs the amd64 nuclei build
+    user: "0:0"               # root with Docker's default capabilities, as the lab scans
     restart: "no"
     init: true
     command: ["sleep", "infinity"]
@@ -127,7 +128,7 @@ services:
     # NET_RAW, so nmap's raw-socket scans can be compared with unprivileged runs
     # (`exec -u scanner`). Nothing is added (no NET_ADMIN, not privileged).
     volumes:
-      - ..:/op06d:ro            # the OP-06D code, read-only
+      - ${OP06D_LAB_CODE:-..}:/op06d:ro   # the OP-06D working tree, read-only (see CODE above)
       - .:/lab:ro               # these lab files (scripts, engagement), read-only
       - ./captures:/captures    # the ONLY writable mount: real tool outputs
     sysctls:                  # no IPv6 in the container: no link-local path to the host

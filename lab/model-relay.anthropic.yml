@@ -27,13 +27,7 @@ name: rc-lab
 
 services:
   scanner:
-    image: op06d-lab-scanner-llm:nmap-7.93-nuclei-3.11.1-templates-10.5.1-anthropic-2.8.0
-    platform: linux/amd64     # built FROM the amd64 base scanner image
-    build:
-      context: ./relay
-      dockerfile: scanner-llm.Dockerfile
-      args:
-        BASE_IMAGE: op06d-lab-scanner:nmap-7.93-nuclei-3.11.1-templates-10.5.1
+    image: op06d-lab-scanner:nmap-7.93-nuclei-3.11.1-templates-10.5.1   # the base lab scanner, unchanged
     extra_hosts:
       - "api.anthropic.com:172.31.78.2"
     networks:

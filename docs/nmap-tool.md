@@ -184,21 +184,46 @@ fields), and host, port and script counts are capped.
 a non-zero exit - a successful-but-degraded run used to report `status=ok`
 with no signal at all, which is exactly the gap this closes.
 
-The `aggressive` profile implies `-O` (OS detection), which needs root/
-raw-socket privileges. Running unprivileged, nmap does not fail - it falls
-back from a SYN to a connect scan and simply omits OS detection, still
-exiting 0 with valid XML (confirmed live in the lab against the pinned nmap
-7.93: **stderr was completely empty** in both the privileged and
-unprivileged case, so there is no warning text to rely on for this specific
-fallback). When this happens, the result carries:
+**Connect-scan fallback (every profile).** Without raw-socket privileges
+nmap does not fail: it uses a TCP connect scan instead of a SYN scan, and its
+host discovery only tries TCP connections to ports 80 and 443. Whenever
+`scan_types` shows `connect` and no `syn` (and, for the `ping` profile, which
+has no `<scaninfo>`, whenever the process is known to be unprivileged), the
+result carries:
 
 ```json
-{"degraded": true, "degraded_capabilities": ["os_detection"],
- "degraded_reason": "OS detection (requested via the 'aggressive' profile) was not performed: the scan fell back from a SYN to a connect scan (scaninfo type=connect) - likely running without root/raw-socket privileges."}
+{"degraded": true, "degraded_capabilities": ["syn_scan", "host_discovery"],
+ "degraded_reason": "nmap ran without raw-socket privileges, so it used a TCP connect scan instead of a SYN scan, and host discovery used only TCP connections to ports 80 and 443: hosts without either port open may have been reported as down. ..."}
+```
+
+so the report's Limitations say so. This covers host installs run as a
+non-root user and the container image without `--cap-add NET_RAW --cap-add
+NET_ADMIN` (see [container.md](container.md)). As root, or with those
+capabilities in the image, the scan is a SYN scan and nothing is degraded.
+
+**Raw scans as a non-root user (container image).** The environment variable
+`OP06D_NMAP_RAW` names a copy of nmap carrying the file capabilities
+`cap_net_raw,cap_net_admin`. `probe_nmap_privilege` selects it, and the
+wrapper runs it with `NMAP_PRIVILEGED=1`, only when the process is not root,
+`no_new_privs` is off and the capability bounding set holds both NET_RAW and
+NET_ADMIN; otherwise the plain nmap runs. The probe is injectable
+(`NmapTool(privilege=...)`), so tests do not depend on who runs them.
+
+**OS detection.** The `aggressive` profile implies `-O` (OS detection), which
+needs root/raw-socket privileges. Running unprivileged, nmap falls back to a
+connect scan and simply omits OS detection, still exiting 0 with valid XML
+(confirmed live in the lab against the pinned nmap 7.93: **stderr was
+completely empty** in both the privileged and unprivileged case, so there is
+no warning text to rely on for this specific fallback). The result then adds
+`os_detection`:
+
+```json
+{"degraded": true, "degraded_capabilities": ["syn_scan", "host_discovery", "os_detection"],
+ "degraded_reason": "nmap ran without raw-socket privileges, ... OS detection (requested via the 'aggressive' profile) was not performed: the scan fell back from a SYN to a connect scan (scaninfo type=connect) - likely running without root/raw-socket privileges."}
 ```
 
 `status` stays `"ok"` - a reduced-fidelity scan is not itself a tool failure,
-it is a fidelity signal. The trigger is structural (`aggressive` profile +
+it is a fidelity signal. The OS-detection trigger is structural (`aggressive` profile +
 `scaninfo` type fell back to `connect` + no host carries an `os` result) OR a
 literal root-privilege warning on stderr, should some other nmap build print
 one; either is sufficient alone. A missing `os` element that is **not**

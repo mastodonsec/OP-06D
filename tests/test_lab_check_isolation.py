@@ -130,7 +130,7 @@ def test_a_healthy_isolated_lab_passes(monkeypatch):
     assert ["compose", "-p", "rc-lab", "-f", "lab/docker-compose.yml", "config", "--services"] in fake.calls
     assert ["compose", "-p", "rc-lab", "-f", "lab/docker-compose.yml", "exec", "-T", "scanner", "bash",
             "/lab/check_isolation.sh"] in fake.calls
-    assert any(c[:6] == ["run", "--rm", "--network", "bridge", "--platform", "linux/amd64"] for c in fake.calls)
+    assert any(c[:4] == ["run", "--rm", "--network", "bridge"] and "--platform" not in c for c in fake.calls)
 
 
 def test_without_the_control_no_container_is_started(monkeypatch):

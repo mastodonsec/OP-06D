@@ -212,7 +212,7 @@ def running_relay_mode(run: Runner) -> str | None:
 
 def build(mode: str, run: Runner = default_runner) -> None:
     _ok(run(["docker", "compose", "-f", str(COMPOSE_BASE), "build", "scanner"], 1800), "base scanner build")
-    _ok(run(compose_argv(mode, "build", "scanner", "model-relay"), 1800), "overlay build")
+    _ok(run(compose_argv(mode, "build", "model-relay"), 1800), "relay build")
 
 
 def up(mode: str, engagement: str | None = None, run: Runner = default_runner, *,

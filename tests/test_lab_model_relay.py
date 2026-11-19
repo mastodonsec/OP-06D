@@ -134,15 +134,13 @@ def test_hosted_engagement_template_differs_from_the_lab_template_only_by_the_pl
     assert "planner" not in base
 
 
-def test_scanner_llm_requirements_match_uv_lock():
-    lock = tomllib.loads((ROOT / "uv.lock").read_text(encoding="utf-8"))
-    locked = {p["name"].lower(): p["version"] for p in lock["package"]}
-    reqs = (LAB / "relay" / "scanner-llm-requirements.txt").read_text(encoding="utf-8")
-    pins = dict(re.findall(r"^([A-Za-z0-9_.\-]+)==([^\s;\\]+)", reqs, re.M))
-    assert "anthropic" in pins
-    for name, version in pins.items():
-        assert locked.get(name.lower().replace("_", "-")) == version, name
-    assert reqs.count("--hash=sha256:") >= len(pins)
+@pytest.mark.parametrize("mode", MODES)
+def test_overlay_scanner_is_the_base_lab_scanner_image(mode):
+    # The OP-06D image already has the anthropic SDK, so no overlay-only image.
+    base = _yaml(LAB / "docker-compose.yml")["services"]["scanner"]
+    s = _overlay(mode)["services"]["scanner"]
+    assert s["image"] == base["image"]
+    assert "build" not in s and "platform" not in s
 
 
 # --- launcher policy ---------------------------------------------------------------------
@@ -646,12 +644,12 @@ def test_internal_networks_hold_no_gateway_address_and_the_egress_network_keeps_
 
 def test_amd64_only_images_are_pinned_and_multi_arch_ones_are_not():
     base = _yaml(LAB / "docker-compose.yml")["services"]
-    assert base["dvwa"]["platform"] == base["scanner"]["platform"] == "linux/amd64"
-    assert "platform" not in base["juice-shop"] and "platform" not in base["redirect"]
+    assert base["dvwa"]["platform"] == "linux/amd64"
+    for name in ("juice-shop", "redirect", "scanner"):
+        assert "platform" not in base[name], name
     for mode in MODES:
         svcs = _overlay(mode)["services"]
-        assert svcs["scanner"]["platform"] == "linux/amd64"
-        assert "platform" not in svcs["model-relay"]
+        assert "platform" not in svcs["scanner"] and "platform" not in svcs["model-relay"]
 
 
 def test_check_fails_when_the_local_relay_loses_host_gateway_or_the_scanner_gets_it():

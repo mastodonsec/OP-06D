@@ -111,7 +111,7 @@ def test_unprivileged_real_nmap_aggressive_scan_is_surfaced_as_degraded(lab_stac
     result = _probe(user="scanner")
     assert result["status"] == "ok"
     assert result["degraded"] is True
-    assert result["degraded_capabilities"] == ["os_detection"]
+    assert result["degraded_capabilities"] == ["syn_scan", "host_discovery", "os_detection"]
     assert result["scan_types"] == ["connect"]
     assert result["has_os"] is False
 

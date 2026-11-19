@@ -1,7 +1,7 @@
 {
   "templates_pin": "v10.5.1",
   "generated_by": "scripts/generate_nuclei_write_method_exclusions.py",
-  "generated_from": "lab template_dir /opt/nuclei-templates, pinned per lab/scanner/Dockerfile",
+  "generated_from": "lab template_dir /opt/nuclei-templates, pinned per the repository Dockerfile",
   "write_method_template_ids": [
     "CVE-2015-5531",
     "CVE-2016-3088",

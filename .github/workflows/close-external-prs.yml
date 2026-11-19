@@ -1,0 +1,45 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Closes pull requests from people without access to this repository, with
+# one courteous comment. See CONTRIBUTING.md.
+#
+# pull_request_target runs with a write token on the base repository, so this
+# workflow NEVER checks out, builds or runs the pull request's code: it has no
+# checkout step and no `run` step, and only calls the GitHub API with the
+# event's own data.
+name: close-external-prs
+
+on:
+  pull_request_target:
+    types: [opened, reopened]
+
+permissions: {}
+
+jobs:
+  close:
+    if: >-
+      github.event.pull_request.author_association != 'OWNER' &&
+      github.event.pull_request.author_association != 'MEMBER' &&
+      github.event.pull_request.author_association != 'COLLABORATOR' &&
+      github.event.pull_request.user.type != 'Bot' &&
+      !endsWith(github.event.pull_request.user.login, '[bot]')
+    runs-on: ubuntu-24.04
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Comment and close
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: pr.number,
+              body: "Thanks for your interest. OP-06D is not accepting external pull requests at this time; see CONTRIBUTING.md. You're welcome to fork it under the AGPL-3.0-or-later.",
+            });
+            await github.rest.pulls.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: pr.number,
+              state: "closed",
+            });

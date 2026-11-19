@@ -17,6 +17,7 @@ from op06d.nmap_tool import (
     NmapTool,
     ProcessResult,
     parse_nmap_xml,
+    probe_nmap_privilege,
     run_subprocess,
 )
 from op06d.orchestrator import Orchestrator, Termination
@@ -53,16 +54,21 @@ class Runner:
         self.calls = []
         self.stdout, self.stderr, self.returncode, self.raises = stdout, stderr, returncode, raises
 
-    def __call__(self, argv, timeout):
+    def __call__(self, argv, timeout, env=None):
         self.calls.append((list(argv), timeout))
+        self.env = env
         if self.raises:
             raise self.raises
         out = self.stdout.encode() if isinstance(self.stdout, str) else self.stdout
         return ProcessResult(self.returncode, out, self.stderr.encode())
 
 
-def tool(max_rps=20, runner=None, which=lambda n: NMAP_PATH, **kw):
-    return NmapTool(max_rps, runner=runner or Runner(), which=which, **kw)
+PRIVILEGED = lambda: (None, True)  # noqa: E731 - root-like: no raw copy, raw sockets available
+
+
+def tool(max_rps=20, runner=None, which=lambda n: NMAP_PATH, privilege=PRIVILEGED, **kw):
+    # The privilege probe is pinned so results do not depend on who runs the tests.
+    return NmapTool(max_rps, runner=runner or Runner(), which=which, privilege=privilege, **kw)
 
 
 # --- parsing ----------------------------------------------------------------
@@ -635,8 +641,8 @@ def test_unprivileged_aggressive_scan_is_marked_degraded_with_no_stderr_needed()
     assert out.status == "ok"
     f = out.findings
     assert f["degraded"] is True
-    assert f["degraded_capabilities"] == ["os_detection"]
-    assert "connect scan" in f["degraded_reason"]
+    assert f["degraded_capabilities"] == ["syn_scan", "host_discovery", "os_detection"]
+    assert "connect scan" in f["degraded_reason"] and "80 and 443" in f["degraded_reason"]
     assert f["summary"]["scan_types"] == ["connect"]
     assert "warnings" not in f  # empty stderr: nothing to surface there
 
@@ -667,14 +673,107 @@ def test_a_stderr_privilege_warning_alone_also_triggers_degraded():
     assert f["warnings"] == [PRIVILEGE_WARNING_STDERR.strip()]
 
 
-def test_missing_os_without_aggressive_profile_is_not_flagged_degraded():
+def test_missing_os_without_aggressive_profile_is_not_flagged_as_os_detection():
     # A plain service scan never requests OS detection, so a missing <os>
-    # element (which it would never have anyway) must not be misread as
-    # degradation.
+    # element must not be misread as OS-detection loss. Its connect-scan
+    # fallback is reported, though (see the connect-scan tests below).
     out = tool(runner=Runner(stdout=UNPRIVILEGED_AGGRESSIVE_XML, stderr=EMPTY_STDERR)).run(
         IP, {"profile": "service"},
     )
+    assert out.findings["degraded_capabilities"] == ["syn_scan", "host_discovery"]
+
+
+def test_a_syn_service_scan_is_not_degraded():
+    out = tool(runner=Runner(stdout=FIXTURE)).run(IP, {"profile": "service"})
     assert "degraded" not in out.findings
+
+
+# --- connect-scan fallback is reported for every profile ----------------------
+
+@pytest.mark.parametrize("profile", ["quick", "default", "service", "full", "aggressive"])
+def test_a_connect_scan_is_reported_with_the_host_discovery_caveat(profile):
+    out = tool(runner=Runner(stdout=UNPRIVILEGED_AGGRESSIVE_XML), max_host_timeout_s=10**9).run(
+        IP, {"profile": profile})
+    f = out.findings
+    assert out.status == "ok" and f["degraded"] is True
+    assert f["degraded_capabilities"][:2] == ["syn_scan", "host_discovery"]
+    assert "TCP connect scan" in f["degraded_reason"]
+    assert "hosts without either port open may have been reported as down" in f["degraded_reason"]
+
+
+PING_XML = (
+    '<?xml version="1.0"?><!DOCTYPE nmaprun><nmaprun scanner="nmap" version="7.93">'
+    '<host><status state="up" reason="syn-ack"/><address addr="203.0.113.5" addrtype="ipv4"/></host>'
+    '<runstats><finished elapsed="0.1"/><hosts up="1" down="0" total="1"/></runstats></nmaprun>'
+)
+
+
+def test_an_unprivileged_ping_scan_reports_host_discovery():
+    out = tool(runner=Runner(stdout=PING_XML), privilege=lambda: (None, False)).run(IP, {"profile": "ping"})
+    assert out.findings["degraded_capabilities"] == ["host_discovery"]
+
+
+@pytest.mark.parametrize("privileged", [True, None])
+def test_a_ping_scan_is_not_flagged_when_privileged_or_unknown(privileged):
+    out = tool(runner=Runner(stdout=PING_XML), privilege=lambda: (None, privileged)).run(IP, {"profile": "ping"})
+    assert "degraded" not in out.findings
+
+
+# --- the capability-carrying nmap (container image) ----------------------------
+
+def test_the_raw_copy_runs_with_nmap_privileged_when_the_probe_allows_it():
+    r = Runner()
+    tool(runner=r, privilege=lambda: ("/usr/lib/op06d/nmap-raw", True)).run(IP, {"profile": "service"})
+    argv, _ = r.calls[0]
+    assert argv[0] == "/usr/lib/op06d/nmap-raw"
+    assert r.env["NMAP_PRIVILEGED"] == "1"
+
+
+def test_the_plain_nmap_inherits_the_environment_unchanged():
+    r = Runner()
+    tool(runner=r).run(IP, {"profile": "service"})
+    assert r.calls[0][0][0] == NMAP_PATH and r.env is None
+
+
+RAW = "/usr/lib/op06d/nmap-raw"
+BOTH = format((1 << 12) | (1 << 13) | 0xa80425fb, "016x")  # docker default + NET_ADMIN
+DEFAULT = "00000000a80425fb"  # docker's default bounding set: NET_RAW, no NET_ADMIN
+
+
+def _probe(tmp_path, *, euid=1000, bounding=BOTH, nnp="0", env_path=True, environ=None):
+    exe = tmp_path / "nmap-raw"
+    exe.write_text("#!/bin/sh\n")
+    exe.chmod(0o755)
+    env = dict(environ or {})
+    if env_path:
+        env["OP06D_NMAP_RAW"] = str(exe)
+    return probe_nmap_privilege(environ=env, status={"CapBnd": bounding, "NoNewPrivs": nnp},
+                                geteuid=lambda: euid), str(exe)
+
+
+def test_probe_uses_the_raw_copy_only_with_both_capabilities(tmp_path):
+    (raw, privileged), exe = _probe(tmp_path)
+    assert (raw, privileged) == (exe, True)
+
+
+@pytest.mark.parametrize("kw", [
+    {"bounding": DEFAULT},       # no --cap-add NET_ADMIN: exec of the capable copy would fail
+    {"nnp": "1"},                # no-new-privileges: file capabilities are not granted
+    {"env_path": False},         # not the container image
+])
+def test_probe_keeps_the_plain_nmap_otherwise(tmp_path, kw):
+    (raw, privileged), _ = _probe(tmp_path, **kw)
+    assert raw is None and privileged is False
+
+
+def test_probe_as_root_needs_no_copy(tmp_path):
+    (raw, privileged), _ = _probe(tmp_path, euid=0)
+    assert (raw, privileged) == (None, True)
+
+
+def test_probe_honours_an_operator_set_nmap_privileged(tmp_path):
+    (raw, privileged), _ = _probe(tmp_path, env_path=False, environ={"NMAP_PRIVILEGED": "1"})
+    assert raw is None and privileged is True
 
 
 def test_syn_scan_missing_os_without_a_fallback_or_warning_is_not_flagged():
@@ -712,7 +811,7 @@ def test_degraded_signal_survives_normalization_into_a_limitations_issue():
     degraded_issues = [i for i in issues if i.kind == "nmap_degraded"]
     assert len(degraded_issues) == 1
     assert "connect scan" in degraded_issues[0].detail
-    assert degraded_issues[0].raw == ["os_detection"]
+    assert degraded_issues[0].raw == ["syn_scan", "host_discovery", "os_detection"]
 
 
 # --- host timeouts are surfaced, timeouts are sized to the work -------
@@ -813,7 +912,8 @@ def test_a_timed_out_host_adds_to_an_earlier_privilege_degradation():
     out = tool(runner=Runner(stdout=xml)).run(IP, {"profile": "aggressive"})
     f = out.findings
     assert out.status == "ok"
-    assert f["degraded_capabilities"] == ["os_detection", "port_scan", "service_detection"]
+    assert f["degraded_capabilities"] == [
+        "syn_scan", "host_discovery", "os_detection", "port_scan", "service_detection"]
     assert "connect scan" in f["degraded_reason"] and "--host-timeout" in f["degraded_reason"]
 
 

@@ -81,12 +81,11 @@ session and after any change to `lab/docker-compose.yml` or Docker.
 | OWASP Juice Shop | 20.3.0 | image digest `sha256:42843723a7bf4246aa5d63c324978b17ef296ac78434aeddd34c427bfb5853f4` |
 | DVWA | `vulnerables/web-dvwa` (unmaintained; no version number) | image digest `sha256:dae203fe11646a86937bf04db0079adef295f426da68a92b40e3b181f337daa7` |
 | Scanner base image | `debian:bookworm-slim` | digest `sha256:734a72b3d6142a71993b4bc580ca01d8ca687f77a2c422d96a961d3376b179bc` |
-| **nmap** | **7.93+dfsg1-1** (Debian bookworm package) | exact apt version in `lab/scanner/Dockerfile` |
-| **nuclei** | **v3.11.1** | release zip, sha256 `ea63d4ae232808cd7c6bc00d0142428e231fab59dae01042246097d195835ab6` |
+| **nmap** | **7.93+dfsg1-1** (Debian bookworm package) | exact apt version in the repository `Dockerfile` |
+| **nuclei** | **v3.11.1** | release zip per architecture, sha256 amd64 `ea63d4ae232808cd7c6bc00d0142428e231fab59dae01042246097d195835ab6`, arm64 `8044e3d9768ba0a744b2872c1a87e813006f013da97ca9f50f7661a4203bec07` (from the release's `nuclei_3.11.1_checksums.txt`) |
 | **nuclei-templates** | **v10.5.1** | tag tarball, sha256 `30fe1cfaced4635f886e4a2673641bba86998dceec28e468274524e789aa56eb` |
-| Python packages (inside the scanner) | pydantic 2.14.2, PyYAML 6.0.3, pytest 9.2.0 | `lab/scanner/requirements.txt` (compare with your host's `pip freeze`) |
+| Python packages (inside the scanner) | OP-06D's dependencies (incl. anthropic 2.8.0, weasyprint 70.0), plus pytest in the lab stage | `docker/requirements.txt`, `docker/requirements-lab.txt` (hash-pinned, exported from `uv.lock`) |
 | Model relay image (model-relay overlay only) | alpine 3.24.4, HAProxy 3.4.7, iptables 1.8.13, socat 1.8.1.3 | digest in `lab/relay/Dockerfile`; package versions recorded in `/opt/relay-versions.txt` |
-| Overlay scanner extras (model-relay overlay only) | anthropic 2.8.0 + dependencies | `lab/relay/scanner-llm-requirements.txt` (hashes, from `uv.lock`) |
 
 The `latest` tag is not used anywhere. Step 5 records what is actually installed.
 
@@ -217,18 +216,18 @@ docker compose version
   If `uv --version` works after the installer, there is nothing to source.
   (On Kali `~/.local/bin` is already on `PATH`, and the `~/.local/bin/env`
   file the installer mentions may not exist.)
-- **ARM hosts (Apple Silicon, ARM Linux):** dvwa and the scanner are pinned to
-  `linux/amd64` and run under emulation; juice-shop, nginx and the relay run
-  natively. Docker Desktop for Mac emulates amd64 out of the box (Settings >
-  General > "Use Rosetta for x86_64/amd64 emulation on Apple Silicon" makes it
-  faster). On ARM Linux install `qemu-user-static binfmt-support` first.
-  Expect the scanner build to take several times longer, DVWA and the scans to
-  be 2-5x slower, and nmap's timing-sensitive results (`-sV` probes, host
-  timeouts) to vary more than on amd64.
+- **ARM hosts (Apple Silicon, ARM Linux):** dvwa is pinned to `linux/amd64`
+  (its image has no arm64 build) and runs under emulation; the scanner is built
+  for the host's own architecture (the arm64 nuclei build on ARM), and
+  juice-shop, nginx and the relay are multi-arch: they all run natively.
+  Docker Desktop for Mac emulates amd64 out of the box (Settings > General >
+  "Use Rosetta for x86_64/amd64 emulation on Apple Silicon" makes it faster).
+  On ARM Linux install `qemu-user-static binfmt-support` first. Expect DVWA to
+  be slower than on amd64.
 
 ## Step 1. Review before building
 
-Read `lab/docker-compose.yml`, `lab/scanner/Dockerfile` and `lab/engagement.yaml`.
+Read `lab/docker-compose.yml`, the repository `Dockerfile` (its `lab` stage is the scanner) and `lab/engagement.yaml`.
 Confirm: one network with `internal: true`; no `ports:` anywhere; no service on a
 second network; the digests match the table above. Do **not** edit the `window`
 in `lab/engagement.yaml`: it is a template; this session's copy is generated in
@@ -246,6 +245,44 @@ Expected output:
 ```
 compose file OK
 ```
+
+### Mounted code and the installed copy
+
+The scanner is the OP-06D product image (the repository `Dockerfile`) plus the
+isolation-check tools and pytest: its `lab` stage. OP-06D is installed in it,
+and the lab also mounts the working tree read-only at `/op06d`. The lab stage
+sets `PYTHONPATH=/op06d/src`, and Python puts `PYTHONPATH` ahead of the
+installed packages, so **the mounted code runs**, not the installed copy.
+Check it after Step 3:
+
+```powershell
+docker compose -f $LAB exec -T scanner python3 -c "import op06d; print(op06d.__file__)"
+```
+
+Expected output:
+
+```
+/op06d/src/op06d/__init__.py
+```
+
+**Release validation (the installed copy, no code mount):** set
+`OP06D_LAB_CODE` to the empty directory `./installed-only` before Step 3, so
+`/op06d` is empty and the import falls back to the installed copy
+(`/opt/op06d/lib/python3.11/site-packages/op06d/__init__.py`):
+
+```powershell
+$env:OP06D_LAB_CODE = "./installed-only"
+```
+
+bash / zsh: `export OP06D_LAB_CODE=./installed-only`. That mode covers the
+isolation gate (Step 4), the scans and repeatability check (Step 8 and the
+automated repeatability test) and an `op06d run`; steps that read
+`/op06d/tests` or `/op06d/src` need the working tree. Unset the variable
+afterwards (`Remove-Item Env:OP06D_LAB_CODE` / `unset OP06D_LAB_CODE`).
+
+The scanner runs as root with Docker's default capabilities (`user: "0:0"`),
+as before, so the lab's scans are SYN scans; Step 12 compares them with the
+unprivileged `scanner` user.
 
 ## Step 2. Build the scanner image (internet required, outside the lab)
 
@@ -388,8 +425,9 @@ docker compose -f $LAB exec -T scanner python3 -m pytest -q -p no:cacheprovider 
 ```
 
 This proves the pinned Python packages and Python 3.11 run the existing suite.
-The repo is mounted read-only; pytest needs `-p no:cacheprovider` for that. If it
-fails on versions, align `lab/scanner/requirements.txt` with your host and rebuild.
+The repo is mounted read-only; pytest needs `-p no:cacheprovider` for that. The
+image's packages come from `uv.lock` (`docker/requirements*.txt`); if it fails on
+versions, regenerate those files with the commands in their headers and rebuild.
 
 ## Step 7. Flag-name verification (nmap and nuclei wrappers)
 
@@ -949,15 +987,18 @@ for prof in PROFILES:
 Record, for each profile, root vs unprivileged: works? `syn` vs `connect` scan
 type? degraded? error text? **Confirmed, not just expected:** `ping`,
 `quick`, `default`, `service`, `full` work unprivileged using a TCP connect
-scan (none of them request OS detection, so none are ever `degraded`).
-`aggressive` (`-A`, which includes OS detection) does **NOT** fail without
-root - nmap degrades gracefully: connect scan instead of SYN, OS detection
-silently skipped, exit 0, valid XML. Confirmed live: **stderr was completely
-empty** in both privilege modes, so there is no error text to see either way.
-The wrapper surfaces this as `status=ok`, `degraded=['os_detection']`,
-`scan-types=connect` - never `nmap_failed`. The pass criterion for this step
-is "no traceback, a structured, correctly-`degraded`-flagged status on every
-profile in both privilege modes" - met.
+scan, and the wrapper reports every unprivileged run as degraded:
+`degraded=['syn_scan', 'host_discovery']` (`['host_discovery']` for `ping`),
+because a connect scan's host discovery only tries TCP 80 and 443, so hosts
+without either port open may be reported as down. `aggressive` (`-A`, which
+includes OS detection) does **NOT** fail without root - nmap degrades
+gracefully: connect scan instead of SYN, OS detection silently skipped, exit
+0, valid XML. Confirmed live: **stderr was completely empty** in both
+privilege modes, so there is no error text to see either way. The wrapper
+surfaces this as `status=ok`, `degraded=['syn_scan', 'host_discovery',
+'os_detection']`, `scan-types=connect` - never `nmap_failed`. As root nothing
+is degraded. The pass criterion for this step is "no traceback, a structured,
+correctly-`degraded`-flagged status on every profile in both privilege modes".
 
 **Wrapper timeouts.** A host nmap skips at `--host-timeout` is no longer a silent empty result.
 
@@ -1114,8 +1155,9 @@ juice-shop, dvwa: labnet only (never on relaynet)
   valid certificates came back for `example.com`, `claude.ai` and
   `anthropic.com`). Without the filter the scanner could reach those. A
   mismatched `Host` header behind the right SNI got `403 Forbidden` from the edge.
-- **The scanner image** in the overlay is the base image plus the anthropic
-  SDK (`lab/relay/scanner-llm.Dockerfile`, pins and hashes from `uv.lock`).
+- **The scanner image** in the overlay is the base lab scanner, unchanged: the
+  OP-06D image already contains the anthropic SDK (pins and hashes from
+  `uv.lock`).
 - **The API key** is never in a compose file, image, `.env` or the container's
   configuration. `run anthropic` passes it to one `docker compose exec` by
   name (`-e ANTHROPIC_API_KEY`), and Docker reads the value from your shell.
