@@ -5,9 +5,9 @@ An AI-driven security validation tool. A fixed recon plan or an LLM planner choo
 reconnaissance actions and drives real security tools against **authorized** targets, with every action forced through a
 hard guardrail layer, and produces a client-grade report.
 
-> **OP-06D runs reconnaissance with nmap and nuclei, driven by a fixed or an LLM planner,
-> and is validated against the pinned tools in an isolated lab.** Authorized use only:
-> run it only against systems you own or hold signed authorization to test.
+**OP-06D runs reconnaissance with nmap and nuclei, driven by a fixed or an LLM planner,
+and is validated against the pinned tools in an isolated lab.** Authorized use only:
+run it only against systems you own or hold signed authorization to test.
 
 ---
 

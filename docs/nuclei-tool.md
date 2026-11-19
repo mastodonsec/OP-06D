@@ -60,7 +60,7 @@ Five, none of which can carry a host, URL or path:
 | `tags` | non-empty list from the curated vocabulary below (default: the low-impact detection tags) |
 | `template_ids` | list of ids from the operator's curated manifest; refused unless a manifest is configured |
 | `port` | a strict integer, 1-65535 (default: none - nuclei probes 80/443 against the bare target) |
-| `scheme` | `http` or `https` (default: `https` if `port` is given and `scheme` is not; otherwise the bare target is passed unchanged) |
+| `scheme` | `http` or `https` (default: `https` if `port` is given and `scheme` is not; otherwise the bare target is passed as given) |
 
 ### `port` / `scheme`
 

@@ -370,7 +370,7 @@ default route, and every outbound attempt blocked.)
 ## Step 4b. Generate this session's engagement
 
 Only after Step 4 printed PASS. `lab/engagement.yaml` is a template; this writes
-a copy whose `window` is now - 5 min .. now + 4 h (everything else unchanged),
+a copy whose `window` is now - 5 min .. now + 4 h (everything else as in the template),
 validates it through the normal engagement schema, and prints a confirmation.
 The gate still refuses to act outside that window. It runs inside the scanner;
 re-run it if a session outlasts the window (`--hours N`, at most 24, changes

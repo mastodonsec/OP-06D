@@ -4,7 +4,7 @@
 
 | `--planner` | What decides the next action |
 |---|---|
-| `fixed` (default, unchanged) | `plan_recon()`: an nmap service scan and a nuclei default-tag scan per in-scope entry |
+| `fixed` (default) | `plan_recon()`: an nmap service scan and a nuclei default-tag scan per in-scope entry |
 | `llm` | the `Orchestrator` loop ([orchestrator.md](orchestrator.md)), driven by a model through an adapter in `op06d.llm` |
 
 Both planners use the same `GatedToolbox`, audit log, evidence store and report.
@@ -179,8 +179,8 @@ audit log, no evidence.
   `lab/model_relay.py`): a second internal network joins only the scanner and
   a relay container, and the relay forwards to exactly one upstream - host
   Ollama, or `api.anthropic.com:443` as raw TLS passthrough filtered on the
-  SNI. The targets are not on that network, the base `lab/docker-compose.yml`
-  and its no-egress isolation are unchanged, and the anthropic relay starts
+  SNI. The targets are not on that network, the overlay does not modify the
+  base `lab/docker-compose.yml` or its no-egress isolation, and the anthropic relay starts
   only for an engagement that allows it. See lab/RUNBOOK.md, "Model relay".
 
 ## Replies, failures and context
@@ -202,7 +202,7 @@ audit log, no evidence.
   observation is capped at a third of that budget. When an observation is cut,
   the `UNTRUSTED_TOOL_OUTPUT` header, data notice and END marker are kept and
   the cut is marked (`[... N characters elided to fit the context budget ...]`).
-  Older observations are elided when the history no longer fits.
+  Older observations are elided when the history does not fit.
 
 ## Secrets
 
@@ -222,7 +222,7 @@ LLM runs add a **Planner** section: planner, provider, model, endpoint class
 (hosted or local), configured context size, iterations, tool actions,
 termination reason, input and output tokens, and the limits in force. The
 audit log carries the same configuration as a `planner_config` entry.
-`--planner fixed` reports are unchanged.
+A `--planner fixed` report has no Planner section.
 
 ## Model choice
 

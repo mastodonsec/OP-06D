@@ -35,7 +35,7 @@ different baseline.
 
 | ID | Target | Finding | Expectation | Tool | Observed |
 |---|---|---|---|---|---|
-| N-1 | juice-shop | TCP 3000 open, HTTP service | **MUST** | nmap | **FOUND (port)** — 3000/tcp open, syn-ack. **nmap mislabeled the service as `ppp`**, no product/version; HTTP identity came from nuclei instead. See Correction C-1. |
+| N-1 | juice-shop | TCP 3000 open, HTTP service | **MUST** | nmap | **FOUND (port)** — 3000/tcp open, syn-ack. **nmap mislabeled the service as `ppp`**, no product/version; HTTP identity came from nuclei instead. See note C-1. |
 | N-2 | dvwa | TCP 80 open, `Apache httpd 2.4.x` (Debian) identified with version | **MUST** | nmap `-sV` | **FOUND** — `Apache httpd 2.4.25 (Debian)`, `cpe:/a:apache:http_server:2.4.25` (service + safe_scripts profiles). |
 | N-3 | dvwa | MariaDB/MySQL 3306 not reachable from outside the container | **MUST NOT** report 3306 | nmap | **CONFIRMED** — only 80/tcp reported. *verify* resolved: 3306 not exposed. |
 | N-4 | both | No other unexpected open ports (SSH, FTP, etc.) | **MUST** report only the above | nmap | **CONFIRMED** — dvwa:80 only; juice-shop:3000 only. |
@@ -48,7 +48,7 @@ different baseline.
 | ID | Finding | Where | Expectation | Tool | Observed |
 |---|---|---|---|---|---|
 | J-1 | Node/Express/Angular SPA identified | `/` | **SHOULD** | nuclei `tech` | **FOUND** — owasp-juice-shop-detect, fingerprinthub-web-fingerprints, tech-detect (google-font-api). App identified; specific Node/Express/Angular stack not individually broken out. |
-| J-2 | Directory listing / exposed files in `/ftp/` (acquisitions.md, package.json.bak, coupons_2013.md.bak, eastere.gg, ...) | `/ftp/` | **SHOULD** (*verify*) | nuclei `exposure` | **not found** — no `/ftp` exposure template matched. See Correction C-2. |
+| J-2 | Directory listing / exposed files in `/ftp/` (acquisitions.md, package.json.bak, coupons_2013.md.bak, eastere.gg, ...) | `/ftp/` | **SHOULD** (*verify*) | nuclei `exposure` | **not found** — no `/ftp` exposure template matched. See note C-2. |
 | J-3 | `robots.txt` discloses `/ftp` | `/robots.txt` | **MAY** | nuclei | **not found** |
 | J-4 | Prometheus metrics endpoint exposed | `/metrics` | **SHOULD** | nuclei `exposure` | **not found** — no metrics template matched (template presence in v10.5.1 unconfirmed). See C-2. |
 | J-5 | Swagger/OpenAPI docs exposed | `/api-docs` | **MAY** | nuclei | **FOUND** — swagger-api matched `http://juice-shop.lab:3000/api-docs/swagger.json`. Upgraded from MAY. |
