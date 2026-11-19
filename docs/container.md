@@ -123,6 +123,16 @@ needed there. Local LLM: inside a Docker Desktop container the host is
 local endpoint must be an IP literal, so pass
 `--llm-endpoint http://192.168.65.254:11434 --llm-allow-private 192.168.65.254`.
 
+## Antivirus detections
+
+The image contains nuclei templates and nmap NSE scripts with exploit-detection
+payloads, so desktop antivirus may flag files when the image's layers are
+unpacked or scanned on the host (for example by an image scanner). These are
+expected detections of the scan content, not of OP-06D. Verify the image's
+signature (see [Verify the image](#verify-the-image)) rather than disabling
+antivirus, and if needed exclude only the folder where the scanner unpacks
+layers.
+
 ## Verify the image
 
 Each release image is signed keyless with cosign by the repository's release
