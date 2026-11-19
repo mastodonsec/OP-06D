@@ -18,7 +18,7 @@ baseline is complete.
 |---|---|
 | Expectation | **MUST** a correct unauthenticated-recon run reports it · **SHOULD** it usually does, depending on templates · **MAY** possible, not required · **OUT** needs authentication or manual exploitation, not covered by unauthenticated recon |
 | Tool | which tool is expected to surface it (nmap / nuclei / none) |
-| Observed | what the first real run actually did: **FOUND** / **not found** / **n/a** |
+| Observed | what the tools reported in the baseline run: **FOUND** / **not found** / **n/a** |
 
 Targets, from `lab/docker-compose.yml`:
 
@@ -86,8 +86,8 @@ targets table above).
 
 ### 3b. Needs interaction or authentication (**OUT** for unauthenticated recon)
 
-DVWA's modules (the same classes as 2b) need a logged-in session. None are
-covered by unauthenticated recon.
+All of DVWA's vulnerability modules are behind a logged-in session, and none
+are covered by unauthenticated recon.
 
 ## 4. Negative expectations (a correct run must NOT do these)
 
@@ -103,7 +103,7 @@ covered by unauthenticated recon.
 | G-8 | exceed the rate cap | `--max-rate` / `-rate-limit` from `max_rps` (50) | **HELD** — rate propagated (the rate-cap criterion). |
 | G-9 | leak a secret parameter into the audit log | toolbox redaction | **HELD** — no secrets present in this engagement; redaction path tested with the audit log and output sanitization. |
 
-## 5. Baseline recorded from the first real run (FROZEN)
+## 5. Baseline (frozen)
 
 | Item | Value |
 |---|---|
@@ -120,11 +120,11 @@ covered by unauthenticated recon.
 | Rows **not found** (expected but absent) | J-2, J-3, J-4, J-6, J-7, J-8, J-9, J-10, J-11; D-1, D-3, D-4, D-6, D-7, D-8, D-9 |
 | **Unexpected** findings | `waf-detect` (apachegeneric) on dvwa — benign generic-Apache detection, effectively noise (no WAF in lab) |
 
-## 6. Corrections from the first real run
+## 6. Notes on the baseline
 
-- **C-1 — nmap service ID on non-standard ports is unreliable.** Port 3000 was
+- **C-1 — nmap service ID on non-standard ports is unreliable.** Port 3000 is
   reported open but labeled `ppp` with no HTTP fingerprint; the real service
-  identity (Juice Shop, Swagger) came only from nuclei. The report/normalization
+  identity (Juice Shop, Swagger) comes only from nuclei. The report/normalization
   layer (`op06d.normalize`) must treat nmap's service name on non-standard ports as low
   confidence and corroborate with nuclei before asserting a service.
 - **C-2 — nuclei template coverage: the limit is intentional, and the
@@ -160,12 +160,11 @@ covered by unauthenticated recon.
     `template_ids` (bypasses the default tag selection entirely, no change
     to default behavior).
 - **C-3 — `aggressive` degrades, it does not fail, when unprivileged** (RUNBOOK
-  Step 12 / the nmap privilege-degradation check). Not a Section-row change; noted for the nmap privilege
-  baseline.
-- **C-4 — DVWA baselined uninitialized.** D-1/D-3/D-4 absence is explained by the
-  app not having run `/setup.php`. A future run that completes RUNBOOK 3b is a
-  distinct baseline.
+  Step 12 / the nmap privilege-degradation check).
+- **C-4 — DVWA baselined uninitialised.** D-1/D-3/D-4 are absent because the
+  DVWA database is not initialised (`/setup.php` not run). Initialising DVWA
+  (RUNBOOK Step 3b) gives a different baseline.
 
-For the lab repeatability baseline, a second run with the same pins must reproduce the same
+For the lab repeatability baseline, a re-run with the same pins must reproduce the same
 open ports (dvwa 80, juice-shop 3000) and the same set of matched template ids
 listed in Section 5.

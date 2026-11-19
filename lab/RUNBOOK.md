@@ -2,8 +2,9 @@
 
 The maintainer's validation reference for the lab: the ordered steps that
 stand up the lab, **prove it is isolated**, validate the nmap and nuclei
-wrappers against the real, pinned tools, and run the whole chain once. Nothing
-in this repository runs them for you.
+wrappers against the real, pinned tools, and run the whole chain once. The
+steps are run by hand; [Automated runs](#automated-runs) covers the parts
+that can be run in one command.
 
 Run all commands from the repository root. **Shells:** `powershell` blocks are
 for **PowerShell 7** (`pwsh`); snippets are piped into the container, which
@@ -26,6 +27,39 @@ applications and a scanner; if the network were quietly routable, the scanner
 could reach real systems, which is exactly the harm this project exists to
 prevent. Isolation is *proven*, not assumed. Re-run Step 4 at the start of every
 session and after any change to `lab/docker-compose.yml` or Docker.
+
+## Automated runs
+
+**The validation harness** (`lab/validation_harness.py`) runs Steps 5-13
+and prints PASS / FAIL / NEEDS-REVIEW per step. The isolation gate (Step 4)
+is a fail-closed precondition. Steps 10 and 11 are always NEEDS-REVIEW,
+because a person reads them. The harness brings the stack up and tears it
+down at the end (`--keep-stack` keeps it). It writes each step's output, the
+tool versions, the template-set hash and `summary.json` to a new
+`lab/captures/validation-<UTC-timestamp>/` folder. Exit codes: 0 nothing
+failed, 1 a step failed or was skipped, 2 the gate did not pass and nothing
+was scanned.
+
+```powershell
+$env:OP06D_LAB = "1"; python lab/validation_harness.py
+```
+
+```bash
+OP06D_LAB=1 python lab/validation_harness.py
+```
+
+**The gated repeatability test**
+(`tests/integration/test_lab_repeatability.py`) covers Steps 4, 8 and 9: the
+isolation precondition, the real scan set, and comparison with
+`tests/integration/baseline.json`. It is not part of the default suite.
+
+```powershell
+$env:OP06D_LAB = "1"; uv run pytest -m lab --basetemp .pytest-tmp tests/integration/test_lab_repeatability.py
+```
+
+```bash
+OP06D_LAB=1 uv run pytest -m lab --basetemp .pytest-tmp tests/integration/test_lab_repeatability.py
+```
 
 ---
 
@@ -227,7 +261,7 @@ $env:OP06D_LAB_CODE = "./installed-only"
 
 bash / zsh: `export OP06D_LAB_CODE=./installed-only`. That mode covers the
 isolation gate (Step 4), the scans and repeatability check (Step 8 and the
-automated repeatability test) and an `op06d run`; steps that read
+[gated repeatability test](#automated-runs)) and an `op06d run`; steps that read
 `/op06d/tests` or `/op06d/src` need the working tree. Unset the variable
 afterwards (`Remove-Item Env:OP06D_LAB_CODE` / `unset OP06D_LAB_CODE`).
 
@@ -454,7 +488,7 @@ The `nmap` rows already target literal IPs, so they are unaffected beyond
 `-n` always being in the argv.
 
 **Shared driver:** this step runs through `lab/scan_driver.py` - the same RUNS
-list and gated-execute logic the automated harness
+list and gated-execute logic the [gated repeatability test](#automated-runs)
 (`tests/integration/test_lab_repeatability.py`) calls, so the two cannot drift apart.
 Writing straight to `lab/captures/` here is deliberate (these are the
 committed, by-hand captures); the automated test always uses a fresh,
@@ -662,7 +696,7 @@ only if its id is in `src/op06d/nuclei_write_method_exclusions.json`.
 **What to do.** Count the templates of concern, list examples, and keep the
 output with the captures. If something new shows up, the fix is to remove or demote the tag,
 tighten `-exclude-tags`, exclude by protocol, or (for a write method)
-regenerate the `-eid` list. The validation harness reports this step as
+regenerate the `-eid` list. The [validation harness](#automated-runs) reports this step as
 NEEDS-REVIEW, never PASS, for exactly this reason: a human reads it.
 
 **Expected against the pinned v10.5.1 set.** 14,104 templates; 52 survive
@@ -697,7 +731,7 @@ nuclei would do another.
 **Run.** 11a-11c below, then **always** 11d (clean-up). The same replay,
 reduced to one command and judged automatically, is
 `docker compose -f $LAB exec -T scanner python3 /lab/ambient_config_probe.py`
-(shared by `tests/integration/test_lab_nuclei_ambient_config.py` and the validation harness;
+(shared by `tests/integration/test_lab_nuclei_ambient_config.py` and the [validation harness](#automated-runs);
 it removes its hostile config itself).
 
 **11a. Servers and test templates.** `PROBE` answers 302 to `CANARY`; `CANARY`
@@ -865,7 +899,7 @@ exactly as a scan does), and its `control` row is run A.
 experiment before concluding anything. If the wrapper row shows a redirect,
 the hostile header, OAST contact or a non-`ok` status, the ambient config is
 overriding the wrapper: stop, keep the full output, and do not scan with
-OP-06D until it is fixed (the harness reports that as FAIL). Otherwise the step is reviewed and done - the harness reports it as
+OP-06D until it is fixed (the [harness](#automated-runs) reports that as FAIL). Otherwise the step is reviewed and done - the harness reports it as
 NEEDS-REVIEW, never PASS, so a human reads the table. Then run 11d.
 
 The harness reports the redirect, header and OAST sub-checks separately: a
