@@ -3,7 +3,7 @@
 """Regenerate the bundled write-method exclusion list.
 
 Run this whenever the pinned nuclei template set changes (a re-pin of
-``lab/scanner/Dockerfile``'s ``TEMPLATES_VERSION``) - it's the "regenerated
+the repository ``Dockerfile``'s ``TEMPLATES_VERSION``) - it's the "regenerated
 and verified when the set is re-pinned" half of the write-method backstop; the
 CI-enforced audit test and the lab-gated test are the "verified" half.
 

@@ -45,7 +45,6 @@ DEFAULT_COMPOSE = "lab/docker-compose.yml"
 DEFAULT_PROJECT = "rc-lab"
 CONTROL_IMAGE = "op06d-lab-scanner:nmap-7.93-nuclei-3.11.1-templates-10.5.1"
 CONTROL_URL = "https://example.com"
-CONTROL_PLATFORM = "linux/amd64"  # the scanner image is built for amd64 only
 SCANNER_SERVICE = "scanner"
 IN_SCANNER_SCRIPT = "/lab/check_isolation.sh"
 INHIBIT_IPV4 = "com.docker.network.bridge.inhibit_ipv4"
@@ -232,7 +231,7 @@ def internet_control(report: Report, run: Runner) -> bool:
     """True when a default-bridge container reached the internet."""
     report.say("")
     report.say("--- Control: a throwaway container on the DEFAULT bridge (expected to REACH the internet) ---")
-    cp = run(["docker", "run", "--rm", "--network", "bridge", "--platform", CONTROL_PLATFORM, CONTROL_IMAGE,
+    cp = run(["docker", "run", "--rm", "--network", "bridge", CONTROL_IMAGE,
               "curl", "-sS", "--max-time", "10", "-o", "/dev/null", "-w", "HTTP %{http_code}\n", CONTROL_URL], 180)
     for line in _out_lines(cp):
         report.say(f"  {line}")
