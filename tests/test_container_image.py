@@ -45,6 +45,15 @@ def test_build_requirements_are_hash_pinned():
     assert re.search(r"^setuptools==[0-9.]+ \\$", text, re.M) and "--hash=sha256:" in text
 
 
+def test_every_stage_starts_from_the_recorded_base_image():
+    # Dependabot bumps the digest on the FROM lines only; the recorded ARG must follow.
+    base = re.search(r"^ARG BASE_IMAGE=(\S+)$", DOCKERFILE, re.M).group(1)
+    froms = re.findall(r"^FROM\s+(\S+)", DOCKERFILE, re.M)
+    stages = set(re.findall(r"^FROM\s+\S+\s+AS\s+(\S+)", DOCKERFILE, re.M))
+    images = [ref for ref in froms if ref not in stages]
+    assert len(images) == 3 and set(images) == {base}, (base, images)
+
+
 def test_every_downloaded_input_is_pinned_and_verified():
     assert re.search(r"^ARG BASE_IMAGE=debian:bookworm-slim@sha256:[0-9a-f]{64}$", DOCKERFILE, re.M)
     for arg in ("NUCLEI_ZIP_SHA256_AMD64", "NUCLEI_ZIP_SHA256_ARM64", "TEMPLATES_TARBALL_SHA256"):

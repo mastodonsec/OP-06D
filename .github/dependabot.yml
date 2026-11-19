@@ -1,0 +1,29 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Dependabot updates the sources of truth only:
+#
+#   uv              pyproject.toml / uv.lock (the Python dependencies)
+#   github-actions  the workflows' actions, pinned by commit SHA (Dependabot
+#                   bumps the SHA and its version comment)
+#   docker          the Dockerfile's base image digest (its FROM lines)
+#
+# The hash-pinned files under docker/ are generated from uv.lock and the
+# setuptools pin, so there is deliberately no pip entry for /docker. A uv.lock
+# bump fails CI's "requirements" job until they are regenerated with
+#   uv run python scripts/update_docker_requirements.py
+# and the result is committed to the Dependabot branch.
+version: 2
+updates:
+  - package-ecosystem: uv
+    directory: /
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly

@@ -47,6 +47,7 @@ def test_ci_reads_only_and_never_pushes():
     assert platforms == {"linux/amd64", "linux/arm64"}
     runs = " ".join(s.get("run", "") for s in _steps(wf))
     assert "scripts/check_repo_hygiene.py" in runs and "pytest" in runs and "scripts/check_image.py" in runs
+    assert "scripts/update_docker_requirements.py --check" in runs
 
 
 def test_release_runs_on_tags_and_only_its_job_can_write_and_sign():
