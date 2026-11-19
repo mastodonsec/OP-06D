@@ -3,6 +3,17 @@
 Thanks for your interest in OP-06D. A few things keep the project legally clean
 and open.
 
+## How this project is run
+
+- OP-06D is maintained by its author, who alone sets its direction.
+- External pull requests are not being accepted at this time. Pull requests
+  opened anyway may be closed without review.
+- You're free to fork OP-06D and change it however you like under the
+  AGPL-3.0-or-later.
+
+To report a vulnerability, follow [`SECURITY.md`](SECURITY.md) instead of
+opening an issue or pull request.
+
 ## License
 
 OP-06D is licensed under the **GNU Affero General Public License v3.0 or later
