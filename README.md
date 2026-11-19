@@ -5,10 +5,12 @@ An AI-driven security validation tool. An LLM plans reconnaissance actions and d
 real security tools against **authorized** targets, with every action forced through a
 hard guardrail layer, and produces a client-grade report.
 
-> **Status: active development — recon MVP.** The core engine (engagement parser,
-> guardrail gate, orchestrator loop) and two tool wrappers (nmap, nuclei) are built and
-> unit-tested. Live validation against real tools in an isolated lab is in progress.
-> **Not for use against live client targets yet** — see [Project status](#project-status).
+> **Status: recon MVP complete, validated in an isolated lab.** The engagement parser,
+> guardrail gate, orchestrator loop, nmap and nuclei wrappers, evidence store, reports
+> and the `op06d` CLI (fixed or LLM planner) are built, unit-tested and validated
+> against the pinned real tools in an isolated lab. **Authorized use only:** run it
+> only against systems you own or hold signed authorization to test. See
+> [Project status](#project-status).
 
 ---
 
@@ -90,7 +92,7 @@ tool runs:
 ## Install
 
 ```bash
-git clone <your-repo-url> OP-06D
+git clone https://github.com/mastodonsec/OP-06D.git
 cd OP-06D
 uv sync
 ```
@@ -102,8 +104,29 @@ engagement file *is* the authorization boundary — it names the authorized targ
 rate cap, and the window, and the gate enforces exactly what it says.
 
 ```bash
-uv run op06d run --engagement engagement.yaml
+uv run op06d run --engagement examples/engagement.yaml --out out/
 ```
+
+`--out` (required) is the directory for the HTML report, the evidence store and the
+audit log. The default **fixed planner** runs, per in-scope host or IP, an nmap service
+scan and a nuclei default-tag scan, and per in-scope CIDR an nmap service scan; nuclei
+runs only when `--template-dir` points at a pinned nuclei template directory, and is
+otherwise refused as an unknown tool. The example's window (2026-11-10, 02:00 to 06:00
+UTC) has passed, so this command scans nothing: every action is refused at the gate
+and the report records that. For a real engagement, write your own engagement file.
+
+```
+run_id: 9ff1686f-3ffe-405c-84af-140d7fe7c88d
+actions: executed=0 denied=3 declined=0 tool_errors=0
+findings: none
+report (html): out\acme-saas-external-2026-11-9ff1686f-3ffe-405c-84af-140d7fe7c88d.html
+evidence store: out\evidence.db
+audit log:      out\audit\acme-saas-external-2026-11.audit.jsonl
+```
+
+To let a model propose the actions instead (through the same gate), add
+`--planner llm --llm-provider local` (or `anthropic`); see
+[docs/llm-planner.md](docs/llm-planner.md).
 
 ### Engagement file
 
@@ -125,7 +148,12 @@ intensity:
   max_rps: 20
   destructive: false      # destructive actions require this to be true
 objective: "External attack surface recon"
+planner:                  # optional; without it only the local LLM provider may plan
+  allowed_providers: [local]   # local and/or anthropic (hosted: findings leave the host)
 ```
+
+The `planner:` block is not in `examples/engagement.yaml`; `--planner fixed` ignores
+it. All fields are documented in [docs/engagement-parser.md](docs/engagement-parser.md).
 
 Scope rules worth knowing:
 
@@ -135,110 +163,88 @@ Scope rules worth knowing:
 
 ## Demo
 
-`examples/demo_gate.py` shows the guardrail gate making allow/deny decisions **without
-running any real scan** — it's the safest way to see the safety core work. It loads an
-engagement, runs a set of targets through the gate, and prints each decision with its
-reason.
+[`examples/demo_gate.py`](examples/demo_gate.py) shows the scope check making
+allow/deny decisions **without running any scan or touching the network** (DNS is
+faked). It loads `examples/engagement.yaml`, widens its scope with `*.acme.com` and an
+excluded `203.0.113.8/29` so the deny-wins cases can be shown, runs eight targets
+through the scope check (`op06d.scope.check_scope`, RC-9), records every decision in a
+hash-chained audit log in a temporary directory (RC-11), and verifies that log. The
+window and rate checks of the full gate are not part of this demo.
 
-```python
-# examples/demo_gate.py
-"""
-OP-06D — guardrail gate demo.
-
-Shows the scope gate allowing and denying targets against an engagement scope,
-with the reason for each decision. Runs NO real scan and touches NO network beyond
-the DNS resolution the gate itself performs. Safe to run anywhere.
-
-    uv run python examples/demo_gate.py
-"""
-from op06d.engagement import load_engagement
-from op06d.gate import Gate
-from op06d.audit import open_audit_log   # per-engagement audit sink
-
-# A tiny inline engagement for the demo (normally this is your engagement.yaml).
-DEMO_ENGAGEMENT = {
-    "engagement": "demo-local",
-    "authorization": {
-        "client": "Demo",
-        "signed_scope_ref": "DEMO-000",
-        "authorized_by": "demo@example.com",
-        # Wide-open window so the demo focuses on scope decisions.
-        "window": ["2000-01-01T00:00Z", "2100-01-01T00:00Z"],
-    },
-    "scope": {
-        "in_scope": ["203.0.113.0/28", "app.acme.com"],
-        "out_of_scope": ["203.0.113.8/29", "billing.acme.com"],
-    },
-    "intensity": {"max_rps": 20, "destructive": False},
-    "objective": "Gate demo",
-}
-
-# Targets to run through the gate: (target, what we expect, why it matters)
-CASES = [
-    ("203.0.113.5",      "ALLOW", "IP inside the in-scope /28"),
-    ("203.0.113.9",      "DENY",  "IP inside an out-of-scope /29 — deny wins"),
-    ("app.acme.com",     "ALLOW", "host is in scope"),
-    ("billing.acme.com", "DENY",  "host explicitly excluded"),
-    ("evil.example.net", "DENY",  "host matches no in-scope entry (fail-closed)"),
-    ("127.1",            "DENY",  "malformed/ambiguous target"),
-    (None,               "DENY",  "non-string target"),
-]
-
-def main() -> None:
-    engagement = load_engagement(DEMO_ENGAGEMENT)     # validates on load
-    with open_audit_log(engagement) as audit:
-        gate = Gate(engagement)
-        for target, expected, why in CASES:
-            decision = gate.check(target, audit=audit)
-            verdict = "ALLOW" if decision.allowed else "DENY"
-            ok = "ok " if verdict == expected else "!! "
-            print(f"[{ok}] {verdict:5} {target!r:22} {decision.reason}  ({why})")
-
-if __name__ == "__main__":
-    main()
+```bash
+uv run python examples/demo_gate.py
 ```
 
-Running it looks like this (reasons abbreviated):
+Real output (the timestamp and hashes in the last line differ on every run):
 
 ```
-[ok ] ALLOW '203.0.113.5'          allow: IP in in-scope 203.0.113.0/28   (IP inside the in-scope /28)
-[ok ] DENY  '203.0.113.9'          deny: IP in out-of-scope 203.0.113.8/29  (deny wins)
-[ok ] ALLOW 'app.acme.com'         allow: host in scope                   (host is in scope)
-[ok ] DENY  'billing.acme.com'     deny: host matches out-of-scope entry  (explicitly excluded)
-[ok ] DENY  'evil.example.net'     deny: host matches no in-scope entry   (fail-closed)
-[ok ] DENY  '127.1'                deny: malformed target                 (ambiguous)
-[ok ] DENY  None                   deny: unexpected target type           (non-string)
-```
+[ok ] ALLOW '203.0.113.5'        allow: IP in in-scope 203.0.113.0/28
+[ok ] DENY  '203.0.113.9'        deny: IP is in out-of-scope 203.0.113.8/29
+[ok ] ALLOW 'app.acme.com'       allow: host in scope
+[ok ] DENY  'billing.acme.com'   deny: host matches out-of-scope entry 'billing.acme.com'
+[ok ] DENY  'www.acme.com'       deny: resolved 203.0.113.9 is in out-of-scope 203.0.113.8/29
+[ok ] DENY  'evil.example.net'   deny: host matches no in-scope host entry
+[ok ] DENY  '127.1'              deny: malformed target (ambiguous numeric hostname '127.1')
+[ok ] DENY  None                 deny: malformed target (target has unexpected type NoneType)
 
-> The exact import paths and function signatures above mirror the current module layout
-> (`op06d.engagement`, `op06d.gate`, `op06d.audit`). Adjust them if your local API
-> differs — the demo's purpose is to show the gate's decisions, not a fixed API.
+Audit log verified: 9 entries -> acme-saas-external-2026-11.audit.jsonl
+Last entry as stored:
+  {"v":1,"seq":9,"ts":"2026-11-19T00:06:33.424Z","engagement":"acme-saas-external-2026-11","event":"gate_decision","target":"'<NoneType>'","tool":"demo","parameters":{"note":"manual test"},"allowed":false,"reason":"deny: malformed target (target has unexpected type NoneType)","prev_hash":"4be40b81b4f69f86cd37b1b4aa66f543f4fc8f02cccf0780022eae957fdb5bcd","hash":"522d72b074ffff29c491b5d2912955ac649b72faacefdae0b2ffdf1c33bcbf19"}
+```
 
 ## Running the tests
 
 ```bash
-uv run pytest -q
+uv run --extra dev pytest -q
 ```
 
 The unit suite mocks all subprocesses — **no test starts a real scanner or touches a real
-host.** Real-tool behavior is validated separately in the isolated lab.
+host.** Real-tool behavior is validated separately in the isolated lab
+([`lab/RUNBOOK.md`](lab/RUNBOOK.md)). The lab-gated integration tests are deselected
+by default (they need `-m lab`, `OP06D_LAB=1` and the lab), and the live-model test
+is skipped unless `OP06D_LIVE_MODEL=1`.
 
 ## Project layout
 
 ```
 src/op06d/
-  engagement.py     engagement-file schema and loader (the authorization boundary)
-  gate.py           the single enforcement point (scope · rate · window)
-  scope.py          scope decision logic (deny-wins, fail-closed)
-  audit.py          append-only, hash-chained per-engagement audit log
-  sanitize.py       tool-output sanitization against prompt injection
-  orchestrator.py   the plan-act-observe loop
-  tools.py          GatedToolbox — tools are reachable only via the gate
-  nmap_tool.py      nmap wrapper (argv-only, rate-limited, risk-classified)
-  nuclei_tool.py    nuclei wrapper (curated templates, no OOB, no redirects)
+  __init__.py            package marker
+  approval.py            interactive operator approval prompt (default deny, timeout)
+  audit.py               append-only, hash-chained per-engagement audit log
+  cli.py                 the op06d command: run (engagement to report) and report (re-render a stored run)
+  engagement.py          engagement-file schema and loader (the authorization boundary)
+  evidence.py            SQLite evidence store: runs, actions and findings, for the report
+  gate.py                the single enforcement point (window · scope · rate), one audit entry per decision
+  limits.py              time-window and rate-cap primitives used by the gate
+  llm.py                 LLM planner adapters: hosted Anthropic, local Ollama / llama.cpp / OpenAI-compatible
+  nmap_tool.py           nmap wrapper (argv only, rate-limited, risk-classified, sized host timeouts)
+  normalize.py           maps nmap and nuclei output to one findings schema
+  nuclei_method_audit.py finds nuclei templates that declare an HTTP write method
+  nuclei_tool.py         nuclei wrapper (curated templates, no out-of-band, no redirects, write-method backstop)
+  nuclei_write_method_exclusions.json  bundled write-method template ids for the pinned template set
+  orchestrator.py        the plan-act-observe loop and its run limits
+  redaction.py           secret scrubbing for the audit log, evidence store and CLI errors
+  report.py              client report model and Markdown rendering
+  report_render.py       self-contained HTML report, optional PDF
+  resolve.py             resolve-once DNS pinning (the only place DNS lookups happen)
+  sanitize.py            tool-output sanitization against prompt injection
+  scope.py               scope decision logic (deny wins, fail closed)
+  tools.py               GatedToolbox (tools reachable only through the gate) and default_tools
 examples/
-  demo_gate.py      the gate demo above
-lab/                isolated Docker lab (Juice Shop + DVWA) for live validation
+  demo_gate.py           the scope-check demo above
+  engagement.yaml        example engagement file
+scripts/
+  generate_nuclei_write_method_exclusions.py   regenerates the write-method list on a template re-pin
+docs/                    design notes per component
+tests/                   unit suite; tests/integration/ holds the lab-gated tests
+lab/                     isolated Docker lab for live validation (see lab/RUNBOOK.md):
+                         - targets: OWASP Juice Shop and DVWA, plus an nginx redirector (RC-44)
+                         - scanner image with the pinned nmap, nuclei and templates
+                         - isolation gate: check_isolation.py (Windows, Linux, macOS)
+                         - validation_harness.py: one-command run of the RUNBOOK checks
+                         - model relay overlay for --planner llm runs (model_relay.py, RC-47)
+                         - planner model benchmark (benchmark.py, RC-46)
+                         - PLANTED_VULNS.md: the frozen baseline; captures/: frozen evidence
 ```
 
 ## Project status
@@ -257,12 +263,34 @@ fail-closed precondition.
 **Pre-live hardening: done.** nuclei coverage instrumentation, nmap privilege-degradation
 reporting, neutralized ambient nuclei config, and a write-method template exclusion backstop.
 
+**Merged since the MVP:**
+
+- **LLM planner** (RC-40): `op06d run --planner llm` with a hosted (Anthropic) or local
+  model, run limits, strict reply validation and an engagement-level provider policy.
+- **Planner parameter schema** (RC-50): each tool's parameter types and allowed values
+  reach the planner prompt and the constrained-output schema.
+- **Gate chokepoint suite** (RC-48): a codebase-wide test that `GatedToolbox.execute()` is
+  the only path to the tools.
+- **Lab model relay** (RC-47): an opt-in overlay that lets the sealed lab scanner reach
+  exactly one model upstream; the opt-in live-model gate test runs through it.
+- **Planner model benchmark** (RC-46, RC-51): `lab/benchmark.py` scores candidate models
+  on lab runs; RC-51 ran the local shortlist with it.
+- **nmap host timeouts** (RC-43): host timeouts are sized per call and a skipped host is
+  reported as a limitation, not as an empty result.
+- **Redirect observation** (RC-44): a cross-host HTTP redirect is reported as a finding,
+  and as a limitation when its target is out of scope; it is never followed.
+- **Cross-platform lab** (RC-60): the lab and its isolation gate run on Linux and macOS
+  as well as Windows.
+
 **Before any live client engagement, still required:** a signed, authorized scope, and a
 check of the project board for any newly filed blockers. No known blockers remain in code.
 
-**Open, non-blocking:** multi-IP target handling, and a self-hosted interactsh control for
-the lab's out-of-band detection check. Product direction (backlog): deployable sensor
-appliance, web UI, plugin arsenal.
+**Open on the board:** multi-IP target handling (RC-27), optional VPN egress (RC-41),
+report remediation and risk narrative (RC-42), the planner putting the port in the target
+(RC-52), hostname-to-IP mapping for vhosts without DNS (RC-58), and a container image
+(RC-62). Product backlog: deployable sensor appliance (RC-30), web UI (RC-32), plugin
+arsenal (RC-33), engagement-driven tool selection (RC-63), one-command cloud deploy
+(RC-65), and smaller lab, report and benchmark follow-ups.
 
 **Deliberately out of the MVP** (later iterations): exploitation tier (Metasploit),
 breach-and-attack simulation (CALDERA), cloud posture auditing, authenticated app testing,
@@ -276,9 +304,7 @@ study, modify, and redistribute it, but any modified version you distribute **or
 run as a network service** must be made available under the same license. If you
 run a modified OP-06D as a service for others, you must offer them its source.
 
-Copyright (c) 2026 Thomas Pavan / Mastodon Security. The copyright holder also
-offers **commercial licenses** without the AGPL's source-disclosure obligations —
-contact thomas@mastodonsec.com.
+Copyright (c) 2026 Thomas Pavan / Mastodon Security.
 
 Contributions are accepted under the AGPL via the Developer Certificate of Origin;
 see [`CONTRIBUTING.md`](CONTRIBUTING.md). Read [`NOTICE`](NOTICE) before running the

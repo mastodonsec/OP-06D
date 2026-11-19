@@ -1,16 +1,26 @@
 # OP-06D lab runbook (RC-19)
 
-The ordered steps **you** perform to stand up the lab, **prove it is isolated**,
-validate the nmap and nuclei wrappers against the real tools, and run the whole
-chain once. Nothing in this repository executes any of this for you.
+The maintainer's validation reference for the lab: the ordered steps that
+stand up the lab, **prove it is isolated**, validate the nmap and nuclei
+wrappers against the real, pinned tools, and run the whole chain once. Nothing
+in this repository runs them for you (the RC-24 validation harness below
+automates Steps 4-13 when you start it).
 
-> **Written without running anything.** Every command and every "expected" result
-> below is unverified. If something differs, that is a finding: send me the output
-> and I will adapt the code, the fixtures and these docs.
+> **These steps have been run.** The first full run, on Windows with Docker
+> Desktop (WSL2 backend), produced the frozen baseline in
+> `lab/PLANTED_VULNS.md` (2026-11-05) and the evidence in `lab/captures/`.
+> RC-60 added Linux and macOS hosts; what was tested there, and when, is in
+> [Linux and macOS hosts](#linux-and-macos-hosts-rc-60). An "Expected" result
+> that does not match is a deviation: keep the full output, with the step
+> number, next to the other captures in `lab/captures/`, and do not scan with
+> OP-06D until it is understood.
 
-Run all commands from the repository root (`Z:\git\OP-06D`) in
-**PowerShell 7** (`pwsh`). Snippets are piped into the container, which needs
-UTF-8 handling that Windows PowerShell 5.1 does not do reliably.
+Run all commands from the repository root. **Shells:** `powershell` blocks are
+for **PowerShell 7** (`pwsh`); snippets are piped into the container, which
+needs UTF-8 handling that Windows PowerShell 5.1 does not do reliably. `bash`
+blocks (added by RC-60 for Linux and macOS) are for bash or zsh; for the
+`docker compose -f $LAB ...` lines in the PowerShell blocks, see
+[Linux and macOS hosts](#linux-and-macos-hosts-rc-60).
 
 > **RC-20: there is now a gated, automated version of Steps 4+8+9** (isolation
 > precondition, the real scan set, and a repeatability check), driven by
@@ -43,7 +53,7 @@ $LAB = "lab/docker-compose.yml"
 > (for example `docker compose -f  exec ...` complaining about its arguments),
 > you probably opened a fresh shell: re-run the `$LAB = ...` line above.
 
-> **Reading this runbook.** Lines to type are in `powershell` code blocks. When a step also shows what you should see, the expected output follows under an **Expected output:** label, in its own plain block — that block is the result to compare against, never something to run.
+> **Reading this runbook.** Lines to type are in `powershell` (PowerShell 7) or `bash` (bash/zsh) code blocks. When a step also shows what you should see, the expected output follows under an **Expected output:** label, in its own plain block — that block is the result to compare against, never something to run.
 
 > **Here-string blocks are single commands.** A block that starts with `@'`
 > and ends with `'@ | docker compose -f $LAB exec -T scanner python3 -` (or
@@ -90,7 +100,7 @@ The `latest` tag is not used anywhere. Step 5 records what is actually installed
         |                                                                           |
         |   scanner  172.31.77.20  ----->  juice-shop 172.31.77.10  :3000           |
         |   (nmap, nuclei,         ----->  dvwa        172.31.77.11  :80            |
-        |    OP-06D code)                                                           |
+        |    OP-06D code)          ----->  redirect    172.31.77.12  :80  (RC-44)   |
         +---------------------------------------------------------------------------+
               |  no route out, no NAT, no published ports, no other network
               X  nothing reaches the internet, the host, or any other network
@@ -125,11 +135,12 @@ The `latest` tag is not used anywhere. Step 5 records what is actually installed
 - **Proof, not trust.** Step 4 checks the configuration from the host *and*
   tries to break out from inside, with positive controls so a broken test can't
   look like a pass.
-- **The LLM is scripted in the lab.** A real model API needs internet, which the
-  lab must not have. The end-to-end run (Step 13) therefore uses a scripted
-  planner inside the scanner. Driving the lab with a real LLM would need the
-  orchestrator on the host calling the tools through `docker exec`; that harness
-  does not exist yet and is out of scope for this step.
+- **The LLM is scripted in the base lab.** A real model API needs a route out,
+  which the base lab must not have. The end-to-end run (Step 13) therefore uses
+  a scripted planner inside the scanner. A run with a real model
+  (`op06d run --planner llm`) uses the opt-in RC-47 model-relay overlay, which
+  adds one relay to exactly one upstream and leaves this network unchanged;
+  see [Model relay](#model-relay-rc-47-opt-in-op06d-run---planner-llm-in-the-lab).
 
 ---
 
@@ -159,8 +170,13 @@ On Linux and macOS: `mkdir -p lab/captures && echo "created lab/captures"`.
 
 RC-60: Lab: run on Linux (Kali) and macOS, not only Windows
 
-> **Untested until Thomas runs them.** The commands in this subsection and the
-> bash equivalents in Step 4 have not been run on Linux or macOS yet.
+> **Tested 2026-11-17.** Kali Linux x86_64 (a VM without a GPU, with Kali's
+> own `docker.io` and Compose v2 packages): the base lab and the local model
+> relay PASS. macOS on Apple Silicon (Docker Desktop): the base lab PASS. The
+> Docker-repository fallback for Kali below was not needed on that system.
+> Still untested: Ollama on macOS for the relay, and `check anthropic` on
+> Linux and macOS (see
+> [Model relay](#model-relay-rc-47-opt-in-op06d-run---planner-llm-in-the-lab)).
 
 Every `docker compose -f $LAB ...` line in this runbook works the same in bash
 or zsh once the variable is set the shell's way (`LAB=lab/docker-compose.yml`),
@@ -195,10 +211,14 @@ docker compose version
 
 - **docker group vs sudo:** either prefix every docker command (and
   `uv run python lab/check_isolation.py`) with `sudo`, or add yourself to the
-  `docker` group once: `sudo usermod -aG docker "$USER"`, then log out and
-  back in, then continue. Membership of `docker` is equivalent to root on
-  that machine.
+  `docker` group once: `sudo usermod -aG docker "$USER"`, then reboot the VM
+  or log out and back in; a terminal opened before that still fails with
+  permission denied on `/var/run/docker.sock`. Membership of `docker` is
+  equivalent to root on that machine.
 - **uv:** `curl -LsSf https://astral.sh/uv/install.sh | sh` (or `pipx install uv`).
+  If `uv --version` works after the installer, there is nothing to source.
+  (On Kali `~/.local/bin` is already on `PATH`, and the `~/.local/bin/env`
+  file the installer mentions may not exist.)
 - **ARM hosts (Apple Silicon, ARM Linux):** dvwa and the scanner are pinned to
   `linux/amd64` and run under emulation; juice-shop, nginx and the relay run
   natively. Docker Desktop for Mac emulates amd64 out of the box (Settings >
@@ -245,7 +265,7 @@ docker compose -f $LAB up -d
 docker compose -f $LAB ps
 ```
 
-Wait until all three are running (DVWA needs about a minute for its database).
+Wait until all four (`juice-shop`, `dvwa`, `redirect`, `scanner`) are running (DVWA needs about a minute for its database).
 From inside the scanner:
 
 ```powershell
@@ -423,8 +443,8 @@ docker compose -f $LAB exec -T scanner bash -c 'for f in -config -u -t -jsonl -s
 ```
 
 **7c. Record, per flag:** accepted / rejected ("unrecognized option", "flag
-provided but not defined") / accepted but renamed or ignored. The flags I am least
-sure of are nuclei's `-disable-redirects`, `-no-interactsh`, `-interactsh-server`,
+provided but not defined") / accepted but renamed or ignored. The flags most
+likely to change between versions are nuclei's `-disable-redirects`, `-no-interactsh`, `-interactsh-server`,
 `-exclude-tags`, `-disable-update-check`, `-bs`, `-config`, and nmap's
 `--no-stylesheet` and `--host-timeout`. A flag that is "listed" but ignored is
 caught by the behavior tests in Step 11.
@@ -455,7 +475,8 @@ list and gated-execute logic the automated harness
 (`tests/integration/test_lab_rc20.py`) calls, so the two cannot drift apart.
 Writing straight to `lab/captures/` here is deliberate (these are the
 committed, by-hand captures); the automated test always uses a fresh,
-ephemeral subdirectory instead (see RC-20 in CONTEXT.md).
+ephemeral subdirectory instead (`lab/captures/_rc20_ephemeral/`, wiped before
+every run), so it never overwrites them.
 
 ```powershell
 docker compose -f $LAB exec -T scanner python3 /lab/scan_driver.py /captures --engagement /captures/engagement.now.yaml
@@ -475,8 +496,9 @@ to `https`, which is wrong for plain HTTP on 3000. With both, it behaves like
 the DVWA rows rather than coming back empty. This matches the `RUNS` list in
 `lab/scan_driver.py`. Also expect exactly two
 `dns_pinned` lines (`dvwa.lab`, `juice-shop.lab`, each pinned once even
-though each hostname is scanned in more than one row - RC-23). Anything `denied`/`declined` is
-also informative: send me the printed lines. Each nuclei row's
+though each hostname is scanned in more than one row - RC-23). A `denied`/`declined` row is
+a deviation: keep the printed lines with the captures and find the cause
+before relying on the run. Each nuclei row's
 `*.findings.json` now also carries `summary.templates_loaded` (RC-26) -
 expect a real positive count (thousands, against the pinned v10.5.1 set); `0`
 or missing means the coverage instrumentation itself regressed, not that the
@@ -520,9 +542,11 @@ and `nuclei_findings.jsonl`: attribute names, `<hosthint>`, `<extraports>`, how
 `matched-at`/`host`/`ip` look for a host with a port, `info.tags` as a list or a
 string, any fields the parser drops that RC-15 will need.
 
-**Fixtures:** copy the real captures to `tests/fixtures/real/` (keep the names).
-**Do not overwrite** the hand-written fixtures yet; send me the captures and I
-will switch the tests over and fix any parser differences.
+**Fixtures:** the real captures stay in `lab/captures/` (keep the names); they
+are the evidence and the RC-20 baseline. **Do not overwrite** the hand-written
+fixtures in `tests/fixtures/`. A `FAIL` or `WARN` line, or a field the parser
+drops, is a parser defect: record it with the capture's file name and fix the
+parser (with a test) before relying on its output.
 
 ## Step 10. nuclei tag-vocabulary audit
 
@@ -657,8 +681,8 @@ so they are not a problem by themselves. A `method:PUT`/`DELETE`/`PATCH`/`PURGE`
 on a default-selection template is covered by the RC-36 `-eid` backstop (below)
 only if its id is in `src/op06d/nuclei_write_method_exclusions.json`.
 
-**What to do.** Count the templates of concern, list examples, and send me the
-output. If something new shows up, the fix is to remove or demote the tag,
+**What to do.** Count the templates of concern, list examples, and keep the
+output with the captures. If something new shows up, the fix is to remove or demote the tag,
 tighten `-exclude-tags`, exclude by protocol, or (for a write method)
 regenerate the `-eid` list. The validation harness reports this step as
 NEEDS-REVIEW, never PASS, for exactly this reason: a human reads it.
@@ -864,8 +888,8 @@ exactly as a scan does), and its `control` row is run A.
 **What to do.** If run A (or the probe's `control` row) shows nothing, fix the
 experiment before concluding anything. If the wrapper row shows a redirect,
 the hostile header, OAST contact or a non-`ok` status, the ambient config is
-overriding the wrapper: stop and send me the output (the harness reports that
-as FAIL). Otherwise the step is reviewed and done - the harness reports it as
+overriding the wrapper: stop, keep the full output, and do not scan with
+OP-06D until it is fixed (the harness reports that as FAIL). Otherwise the step is reviewed and done - the harness reports it as
 NEEDS-REVIEW, never PASS, so a human reads the table. Then run 11d.
 
 The harness reports the redirect, header and OAST sub-checks separately: a
@@ -965,8 +989,8 @@ Which NSE scripts need raw sockets (read-only, offline):
 docker compose -f $LAB exec -T scanner sh -c "grep -rl 'is_privileged' /usr/share/nmap/scripts | sed 's#.*/##' | sort | head -100"
 ```
 
-Document the result in `docs/nmap-tool.md` (I will do this from your output).
-Also confirm the wrapper returns a structured error, not an exception, when nmap
+The confirmed result is recorded in `docs/nmap-tool.md` ("Privilege-degradation
+surfacing (RC-25)"); a result that differs from it is a finding. Also confirm the wrapper returns a structured error, not an exception, when nmap
 exits non-zero.
 
 ## Step 13. End to end: engagement -> loop -> gate -> real tools -> sanitize -> audit
@@ -1049,9 +1073,9 @@ end-to-end evidence trail. If the termination is `window_expired` or
 re-run. Anything else that differs (a different step kind, an
 `action_executed` for `1.1.1.1`, raw XML/JSONL in the planner's view, a
 missing or doubled `dns_pinned`) is a finding: **do not scan with OP-06D**
-until it is understood, and send me the full output.
+until it is understood, and keep the full output.
 
-## Step 14. Tear down, and what to send back
+## Step 14. Tear down
 
 ```powershell
 docker compose -f $LAB down
@@ -1124,7 +1148,8 @@ Ollama does **not** need to listen on the network for the relay:
 
 ### Ollama on the host (native Linux, e.g. Kali) (RC-60)
 
-> **Untested until Thomas runs it.**
+> **Tested 2026-11-17** on Kali x86_64 (VM, no GPU): the local model relay
+> PASS with Ollama bound as below.
 
 Native Linux Docker has no `host.docker.internal`. The local overlay maps it,
 for the relay container only, to `host-gateway`, which on Linux is the
@@ -1157,7 +1182,9 @@ ss -ltnH 'sport = :11434'
   `docker0` is up.
 - `export OLLAMA_HOST` in the shell you run `ollama pull` and
   `lab/model_relay.py` from: the launcher's host-side model probe reads it
-  (unset, it probes `127.0.0.1:11434`).
+  (unset, it probes `127.0.0.1:11434`). The variable does not persist: re-run
+  `export OLLAMA_HOST=...` in every new terminal.
+- `check local` does not need a model pulled; `run local` does.
 - Any container on a non-internal Docker network can reach that address too;
   the lab targets and the scanner cannot (internal networks without a gateway
   address; `check local` probes it).
@@ -1167,11 +1194,16 @@ ss -ltnH 'sport = :11434'
 
 ### Ollama on the host (macOS)
 
-> **Untested until Thomas runs it.** Docker Desktop for Mac is expected to
+> **Untested.** Docker Desktop for Mac is expected to
 > behave like Windows: leave `OLLAMA_HOST` unset, keep Ollama on `127.0.0.1`,
 > and confirm with `lsof -nP -iTCP:11434 -sTCP:LISTEN` (only `127.0.0.1`).
 
-### Commands (PowerShell, repository root)
+### Commands (repository root)
+
+The `uv run ...` and `ollama ...` lines are the same in PowerShell 7 and
+bash/zsh. The `$env:...`, `Read-Host` and `Remove-Item Env:...` lines, and
+the backtick line continuations, are PowerShell only. `check anthropic` and
+`run anthropic` are untested on Linux and macOS.
 
 Build once (internet needed; builds the base scanner if missing, then the
 overlay scanner and the relay):

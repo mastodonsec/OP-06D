@@ -76,11 +76,13 @@ timeout=...)` with a list. The command is always:
 
 ```
 nmap -oX - --no-stylesheet -n --max-rate <max_rps> --host-timeout <sized>s <profile flags>
-     [-p <ports>] [--script=<cat,cat>] -- <target>
+     [-p <ports>] [--script=<cat,cat>[,http-title]] -- <target>
 ```
 
 `--host-timeout` is sized per call (see
 [Host timeouts and timeout sizing](#host-timeouts-and-timeout-sizing-rc-43)).
+`http-title` is added by the wrapper on the `service` and `full` profiles
+only (see [Redirect observation](#redirect-observation-rc-44)).
 
 The target is one argv element placed after `--`, so it can never be read as an
 option. Before that the wrapper refuses (as `invalid_input`, without starting
@@ -125,7 +127,8 @@ before they reach any audit record, approval request or loop record:
 become `[REDACTED]`. This includes **refused** actions, so a password in a denied
 request does not leak either. Non-secret values are kept. nmap itself needs no
 credentials; the mechanism is generic for later tools. Secrets should still
-never be given to the planner at all (use references, per CONTEXT.md).
+never be given to the planner at all: give it a reference (for example a
+vault path) instead of the value.
 
 ### Errors do not crash the loop
 `run` never raises. Every failure returns a `ToolOutput` with a non-ok `status`
@@ -153,7 +156,7 @@ it at startup to fail early.
 `run` returns `ToolOutput(findings, raw, status)`:
 
 - `findings` is parsed, structured data (the planner sees only its sanitized
-  form; RC-15 will normalize it):
+  form; RC-15's `normalize_nmap` turns it into report findings):
 
 ```json
 {"scanner": "nmap", "version": "7.94",
@@ -261,6 +264,41 @@ parameter values alone. The estimate is per host: a CIDR target shares
 `--max-rate` between the hosts nmap scans in parallel, so a range with many
 live hosts can still hit `--host-timeout`; that is then reported as above.
 
+### Redirect observation (RC-44)
+
+RC-44: Recon: report redirects to hostnames outside scope instead of going quiet
+
+**The fixed script.** The `service` and `full` profiles always run nmap's
+`http-title` script: the wrapper appends it by name
+(`FIXED_SERVICE_SCRIPTS`) after any categories the planner chose. It is never
+a planner choice: `scripts` still accepts NSE categories only, so the planner
+cannot add, remove or swap a script name. `aggressive` (`-A`) already runs the
+`default` category, which includes `http-title`. The other profiles do not run
+it. The parser keeps the script's `redirect_url` element when nmap reports one.
+
+**The finding and the Limitation.** When `http-title` reports a redirect to a
+different host (an absolute or scheme-relative `Location` whose host is
+neither the scanned IP nor the target hostname), `normalize_nmap` reports it
+in place of the plain script finding:
+
+- an `info` finding titled `HTTP redirect to another host: <ip>:<port> -> <location>`
+  (tag `http-redirect`, the location and the redirect host in its evidence);
+- if the redirect host is not in the engagement scope (checked with the
+  engagement's own scope rules, without resolving or contacting it), also a
+  `redirect_target_not_assessed` issue, which the report lists under
+  Limitations. It names the host and says to add it to the engagement scope if
+  it belongs to the client and is covered by the signed authorization.
+
+A same-host or relative redirect is reported as the ordinary `http-title`
+script finding.
+
+**Never followed.** OP-06D records a cross-host redirect and does not follow
+it. nmap does not either: `http-title` follows a redirect only within the
+scanned host, and for any other host its output is
+`Did not follow redirect to <location>`. The redirect target is never scanned
+unless it is in scope and the planner proposes it as a target, which then goes
+through the gate like any other action.
+
 ## Usage
 
 ```python
@@ -299,9 +337,13 @@ does, so nothing else is done with it.
 
 ## Known limits
 
-- **The fixture is hand-written** in nmap 7.94 format, not captured from a live
-  scan. Replace it with a real capture once the lab exists (RC-19), and run the
-  wrapper against a real nmap there.
+- **`tests/fixtures/nmap_service_scan.xml` is hand-written**, not captured
+  from a live scan. It claims nmap 7.94 (`version="7.94"`), while the lab pins
+  7.93, and its recorded command line predates `-n` and `--host-timeout`. The
+  wrapper has been run against the pinned nmap 7.93 in the lab (RC-19,
+  `lab/RUNBOOK.md` Steps 8 and 9; the captures are in `lab/captures/`), and
+  the three `tests/fixtures/nmap_http_title_*.xml` fixtures (RC-44) are real
+  nmap 7.93 captures with only the address (and port) rewritten.
 - Some options (`-A`, OS detection, SYN scans) need root or administrator rights;
   without them nmap falls back or fails, and the failure comes back as a tool
   error.

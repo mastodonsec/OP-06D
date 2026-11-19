@@ -19,7 +19,8 @@ run before any tool is invoked.
 **In scope**
 
 - Pydantic schema for the engagement file (authorization, scope, intensity,
-  objective).
+  objective, and the optional `interactsh_server` (RC-14) and `planner`
+  (RC-40) fields).
 - Loading YAML safely and validating it.
 - Normalizing scope entries (case, canonical IP/CIDR form) so later matching is
   unambiguous.
@@ -53,7 +54,9 @@ Engagement  (frozen pydantic model)
   |- authorization: Authorization   client, signed_scope_ref, authorized_by, window (UTC)
   |- scope: Scope                   in_scope, out_of_scope (normalized)
   |- intensity: Intensity           max_rps, destructive
-  `- objective: str
+  |- objective: str
+  |- interactsh_server: str | None  optional self-hosted out-of-band server (RC-14)
+  `- planner: PlannerPolicy | None  optional; allowed_providers for the LLM planner (RC-40)
 ```
 
 Design decisions:
@@ -98,8 +101,8 @@ Example error output:
 
 ```
 engagement file failed validation:
-  - scope.in_scope.0: Value error, CIDR '0.0.0.0/0' is too broad (minimum /8)
   - authorization.window: Value error, window end must be after window start
+  - scope.in_scope: Value error, CIDR '0.0.0.0/0' is too broad (minimum /8)
 ```
 
 Run the tests:
@@ -128,7 +131,20 @@ intensity:
   max_rps: 20                              # 1..10000
   destructive: false                       # default false
 objective: "External attack surface recon"
+# Optional fields (not in examples/engagement.yaml):
+interactsh_server: oast.lab.example-redteam.net   # self-hosted only; omit to keep out-of-band checks off
+planner:                                          # omit to allow only the local LLM provider
+  allowed_providers: [local, anthropic]           # at least one of: local, anthropic
 ```
+
+- **`interactsh_server`** (RC-14): the self-hosted interactsh server nuclei
+  may use for out-of-band checks. Absent (the default), nuclei always runs
+  with `-no-interactsh`. See [nuclei-tool.md](nuclei-tool.md#2-out-of-band-interactsh-is-off-by-default).
+- **`planner.allowed_providers`** (RC-40): which LLM providers may plan this
+  engagement with `op06d run --planner llm`. Without a `planner:` block only
+  `local` is allowed; `anthropic` sends findings to a third party, so it must
+  be listed explicitly. `--planner fixed` ignores the field. See
+  [llm-planner.md](llm-planner.md#engagement-policy).
 
 Do not put secrets in this file. Use references (e.g. a vault path).
 
@@ -147,17 +163,23 @@ Do not put secrets in this file. Use references (e.g. a vault path).
 | Same entry in both `in_scope` and `out_of_scope` | Rejected |
 | `max_rps` | Integer, 1 to 10000 |
 | `destructive` | Boolean, defaults to `false` |
+| `interactsh_server` | Optional. A plain hostname: public interactsh servers (`oast.pro`, `oast.live`, `oast.site`, `oast.online`, `oast.fun`, `oast.me`, `interact.sh`, `interactsh.com` and their subdomains), IP addresses, wildcards, URLs and paths are rejected. Lowercased, trailing dot removed |
+| `planner.allowed_providers` | Optional block; if present, a non-empty list of `local` and/or `anthropic` (duplicates removed) |
 
-## Notes for later tickets
+## How the parser connects to the gate (RC-9, RC-10)
 
-- **Precedence is not decided here.** The parser only rejects exact duplicates
-  across the two lists. `is_in_scope()` (RC-9) must treat out-of-scope as
-  winning, including wildcard and CIDR overlaps (e.g. `x.stripe.com` against
-  `*.stripe.com`).
-- **Time enforcement is not decided here.** `window` is parsed and normalized to
-  UTC; RC-10 compares it with the current time.
-- **The gate must take scope only from an `Engagement` object**, never from
-  model output or tool output.
+- **Precedence is decided by the gate, not here.** The parser only rejects
+  exact duplicates across the two lists. `op06d.scope` (RC-9, called by
+  `Gate.check`) treats out-of-scope as winning, including wildcard and CIDR
+  overlaps (e.g. `x.stripe.com` against `*.stripe.com`). See
+  [scope-allowlist.md](scope-allowlist.md).
+- **Time and rate are enforced by the gate.** `window` is parsed and
+  normalized to UTC here; `Gate.check` (RC-10) compares it with the current
+  time as `[start, end)` and enforces `max_rps`. See
+  [gate-rate-and-window.md](gate-rate-and-window.md).
+- **The gate takes scope, window and rate only from the `Engagement` object**,
+  never from model output or tool output. It re-checks the window and rate
+  itself, so a hand-built model cannot open it.
 - The CIDR and wildcard breadth limits are conservative guardrails against
   typos. Adjust `_MIN_PREFIX_V4`, `_MIN_PREFIX_V6` in the module if a real
   engagement needs more.

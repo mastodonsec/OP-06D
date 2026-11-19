@@ -1,8 +1,7 @@
 # Contributing to OP-06D
 
 Thanks for your interest in OP-06D. A few things keep the project legally clean
-and let it stay open while preserving the maintainer's ability to offer commercial
-licenses.
+and open.
 
 ## License
 
@@ -32,14 +31,6 @@ git commit -s -m "RC-XX: short description"
 
 The full DCO text is reproduced in `DCO.txt`. A sign-off certifies that you agree
 to it for that contribution.
-
-> Note on commercial licensing: the maintainer offers OP-06D under both AGPL-3.0
-> and separate commercial licenses. The DCO sign-off certifies origin and licenses
-> your contribution under AGPL-3.0; it does not by itself assign copyright. If the
-> project later needs contributions to be available for commercial relicensing, a
-> contributor agreement may be introduced for non-trivial contributions — this will
-> be stated explicitly at that time. For now, keep contributions AGPL-clean and
-> signed off.
 
 ## Source file headers
 

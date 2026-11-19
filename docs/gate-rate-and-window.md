@@ -169,6 +169,10 @@ uv run --extra dev pytest tests/test_gate.py
   packets per second. A `cost` parameter could be added if needed.
 - Gate state is in memory: restarting the process resets the rate history.
 - The window is checked at decision time. A long-running action started just
-  before `end` is not interrupted; RC-7 should cancel running actions at the end
-  of the window.
+  before `end` is not cancelled when the window ends; it is bounded by its
+  tool's own timeouts (nmap: the sized `--host-timeout` and the subprocess
+  timeout, see [nmap-tool.md](nmap-tool.md#host-timeouts-and-timeout-sizing-rc-43);
+  nuclei: `run_timeout_s`, default 900 s). The orchestrator checks the window
+  again before the next LLM call and action (see
+  [orchestrator.md](orchestrator.md#known-limits)).
 - Single process; no cross-process rate sharing.

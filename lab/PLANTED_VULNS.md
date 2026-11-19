@@ -1,8 +1,10 @@
 # Planted vulnerabilities: the RC-20 benchmark baseline
 
-What a correct Red Cell run against the lab should (and should not) find.
+What a correct OP-06D run against the lab should (and should not) find.
 
-> **Naming note (RC-37):** this file and everything under `lab/captures/` were recorded before the RC-37 rename of Red Cell to OP-06D and may contain the old name; they are frozen and intentionally not updated.
+> **Naming note (RC-37):** everything under `lab/captures/` was recorded under the project's previous name, before the RC-37 rename to OP-06D, and may contain that name; it is frozen and intentionally not updated.
+
+> **Prose edit (2026-11-18, RC-66):** the project name in this file's prose was updated to OP-06D and a reference to an unpublished file was removed. No table, no text in Sections 5 and 6 and no baseline value changed.
 
 > **Status: FROZEN (2026-11-05).** This list was originally written from the
 > public documentation of OWASP Juice Shop (20.3.0) and DVWA, **before** any run.
@@ -15,9 +17,9 @@ What a correct Red Cell run against the lab should (and should not) find.
 
 ## How to read this
 
-The MVP is **unauthenticated external recon** with nmap and nuclei (see
-CONTEXT.md). Most planted vulnerabilities in both apps need a logged-in session or
-hand-crafted requests (SQL injection, XSS, CSRF, file upload...). Red Cell is
+The MVP is **unauthenticated external recon** with nmap and nuclei. Most
+planted vulnerabilities in both apps need a logged-in session or
+hand-crafted requests (SQL injection, XSS, CSRF, file upload...). OP-06D is
 **not expected to find those** in the MVP. They are listed so the baseline is
 complete and so later iterations (authenticated app testing) have a target list.
 
