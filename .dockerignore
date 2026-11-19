@@ -1,0 +1,10 @@
+# The image build sees only what it needs: everything else in the working tree
+# (lab captures, .env files, local notes, virtualenvs) stays out of the context.
+*
+!pyproject.toml
+!LICENSE
+!NOTICE
+!src/
+!docker/
+**/__pycache__
+**/*.pyc

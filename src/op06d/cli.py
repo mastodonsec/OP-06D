@@ -24,6 +24,8 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import os
+import posixpath
 import sys
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -49,6 +51,7 @@ from op06d.redaction import scrub_text
 from op06d.report import build_report
 from op06d.resolve import Resolver, system_resolver
 from op06d.report_render import NoPdfBackendAvailable, render_html, render_pdf
+from op06d.toolchain import ToolchainError, load_toolchain, resolve_run_toolchain, version_text
 from op06d.tools import (
     ApprovalHook,
     DenyAllApprover,
@@ -72,6 +75,67 @@ DEFAULT_LLM_LIMITS = dict(
 
 class PlannerPolicyError(Exception):
     """The requested planner configuration is refused before the run starts."""
+
+
+class OutputDirectoryError(Exception):
+    """The output directory cannot safely hold the report, evidence and audit log."""
+
+
+# Pseudo filesystems a container mounts that never persist anything.
+_EPHEMERAL_MOUNT_ROOTS = ("/proc", "/sys", "/dev")
+
+
+def mount_points(mountinfo: str) -> list[str]:
+    """Mount points from /proc/self/mountinfo text (field 5, octal escapes decoded)."""
+    points = []
+    for line in mountinfo.splitlines():
+        fields = line.split()
+        if len(fields) > 4:
+            points.append(fields[4].encode().decode("unicode_escape"))
+    return points
+
+
+def on_mounted_volume(path: str, points: Iterable[str]) -> bool:
+    """True if ``path`` is on a mount other than the container's root
+    filesystem and the pseudo filesystems, i.e. on a volume or bind mount
+    that outlives the container."""
+    path = posixpath.normpath(path)  # container paths are POSIX paths
+    for point in points:
+        if point == "/" or any(point == r or point.startswith(r + "/") for r in _EPHEMERAL_MOUNT_ROOTS):
+            continue
+        if path == point or path.startswith(point.rstrip("/") + "/"):
+            return True
+    return False
+
+
+def prepare_output_dir(out_dir: Path, *, require_volume: bool = False, mountinfo: str | None = None) -> None:
+    """Create ``out_dir`` and prove it is writable before any action runs: the
+    audit log written there is the liability record. In the container image
+    (``require_volume``) it must also be on a mounted volume, so a ``--rm``
+    container cannot take the audit log with it."""
+    try:
+        out_dir.mkdir(parents=True, exist_ok=True)
+        probe = out_dir / f".op06d-write-test-{os.getpid()}"
+        with open(probe, "x", encoding="utf-8") as f:
+            f.write("ok")
+        probe.unlink()
+    except OSError as exc:
+        raise OutputDirectoryError(
+            f"the output directory {out_dir} is not writable ({exc.strerror or exc}); nothing was run. "
+            "In the container image, mount a host directory read-write and pass --user with its owner."
+        ) from None
+    if require_volume:
+        if mountinfo is None:
+            try:
+                mountinfo = Path("/proc/self/mountinfo").read_text(encoding="utf-8")
+            except OSError:
+                mountinfo = ""
+        if not on_mounted_volume(str(out_dir.resolve()), mount_points(mountinfo)):
+            raise OutputDirectoryError(
+                f"the output directory {out_dir} is inside the container, not on a mounted volume, "
+                "so the report, evidence and audit log would be lost with the container; nothing "
+                "was run. Mount a host directory (e.g. -v \"$PWD/out:/out\") and pass --out /out."
+            )
 
 
 def plan_recon(engagement: Engagement) -> list[ToolAction]:
@@ -152,6 +216,7 @@ def run_engagement(
     limits: RunLimits | None = None,
     max_iterations: int = DEFAULT_LLM_LIMITS["max_iterations"],
     orchestrator_options: dict | None = None,
+    require_output_volume: bool = False,
 ) -> RunSummary:
     """One engagement file to a client report.
 
@@ -164,12 +229,15 @@ def run_engagement(
     behavior deterministic, and the tty overrides let a test exercise the
     interactive-vs-unattended selection without a real terminal. Production
     callers (the CLI) leave all of them ``None`` for the real wiring.
+
+    The output directory must be writable (and, with ``require_output_volume``,
+    on a mounted volume), or nothing runs (``OutputDirectoryError``).
     """
     if planner_mode not in PLANNERS:
         raise PlannerPolicyError(f"planner must be one of {PLANNERS}")
     out_dir = Path(out_dir)
     if planner_mode == "fixed":
-        out_dir.mkdir(parents=True, exist_ok=True)
+        prepare_output_dir(out_dir, require_volume=require_output_volume)
     eng = load_engagement(engagement_path)
 
     settings: LLMSettings | None = None
@@ -199,7 +267,7 @@ def run_engagement(
         except LLMConfigError as exc:
             raise PlannerPolicyError(scrub_text(str(exc))) from None
 
-    out_dir.mkdir(parents=True, exist_ok=True)
+    prepare_output_dir(out_dir, require_volume=require_output_volume)
     log = AuditLog.for_engagement(eng, out_dir / "audit", clock=clock)
     # Resolve-once DNS, wired in via audit_pin.
     gate = Gate(eng, resolver=resolver or system_resolver, audit_pin=log.record_dns_pin)
@@ -345,24 +413,25 @@ def _print_summary(summary: RunSummary, *, out=None) -> None:
 
 def _cmd_run(args: argparse.Namespace) -> int:
     formats: tuple[str, ...] = ("html", "pdf") if args.format == "both" else (args.format,)
-    tool_versions: dict[str, str] = {}
-    if args.nmap_version:
-        tool_versions["nmap"] = args.nmap_version
-    if args.nuclei_version:
-        tool_versions["nuclei"] = args.nuclei_version
     llm_kwargs: dict = {}
     try:
+        baked = load_toolchain()
+        chain = resolve_run_toolchain(
+            baked, template_dir=args.template_dir, templates_pin=args.templates_pin,
+            nmap_version=args.nmap_version, nuclei_version=args.nuclei_version,
+        )
         if args.planner == "llm":
             llm_kwargs = _llm_options(args)
         elif any(getattr(args, a) is not None for a in _LLM_ONLY_ARGS):
             raise PlannerPolicyError("LLM options need --planner llm")
         summary = run_engagement(
             args.engagement, args.out,
-            template_dir=args.template_dir, templates_pin=args.templates_pin or "",
-            tool_versions=tool_versions, formats=formats, non_interactive=args.non_interactive,
-            approval_timeout=args.approval_timeout, planner_mode=args.planner, **llm_kwargs,
+            template_dir=chain.template_dir, templates_pin=chain.templates_pin,
+            tool_versions=chain.tool_versions, formats=formats, non_interactive=args.non_interactive,
+            approval_timeout=args.approval_timeout, planner_mode=args.planner,
+            require_output_volume=baked is not None, **llm_kwargs,
         )
-    except (EngagementError, PlannerPolicyError, OSError) as exc:
+    except (EngagementError, PlannerPolicyError, ToolchainError, OutputDirectoryError, OSError) as exc:
         print(f"error: {scrub_text(str(exc))}", file=sys.stderr)
         return 2
     _print_summary(summary)
@@ -412,6 +481,23 @@ def _llm_options(args: argparse.Namespace) -> dict:
     return dict(llm_settings=settings, limits=limits, max_iterations=max_iterations)
 
 
+def _cmd_version(args: argparse.Namespace) -> int:
+    try:
+        print(version_text(load_toolchain()))
+    except ToolchainError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    return 0
+
+
+class _VersionAction(argparse.Action):
+    def __init__(self, option_strings, dest, **kwargs):
+        super().__init__(option_strings, dest, nargs=0, help="print the OP-06D version and the tool pins")
+
+    def __call__(self, parser, namespace, values, option_string=None):
+        parser.exit(_cmd_version(namespace))
+
+
 def _cmd_report(args: argparse.Namespace) -> int:
     from op06d.report_render import main as render_main
 
@@ -422,15 +508,23 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="op06d", description="OP-06D: the model proposes, the gate disposes.",
     )
+    parser.add_argument("--version", action=_VersionAction)
     sub = parser.add_subparsers(dest="command", required=True)
+
+    version_p = sub.add_parser("version", help="print the OP-06D version and the tool pins")
+    version_p.set_defaults(func=_cmd_version)
 
     run_p = sub.add_parser("run", help="run an engagement end-to-end and produce a client report")
     run_p.add_argument("--engagement", required=True, help="path to the engagement YAML file")
     run_p.add_argument("--out", required=True, help="output directory for the report, evidence store and audit log")
-    run_p.add_argument("--template-dir", default=None, help="pinned nuclei template directory (omit to skip nuclei)")
-    run_p.add_argument("--templates-pin", default=None, help="label recorded for the nuclei template set")
-    run_p.add_argument("--nmap-version", default=None, help="nmap version to record in the report")
-    run_p.add_argument("--nuclei-version", default=None, help="nuclei version to record in the report")
+    run_p.add_argument("--template-dir", default=None,
+                       help="pinned nuclei template directory (omit to skip nuclei; the image sets it)")
+    run_p.add_argument("--templates-pin", default=None,
+                       help="label recorded for the nuclei template set (the image sets it)")
+    run_p.add_argument("--nmap-version", default=None,
+                       help="nmap version to record in the report (the image sets it)")
+    run_p.add_argument("--nuclei-version", default=None,
+                       help="nuclei version to record in the report (the image sets it)")
     run_p.add_argument("--format", choices=["html", "pdf", "both"], default="html")
     run_p.add_argument(
         "--non-interactive", action="store_true",

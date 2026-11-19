@@ -68,11 +68,27 @@ host that answered timed out the status is ``host_timeout``, not ``ok``.
 port count and ``max_rps`` (``estimate_seconds``); a scan that cannot finish
 within ``max_host_timeout_s`` is refused as ``profile_too_slow`` before nmap
 is started.
+
+Connect-scan fallback: without raw-socket privileges nmap uses a TCP connect
+scan instead of a SYN scan, and its host discovery only tries TCP 80 and 443.
+That is reported as degraded for every profile (capabilities ``syn_scan`` and
+``host_discovery``), so the report's Limitations say that hosts without either
+port open may have been reported as down.
+
+Non-root raw scans (the container image): a second nmap binary carrying the
+file capabilities ``cap_net_raw,cap_net_admin`` is named by the environment
+variable ``OP06D_NMAP_RAW``. It is used, with ``NMAP_PRIVILEGED=1``, only when
+the process is not root, ``no_new_privs`` is off and the capability bounding
+set holds both NET_RAW and NET_ADMIN (``--cap-add NET_RAW --cap-add
+NET_ADMIN``). Otherwise the plain nmap runs as before: executing a binary
+whose file capabilities exceed the bounding set fails outright, so the
+capable copy is never run without them.
 """
 
 from __future__ import annotations
 
 import math
+import os
 import re
 import shutil
 import subprocess
@@ -159,6 +175,69 @@ _PORTS_RE = re.compile(rf"{_PORT_PART}(?:,{_PORT_PART})*")
 _PRIVILEGE_WARNING_RE = re.compile(
     r"requires?\s+root\s+privileges|running?\s+as\s+root|need(?:s)?\s+to\s+(?:be|run\s+as)\s+root",
     re.I,
+)
+
+
+# --- raw-socket privileges --------------------------------------------------
+
+RAW_NMAP_ENV = "OP06D_NMAP_RAW"
+CAP_NET_ADMIN = 12
+CAP_NET_RAW = 13
+
+
+def _proc_status(path: str = "/proc/self/status") -> dict[str, str]:
+    try:
+        with open(path, encoding="ascii", errors="replace") as f:
+            return dict(line.rstrip("\n").split(":\t", 1) for line in f if ":\t" in line)
+    except OSError:
+        return {}
+
+
+def probe_nmap_privilege(
+    environ: Mapping[str, str] | None = None,
+    status: Mapping[str, str] | None = None,
+    geteuid: Callable[[], int] | None = None,
+) -> tuple[str | None, bool | None]:
+    """``(raw_nmap, privileged)`` for this process.
+
+    ``raw_nmap`` is the capability-carrying nmap to run instead of the plain
+    one, or None. ``privileged`` says whether nmap will have raw-socket
+    privileges: True as root, with the capable copy, or with NMAP_PRIVILEGED
+    set by the operator; False otherwise; None where it cannot be known
+    (no POSIX user ids, e.g. Windows)."""
+    environ = os.environ if environ is None else environ
+    if geteuid is None:
+        try:
+            geteuid = os.geteuid
+        except AttributeError:  # no POSIX user ids (Windows)
+            return None, None
+    if geteuid() == 0:
+        return None, True
+    path = environ.get(RAW_NMAP_ENV)
+    if path and os.access(path, os.X_OK):
+        st = _proc_status() if status is None else status
+        try:
+            bounding = int(st.get("CapBnd", "0").strip(), 16)
+        except ValueError:
+            bounding = 0
+        needed = (1 << CAP_NET_RAW) | (1 << CAP_NET_ADMIN)
+        if st.get("NoNewPrivs", "1").strip() == "0" and bounding & needed == needed:
+            return path, True
+    return None, "NMAP_PRIVILEGED" in environ
+
+
+def _add_degraded(findings: dict[str, Any], capabilities: list[str], reason: str) -> None:
+    earlier = findings.get("degraded_capabilities", [])
+    findings["degraded"] = True
+    findings["degraded_capabilities"] = [*earlier, *(c for c in capabilities if c not in earlier)]
+    findings["degraded_reason"] = " ".join(r for r in (findings.get("degraded_reason"), reason) if r)
+
+
+CONNECT_SCAN_REASON = (
+    "nmap ran without raw-socket privileges, so it used a TCP connect scan instead of a SYN "
+    "scan, and host discovery used only TCP connections to ports 80 and 443: hosts without "
+    "either port open may have been reported as down. Run nmap as root or, in the container "
+    "image, with --cap-add NET_RAW --cap-add NET_ADMIN for a SYN scan and full host discovery."
 )
 
 
@@ -301,9 +380,9 @@ class NmapTool:
         "Port, service and (with safe NSE categories) basic host reconnaissance via nmap. "
         "Profiles: " + ", ".join(PROFILES) + ". 'ports' (e.g. \"22,80,8000-8100\") works with "
         "profiles default and service. 'scripts' takes a list of NSE categories only. "
-        "'aggressive' includes OS detection, which needs root/raw-socket privileges; running "
-        "unprivileged, it silently falls back to a connect scan with OS detection skipped - "
-        "the result reports this as degraded, it does not fail. Scan time grows with the "
+        "'aggressive' includes OS detection, which needs root/raw-socket privileges. Running "
+        "unprivileged, nmap falls back to a connect scan (and skips OS detection) - the result "
+        "reports this as degraded, it does not fail. Scan time grows with the "
         "port count and shrinks with the engagement's rate cap: a profile that cannot finish "
         "at that rate is refused (profile_too_slow), and a host nmap gives up on is reported "
         "as host_timeout or degraded, never as a host with no open ports."
@@ -321,8 +400,9 @@ class NmapTool:
         host_timeout_s: int = 300,
         run_timeout_s: float = 900.0,
         max_host_timeout_s: int = DEFAULT_MAX_HOST_TIMEOUT_S,
-        runner: Callable[[list[str], float], ProcessResult] = run_subprocess,
+        runner: Callable[..., ProcessResult] = run_subprocess,
         which: Callable[[str], str | None] = shutil.which,
+        privilege: Callable[[], tuple[str | None, bool | None]] = probe_nmap_privilege,
     ) -> None:
         if isinstance(max_rps, bool) or not isinstance(max_rps, int) or max_rps < 1:
             raise ValueError(f"max_rps must be a positive integer, got {max_rps!r}")
@@ -334,6 +414,7 @@ class NmapTool:
         self._max_host_timeout = int(max_host_timeout_s)
         self._runner = runner
         self._which = which
+        self._privilege = privilege
 
     @classmethod
     def from_engagement(cls, engagement: Engagement, **kwargs: Any) -> "NmapTool":
@@ -505,12 +586,16 @@ class NmapTool:
             nmap = self.check_available()
         except FileNotFoundError as exc:
             return _error("nmap_not_found", str(exc))
-        argv = self.build_argv(nmap, target, parameters)
+        raw_nmap, privileged = self._privilege()
+        argv = self.build_argv(raw_nmap or nmap, target, parameters)
         host_timeout = self.host_timeout_for(parameters)
         run_timeout = self.run_timeout_for(parameters)
 
         try:
-            proc = self._runner(argv, run_timeout)
+            if raw_nmap:
+                proc = self._runner(argv, run_timeout, env={**os.environ, "NMAP_PRIVILEGED": "1"})
+            else:
+                proc = self._runner(argv, run_timeout)
         except subprocess.TimeoutExpired as exc:
             partial = exc.stdout if isinstance(exc.stdout, bytes) else b""
             return _error("timeout", f"nmap did not finish within {run_timeout:.0f}s",
@@ -550,6 +635,17 @@ class NmapTool:
         if hostname:
             findings["target_hostname"] = hostname  # which name this pinned IP was
 
+        # Connect-scan fallback: no raw sockets means a connect scan and
+        # host discovery over TCP 80/443 only. scaninfo shows it for a port
+        # scan; the ping profile has no scaninfo, so the process's own
+        # privilege decides there.
+        scan_types = findings["summary"].get("scan_types", [])
+        fell_back_to_connect = "connect" in scan_types and "syn" not in scan_types
+        if fell_back_to_connect:
+            _add_degraded(findings, ["syn_scan", "host_discovery"], CONNECT_SCAN_REASON)
+        elif profile == "ping" and privileged is False:
+            _add_degraded(findings, ["host_discovery"], CONNECT_SCAN_REASON)
+
         # Privilege-degradation surfacing. The only case today that
         # requests OS detection is the aggressive profile; if it was asked
         # for but no up host carries an "os" result, that is either a
@@ -558,8 +654,6 @@ class NmapTool:
         # stderr privilege warning - either is sufficient on its own.
         up_hosts = [h for h in findings["hosts"] if h["status"] == "up"]
         if self._requests_os_detection(parameters) and up_hosts and not any("os" in h for h in up_hosts):
-            scan_types = findings["summary"].get("scan_types", [])
-            fell_back_to_connect = "connect" in scan_types and "syn" not in scan_types
             stderr_signals_privilege = bool(_PRIVILEGE_WARNING_RE.search(stderr))
             if fell_back_to_connect or stderr_signals_privilege:
                 reasons = []
@@ -567,12 +661,10 @@ class NmapTool:
                     reasons.append("the scan fell back from a SYN to a connect scan (scaninfo type=connect)")
                 if stderr_signals_privilege:
                     reasons.append("nmap reported a root-privilege warning")
-                findings["degraded"] = True
-                findings["degraded_capabilities"] = ["os_detection"]
-                findings["degraded_reason"] = (
+                _add_degraded(findings, ["os_detection"], (
                     "OS detection (requested via the 'aggressive' profile) was not performed: "
                     + "; ".join(reasons) + " - likely running without root/raw-socket privileges."
-                )
+                ))
 
         # A host nmap skipped at --host-timeout has no port results;
         # that must not read as "no open ports".
@@ -591,10 +683,7 @@ class NmapTool:
                 "open. Rerun with fewer ports (the 'quick' profile or a 'ports' list) or a higher "
                 "max_rps."
             )
-            earlier = findings.get("degraded_capabilities", [])
-            findings["degraded"] = True
-            findings["degraded_capabilities"] = [*earlier, *(c for c in capabilities if c not in earlier)]
-            findings["degraded_reason"] = " ".join(r for r in (findings.get("degraded_reason"), reason) if r)
+            _add_degraded(findings, capabilities, reason)
             if not [h for h in up_hosts if not h.get("timed_out")]:
                 findings["status"] = "error"
                 findings["error"] = {
