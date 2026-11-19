@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""RC-20: the one gated scan-run driver, shared by RUNBOOK.md Step 8 and the
-automated lab integration test (tests/integration/test_lab_rc20.py), so the
+"""The one gated scan-run driver, shared by RUNBOOK.md Step 8 and the
+automated lab integration test (tests/integration/test_lab_repeatability.py), so the
 two cannot drift apart.
 
 Runs only *inside* the scanner container (it imports ``op06d``, which is on
@@ -27,7 +27,7 @@ import sys
 
 # RUNS: (capture name, tool, target, parameters, raw-output file extension).
 # nuclei targets are hostnames (dvwa.lab / juice-shop.lab) on purpose - that is
-# what exercises the RC-23 resolve-once pin end to end; nmap targets are the
+# what exercises the resolve-once DNS pin end to end; nmap targets are the
 # literal IPs, as the gate always hands it.
 RUNS: list[tuple[str, str, str, dict, str]] = [
     ("nmap_juice-shop_service", "nmap", "172.31.77.10", {"profile": "service", "ports": "3000"}, "xml"),
@@ -43,7 +43,7 @@ RUNS: list[tuple[str, str, str, dict, str]] = [
 
 
 def isolation_failure_reason(network_internal: str, isolation_exit_code: int) -> str | None:
-    """Pure decision for the isolation precondition (RC-20 non-negotiable #2):
+    """Pure decision for the isolation precondition (non-negotiable: no scan unless isolation passed):
     a reason to ABORT, or ``None`` to proceed. Kept separate from the
     subprocess calls that gather ``network_internal``/``isolation_exit_code``
     so the "isolation-fail aborts before scanning" guarantee has a fast,

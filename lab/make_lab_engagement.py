@@ -1,7 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""RC-28: RC-20 follow-up: make the lab harness teardown idempotent (down-before-up)
-
-Writes a run-specific copy of the lab engagement template
+"""Writes a run-specific copy of the lab engagement template
 (``lab/engagement.yaml``) whose ``authorization.window`` is
 ``[now - 5 min, now + N h]`` in UTC. Every other field is copied unchanged,
 and that is checked before writing. The written file is then loaded through

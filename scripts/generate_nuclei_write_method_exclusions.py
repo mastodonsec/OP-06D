@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""RC-36: regenerate the bundled write-method exclusion list.
+"""Regenerate the bundled write-method exclusion list.
 
 Run this whenever the pinned nuclei template set changes (a re-pin of
 ``lab/scanner/Dockerfile``'s ``TEMPLATES_VERSION``) - it's the "regenerated
-and verified when the set is re-pinned" half of the RC-36 backstop; the
+and verified when the set is re-pinned" half of the write-method backstop; the
 CI-enforced audit test and the lab-gated test are the "verified" half.
 
 Usage (inside the scanner, where the pinned template set actually lives):

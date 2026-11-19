@@ -1,8 +1,8 @@
 """The guardrail gate: window + scope + rate, one decision, one audit entry.
 
-``Gate.check`` is the single enforcement point for "where" (RC-9), "when" and
-"how fast" (RC-10). The model is asked; the gate decides. Limits come from the
-validated RC-6 engagement only.
+``Gate.check`` is the single enforcement point for "where" (scope), "when"
+(window) and "how fast" (rate). The model is asked; the gate decides. Limits
+come from the validated engagement only.
 
 Order of checks (cheapest and most fundamental first, side effects last):
 
@@ -17,7 +17,7 @@ If the audit write fails, the result is a deny.
 Fail closed: if the engagement's window or rate is missing or malformed, every
 check is denied with the reason. ``check`` never raises.
 
-RC-23 (resolve-once): a ``Gate`` owns one ``DnsPinner`` for its whole life
+Resolve-once DNS: a ``Gate`` owns one ``DnsPinner`` for its whole life
 (one ``Gate`` per engagement run), so each hostname is resolved **once** -
 the first scope check pins it, and every later check of that hostname, no
 matter how much later or how many other actions ran in between, reuses the
@@ -82,7 +82,7 @@ class Gate:
         now: Callable[[], datetime] = _utcnow,
         monotonic: Callable[[], float] = time.monotonic,
     ) -> None:
-        # RC-23: one pinner for this Gate's whole life = one per engagement.
+        # One pinner for this Gate's whole life = one per engagement.
         # ``resolver`` is only ever called through it, so every hostname is
         # resolved at most once no matter how many actions check it.
         self._pinner = DnsPinner(resolver, on_pin=audit_pin)
@@ -142,7 +142,7 @@ class Gate:
         scope = check_scope(
             target,
             self._engagement.scope,
-            resolver=self._pinner.resolve,  # resolve-once: cached per engagement (RC-23)
+            resolver=self._pinner.resolve,  # resolve-once: cached per engagement
             audit=lambda t, a, r: None,  # the gate writes the one final entry
         )
         if not scope.allowed:

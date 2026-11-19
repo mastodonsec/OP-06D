@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""RC-21 suite 1: deterministic adversarial testing of the guardrail gate.
+"""Adversarial suite 1: deterministic adversarial testing of the guardrail gate.
 
 The security model is "the model proposes, the gate disposes": no matter
 what the planner proposes - even a planner fully compromised by injection -
@@ -230,7 +230,7 @@ def test_burst_above_max_rps_is_rate_limited_and_never_runs(tmp_path):
     ("nmap", {"profile": "aggressive"}),
 ])
 def test_intrusive_action_without_approval_is_declined_and_never_runs(rig, tool, params):
-    r = rig()  # no approver supplied -> DenyAllApprover (RC-8 default)
+    r = rig()  # no approver supplied -> DenyAllApprover (the default)
     before = len(read_log(r.log.path))
     res = r.execute(tool, IN_SCOPE_IP, params)
     runner = r.nuclei_runner if tool == "nuclei" else r.nmap_runner
@@ -272,7 +272,7 @@ def test_malformed_or_option_injection_targets_are_denied(rig, target):
     _assert_blocked_no_tool_and_audited(res, r.nmap_runner, before, r)
 
 
-# === DNS rebinding: the RC-23 pin means the tool only ever sees the FIRST ip =
+# === DNS rebinding: the resolve-once pin means the tool only ever sees the FIRST ip =
 
 def test_dns_rebinding_pin_means_the_tool_never_sees_the_rebound_address(tmp_path):
     eng = engagement(extra_out=["198.51.100.96/28"])  # covers .99, the rebind target

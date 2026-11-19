@@ -201,7 +201,7 @@ def test_valid_parameter_combinations_only_ever_add_known_argv():
                 continue
             assert a in known or a.startswith("--script="), a
         assert [a for a in argv if a == IP] == [IP]
-        assert "-n" in argv  # RC-23: never resolve, for every profile
+        assert "-n" in argv  # never resolve, for every profile
 
 
 # --- parameter allow-list ----------------------------------------------------
@@ -510,7 +510,7 @@ def test_scan_only_runs_against_gate_approved_targets(rig):
     assert r.box.execute(ToolAction("nmap", IP), iteration=3).executed and len(r.runner.calls) == 1
 
 
-# --- RC-23: resolve-once end to end (gate pins the IP, nmap scans only it) ---
+# --- resolve-once end to end (gate pins the IP, nmap scans only it) ---
 
 def test_hostname_action_scans_the_gate_pinned_ip_not_the_hostname(rig):
     r = rig()  # rig's gate resolver always answers 198.51.100.7
@@ -588,7 +588,7 @@ def test_only_tools_py_imports_the_nmap_wrapper():
     assert set(importers) == {"tools.py"}
 
 
-# --- RC-25: privilege-degradation surfacing ---------------------------------
+# --- privilege-degradation surfacing ----------------------------------------
 
 UNPRIVILEGED_AGGRESSIVE_XML = (
     '<?xml version="1.0"?><!DOCTYPE nmaprun><nmaprun scanner="nmap" version="7.93">'
@@ -715,7 +715,7 @@ def test_degraded_signal_survives_normalization_into_a_limitations_issue():
     assert degraded_issues[0].raw == ["os_detection"]
 
 
-# --- RC-43: host timeouts are surfaced, timeouts are sized to the work -------
+# --- host timeouts are surfaced, timeouts are sized to the work -------
 
 HOST_TIMEOUT_FIXTURE = (Path(__file__).parent / "fixtures" / "nmap_host_timeout.xml").read_text(encoding="utf-8")
 TIMED_OUT_IP = "192.0.2.10"

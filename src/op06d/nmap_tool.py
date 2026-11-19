@@ -1,4 +1,4 @@
-"""nmap tool wrapper (RC-13).
+"""nmap tool wrapper.
 
 A ``Tool`` for ``GatedToolbox``. Construct it only through
 ``op06d.tools.default_tools`` (nothing else imports this module): the
@@ -22,7 +22,7 @@ Security properties, each covered by tests:
   safe/default/discovery/version scripts and plain port/service scans are
   ACTIVE_RECON; vuln/intrusive/brute/auth/external/fuzzer/malware/broadcast
   scripts or the aggressive (-A) profile are INTRUSIVE; dos/exploit are
-  EXPLOIT (and destructive). INTRUSIVE+ trips the RC-8 approval threshold.
+  EXPLOIT (and destructive). INTRUSIVE+ trips the operator-approval threshold.
 * Structured output. nmap's XML (``-oX -``) is parsed with the standard
   library after rejecting DTD entities and oversized documents; the raw XML is
   returned separately as evidence.
@@ -30,7 +30,7 @@ Security properties, each covered by tests:
   host, malformed or oversized output come back as a ``ToolOutput`` with a
   non-ok status and a structured error the loop can read.
 
-RC-23 (resolve-once): the toolbox always hands this wrapper the gate-approved
+Resolve-once DNS: the toolbox always hands this wrapper the gate-approved
 IP as ``target`` - never a hostname - and ``-n`` is always passed, disabling
 nmap's own forward *and* reverse DNS. This closes what used to be a real gap:
 nmap resolved a hostname target itself, independently of the gate, so a DNS
@@ -38,7 +38,7 @@ change between the gate's check and nmap's own lookup could make it scan an
 address the gate never saw. ``hostname``, when given, is recorded in the
 result for the report; it is never resolved or used to build the command.
 
-RC-25 (privilege-degradation surfacing): running unprivileged, the
+Privilege-degradation surfacing: running unprivileged, the
 ``aggressive`` profile (``-A``, which implies ``-O`` OS detection) does not
 fail - nmap degrades gracefully, falling back from a SYN to a connect scan
 and simply omitting OS detection, still exiting 0 with valid XML. Confirmed
@@ -51,19 +51,18 @@ on stderr, if a different nmap version ever prints one, is treated as an
 equally valid, independent trigger. Either way this sets ``degraded: true`` +
 ``degraded_capabilities`` on the result - status stays ``ok``, since a
 reduced-fidelity scan is not itself a tool failure - and ``normalize_nmap``
-(RC-15) turns it into a ``NormalizationIssue`` so it reaches the evidence
+turns it into a ``NormalizationIssue`` so it reaches the evidence
 store and the client report's Limitations section without any report-layer
 change. ``summary.scan_types`` records every ``<scaninfo>`` type nmap
-actually used (``syn``, ``connect``, ...), the structural sibling of RC-26's
-``templates_loaded`` for nuclei. Stderr warnings are now captured whenever
+actually used (``syn``, ``connect``, ...), the structural sibling of the
+``templates_loaded`` coverage count for nuclei. Stderr warnings are now captured whenever
 present, not only on a non-zero exit - the exact gap that let a degraded-but-
 successful run report ``status=ok`` with no signal at all.
 
-RC-43 (nmap: live run reported no ports and no limitation (silent empty
-result)): a host nmap gives up on at ``--host-timeout`` is still written to
+Host timeouts (a silent empty result otherwise): a host nmap gives up on at ``--host-timeout`` is still written to
 the XML as up, with no ports, and nmap exits 0. ``parse_nmap_xml`` records
 that marker (``timed_out`` on the host, ``summary.hosts_timed_out``) and
-``_run`` reports it through the same ``degraded`` path as RC-25; when every
+``_run`` reports it through the same ``degraded`` path as the privilege fallback; when every
 host that answered timed out the status is ``host_timeout``, not ``ok``.
 ``--host-timeout`` and the subprocess timeout are sized per call from the
 port count and ``max_rps`` (``estimate_seconds``); a scan that cannot finish
@@ -112,14 +111,13 @@ PROFILES: dict[str, tuple[tuple[str, ...], Risk]] = {
 PROFILES_ALLOWING_PORTS = frozenset({"default", "service"})
 DEFAULT_PROFILE = "default"
 
-# RC-44: Recon: report redirects to hostnames outside scope instead of going quiet
-# Scripts the wrapper itself adds, by name, to the profiles that run -sV.
+# Redirect observation: scripts the wrapper itself adds, by name, to the profiles that run -sV.
 # 'aggressive' (-A) already runs the default category, which includes these.
 # A planner can never add a script name: 'scripts' accepts categories only.
 FIXED_SERVICE_SCRIPTS: tuple[str, ...] = ("http-title",)
 PROFILES_WITH_FIXED_SCRIPTS = frozenset({"service", "full"})
 
-# RC-43: timeout sizing. How many ports each profile scans when 'ports' is not
+# Timeout sizing: how many ports each profile scans when 'ports' is not
 # given (nmap's defaults: -F is the top 100, no -p is the top 1,000, -p- is
 # 1-65535; -sn scans none).
 PROFILE_PORT_COUNTS: dict[str, int] = {
@@ -153,7 +151,7 @@ MAX_FIELD_CHARS = 2_000
 _PORT_PART = r"[0-9]{1,5}(?:-[0-9]{1,5})?"
 _PORTS_RE = re.compile(rf"{_PORT_PART}(?:,{_PORT_PART})*")
 
-# RC-25: nmap did not print anything to stderr for an unprivileged -A fallback
+# nmap did not print anything to stderr for an unprivileged -A fallback
 # against the pinned lab version (empty stderr, confirmed live) - this is a
 # defensive secondary signal only, for a different nmap version/build that
 # does. The structural check (requested OS detection, scaninfo fell back to
@@ -186,7 +184,7 @@ def _float(value: object) -> float | None:
 
 def _script_entry(s: ET.Element) -> dict[str, Any]:
     entry: dict[str, Any] = {"id": _clip(s.get("id"), 100), "output": _clip(s.get("output"))}
-    # RC-44: Recon: report redirects to hostnames outside scope instead of going quiet
+    # http-title's redirect target, for the redirect observation in normalize.
     redirect = s.find("elem[@key='redirect_url']")
     if redirect is not None and (redirect.text or "").strip():
         entry["redirect_url"] = _clip(redirect.text.strip())
@@ -249,7 +247,7 @@ def parse_nmap_xml(text: str) -> dict[str, Any]:
             "hostnames": names[:20],
             "ports": ports,
         }
-        # RC-43: nmap marks a host it gave up on at --host-timeout with
+        # nmap marks a host it gave up on at --host-timeout with
         # timedout="true" and writes no <ports> for it.
         if (h.get("timedout") or "").strip().lower() == "true":
             host["timed_out"] = True
@@ -274,7 +272,7 @@ def parse_nmap_xml(text: str) -> dict[str, Any]:
         fin = stats.find("finished")
         if fin is not None:
             elapsed = _float(fin.get("elapsed"))
-    # RC-25: which scan technique(s) nmap actually used (e.g. a connect-scan
+    # Which scan technique(s) nmap actually used (e.g. a connect-scan
     # fallback when unprivileged) - a scan with no port-scan phase at all
     # (the "ping" profile) legitimately has no <scaninfo> element.
     scan_types = sorted({
@@ -283,7 +281,7 @@ def parse_nmap_xml(text: str) -> dict[str, Any]:
     summary: dict[str, Any] = {"hosts_up": up, "hosts_down": down, "hosts_total": total,
                                "elapsed_seconds": elapsed, "scan_types": scan_types}
     timed_out = sum(1 for host in hosts if host.get("timed_out"))
-    if timed_out:  # RC-43: present only when a host timed out, like "degraded"
+    if timed_out:  # present only when a host timed out, like "degraded"
         summary["hosts_timed_out"] = timed_out
     return {
         "scanner": "nmap",
@@ -330,7 +328,7 @@ class NmapTool:
             raise ValueError(f"max_rps must be a positive integer, got {max_rps!r}")
         self.max_rps = max_rps
         self._nmap_path = nmap_path
-        # RC-43: both are floors; each call sizes its own timeouts above them.
+        # Both are floors; each call sizes its own timeouts above them.
         self._host_timeout = int(host_timeout_s)
         self._run_timeout = float(run_timeout_s)
         self._max_host_timeout = int(max_host_timeout_s)
@@ -464,7 +462,7 @@ class NmapTool:
             nmap,
             "-oX", "-",
             "--no-stylesheet",
-            "-n",  # RC-23: never resolve - target is always the gate-approved IP
+            "-n",  # never resolve - target is always the gate-approved IP
             "--max-rate", str(self.max_rps),
             "--host-timeout", f"{self.host_timeout_for(parameters)}s",
             *PROFILES[profile][0],
@@ -494,7 +492,7 @@ class NmapTool:
         port_count = self.port_count(parameters)
         estimate = self.estimate_seconds(parameters)
         if estimate > self._max_host_timeout:
-            # RC-43: refused here, not in validate_parameters, because it
+            # Refused here, not in validate_parameters, because it
             # depends on the rate and not only on the parameter values.
             return _error(
                 "profile_too_slow",
@@ -537,7 +535,7 @@ class NmapTool:
         except NmapParseError as exc:
             return _error("malformed_output", f"could not parse nmap output: {exc}", raw=stdout)
 
-        # RC-25: capture stderr warnings whenever present, not only on a
+        # Capture stderr warnings whenever present, not only on a
         # non-zero exit - a degraded-but-successful run (exit 0) used to
         # report status=ok with no signal at all.
         warnings: list[str] = []
@@ -550,9 +548,9 @@ class NmapTool:
             findings["warnings"] = warnings
 
         if hostname:
-            findings["target_hostname"] = hostname  # RC-23: which name this pinned IP was
+            findings["target_hostname"] = hostname  # which name this pinned IP was
 
-        # RC-25: privilege-degradation surfacing. The only case today that
+        # Privilege-degradation surfacing. The only case today that
         # requests OS detection is the aggressive profile; if it was asked
         # for but no up host carries an "os" result, that is either a
         # connect-scan fallback (confirmed: nmap prints nothing to stderr for
@@ -576,7 +574,7 @@ class NmapTool:
                     + "; ".join(reasons) + " - likely running without root/raw-socket privileges."
                 )
 
-        # RC-43: a host nmap skipped at --host-timeout has no port results;
+        # A host nmap skipped at --host-timeout has no port results;
         # that must not read as "no open ports".
         timed_out = [h for h in findings["hosts"] if h.get("timed_out")]
         if timed_out:

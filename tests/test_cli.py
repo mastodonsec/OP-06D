@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Tests for RC-29 (the `op06d` CLI) + RC-8 (operator approval wiring).
+"""Tests for the `op06d` CLI and its operator-approval wiring.
 
 Uses fake nmap/nuclei tools (no real subprocess, no real network) and a
 fake DNS resolver (no real DNS lookup) injected into ``run_engagement``, so

@@ -1,4 +1,4 @@
-# OP-06D lab scanner image (RC-19).
+# OP-06D lab scanner image.
 #
 # Real nmap and nuclei at PINNED versions, plus the curated nuclei template set
 # pinned to a release tag. Everything downloaded here is verified against a

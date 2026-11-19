@@ -1,7 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""RC-50: Planner never learns parameter types: nuclei severity/tags sent as strings, always refused
-
-Each tool's ``parameter_schema()`` and its three uses: the planner prompt, the
+"""Each tool's ``parameter_schema()`` and its three uses: the planner prompt, the
 action JSON schema and the GBNF grammar. No JSON-schema validator and no GBNF
 engine is a dependency, so this file has a small checker for the schema
 keywords the action schema uses, and a small matcher for the GBNF the grammar

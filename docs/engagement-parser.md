@@ -1,4 +1,4 @@
-# Engagement-file parser (RC-6)
+# Engagement-file parser
 
 Module: [`src/op06d/engagement.py`](../src/op06d/engagement.py) ·
 Tests: [`tests/test_engagement.py`](../tests/test_engagement.py) ·
@@ -14,13 +14,12 @@ The parser turns that YAML file into a validated, immutable Python object, or
 refuses to. There is no partial load and no "best effort": a bad file stops the
 run before any tool is invoked.
 
-## Scope of RC-6
+## Scope of the parser
 
 **In scope**
 
 - Pydantic schema for the engagement file (authorization, scope, intensity,
-  objective, and the optional `interactsh_server` (RC-14) and `planner`
-  (RC-40) fields).
+  objective, and the optional `interactsh_server` and `planner` fields).
 - Loading YAML safely and validating it.
 - Normalizing scope entries (case, canonical IP/CIDR form) so later matching is
   unambiguous.
@@ -28,12 +27,12 @@ run before any tool is invoked.
 
 **Out of scope (handled elsewhere)**
 
-| Concern | Ticket |
+| Concern | Where |
 |---|---|
-| Deciding whether a target is in scope (`is_in_scope`), including out-of-scope precedence and wildcard matching | RC-9 |
-| Checking the current time against the window, rate limiting | RC-10 |
-| Audit logging of the loaded engagement | RC-11 |
-| Using the engagement to drive the LLM loop | RC-7 |
+| Deciding whether a target is in scope (`is_in_scope`), including out-of-scope precedence and wildcard matching | the scope check, [scope-allowlist.md](scope-allowlist.md) |
+| Checking the current time against the window, rate limiting | the gate, [gate-rate-and-window.md](gate-rate-and-window.md) |
+| Audit logging of the loaded engagement | the audit log, `op06d.audit` |
+| Using the engagement to drive the LLM loop | the orchestrator, [orchestrator.md](orchestrator.md) |
 
 The parser has no network access and does no I/O beyond reading the one file.
 
@@ -55,8 +54,8 @@ Engagement  (frozen pydantic model)
   |- scope: Scope                   in_scope, out_of_scope (normalized)
   |- intensity: Intensity           max_rps, destructive
   |- objective: str
-  |- interactsh_server: str | None  optional self-hosted out-of-band server (RC-14)
-  `- planner: PlannerPolicy | None  optional; allowed_providers for the LLM planner (RC-40)
+  |- interactsh_server: str | None  optional self-hosted out-of-band server
+  `- planner: PlannerPolicy | None  optional; allowed_providers for the LLM planner
 ```
 
 Design decisions:
@@ -137,10 +136,10 @@ planner:                                          # omit to allow only the local
   allowed_providers: [local, anthropic]           # at least one of: local, anthropic
 ```
 
-- **`interactsh_server`** (RC-14): the self-hosted interactsh server nuclei
+- **`interactsh_server`**: the self-hosted interactsh server nuclei
   may use for out-of-band checks. Absent (the default), nuclei always runs
   with `-no-interactsh`. See [nuclei-tool.md](nuclei-tool.md#2-out-of-band-interactsh-is-off-by-default).
-- **`planner.allowed_providers`** (RC-40): which LLM providers may plan this
+- **`planner.allowed_providers`**: which LLM providers may plan this
   engagement with `op06d run --planner llm`. Without a `planner:` block only
   `local` is allowed; `anthropic` sends findings to a third party, so it must
   be listed explicitly. `--planner fixed` ignores the field. See
@@ -166,15 +165,15 @@ Do not put secrets in this file. Use references (e.g. a vault path).
 | `interactsh_server` | Optional. A plain hostname: public interactsh servers (`oast.pro`, `oast.live`, `oast.site`, `oast.online`, `oast.fun`, `oast.me`, `interact.sh`, `interactsh.com` and their subdomains), IP addresses, wildcards, URLs and paths are rejected. Lowercased, trailing dot removed |
 | `planner.allowed_providers` | Optional block; if present, a non-empty list of `local` and/or `anthropic` (duplicates removed) |
 
-## How the parser connects to the gate (RC-9, RC-10)
+## How the parser connects to the gate
 
 - **Precedence is decided by the gate, not here.** The parser only rejects
-  exact duplicates across the two lists. `op06d.scope` (RC-9, called by
+  exact duplicates across the two lists. `op06d.scope` (called by
   `Gate.check`) treats out-of-scope as winning, including wildcard and CIDR
   overlaps (e.g. `x.stripe.com` against `*.stripe.com`). See
   [scope-allowlist.md](scope-allowlist.md).
 - **Time and rate are enforced by the gate.** `window` is parsed and
-  normalized to UTC here; `Gate.check` (RC-10) compares it with the current
+  normalized to UTC here; `Gate.check` compares it with the current
   time as `[start, end)` and enforces `max_rps`. See
   [gate-rate-and-window.md](gate-rate-and-window.md).
 - **The gate takes scope, window and rate only from the `Engagement` object**,

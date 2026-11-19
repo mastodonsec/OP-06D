@@ -1,4 +1,4 @@
-# OP-06D lab (RC-19): two intentionally vulnerable targets, a redirector and a scanner,
+# OP-06D lab: two intentionally vulnerable targets, a redirector and a scanner,
 # all on ONE internal Docker network with no route to the internet.
 #
 #   scanner (172.31.77.20)  --->  juice-shop (172.31.77.10, port 3000)
@@ -82,8 +82,7 @@ services:
     # Serves HTTP on port 80. No `ports:` on purpose.
 
   redirect:
-    # RC-44: Recon: report redirects to hostnames outside scope instead of going quiet
-    # nginx 1.28.0 (alpine). Answers every request with
+    # Redirect target for the redirect observation check. nginx 1.28.0 (alpine). Answers every request with
     # 301 Location: http://site-outside.lab/ (a name that resolves nowhere).
     # Config mounted read-only; root filesystem read-only, /tmp is a tmpfs.
     # Scoped by lab/engagement-redirect.yaml.

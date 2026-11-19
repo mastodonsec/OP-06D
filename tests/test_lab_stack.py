@@ -1,7 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""RC-28: RC-20 follow-up: make the lab harness teardown idempotent (down-before-up)
-
-Docker-free tests of lab/lab_stack.py with a mocked compose runner: down
+"""Docker-free tests of lab/lab_stack.py with a mocked compose runner: down
 runs before up, down still runs when up fails, times out or the body
 raises, keep=True skips only the final down, and a failing final down is
 reported as TeardownError without masking an error from the body."""

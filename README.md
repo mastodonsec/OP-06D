@@ -167,8 +167,8 @@ Scope rules worth knowing:
 allow/deny decisions **without running any scan or touching the network** (DNS is
 faked). It loads `examples/engagement.yaml`, widens its scope with `*.acme.com` and an
 excluded `203.0.113.8/29` so the deny-wins cases can be shown, runs eight targets
-through the scope check (`op06d.scope.check_scope`, RC-9), records every decision in a
-hash-chained audit log in a temporary directory (RC-11), and verifies that log. The
+through the scope check (`op06d.scope.check_scope`), records every decision in a
+hash-chained audit log in a temporary directory, and verifies that log. The
 window and rate checks of the full gate are not part of this demo.
 
 ```bash
@@ -238,12 +238,12 @@ scripts/
 docs/                    design notes per component
 tests/                   unit suite; tests/integration/ holds the lab-gated tests
 lab/                     isolated Docker lab for live validation (see lab/RUNBOOK.md):
-                         - targets: OWASP Juice Shop and DVWA, plus an nginx redirector (RC-44)
+                         - targets: OWASP Juice Shop and DVWA, plus an nginx redirector
                          - scanner image with the pinned nmap, nuclei and templates
                          - isolation gate: check_isolation.py (Windows, Linux, macOS)
                          - validation_harness.py: one-command run of the RUNBOOK checks
-                         - model relay overlay for --planner llm runs (model_relay.py, RC-47)
-                         - planner model benchmark (benchmark.py, RC-46)
+                         - model relay overlay for --planner llm runs (model_relay.py)
+                         - planner model benchmark (benchmark.py)
                          - PLANTED_VULNS.md: the frozen baseline; captures/: frozen evidence
 ```
 
@@ -265,32 +265,31 @@ reporting, neutralized ambient nuclei config, and a write-method template exclus
 
 **Merged since the MVP:**
 
-- **LLM planner** (RC-40): `op06d run --planner llm` with a hosted (Anthropic) or local
+- **LLM planner:** `op06d run --planner llm` with a hosted (Anthropic) or local
   model, run limits, strict reply validation and an engagement-level provider policy.
-- **Planner parameter schema** (RC-50): each tool's parameter types and allowed values
+- **Planner parameter schema:** each tool's parameter types and allowed values
   reach the planner prompt and the constrained-output schema.
-- **Gate chokepoint suite** (RC-48): a codebase-wide test that `GatedToolbox.execute()` is
+- **Gate chokepoint suite:** a codebase-wide test that `GatedToolbox.execute()` is
   the only path to the tools.
-- **Lab model relay** (RC-47): an opt-in overlay that lets the sealed lab scanner reach
+- **Lab model relay:** an opt-in overlay that lets the sealed lab scanner reach
   exactly one model upstream; the opt-in live-model gate test runs through it.
-- **Planner model benchmark** (RC-46, RC-51): `lab/benchmark.py` scores candidate models
-  on lab runs; RC-51 ran the local shortlist with it.
-- **nmap host timeouts** (RC-43): host timeouts are sized per call and a skipped host is
+- **Planner model benchmark:** `lab/benchmark.py` scores candidate models on lab runs;
+  the local shortlist has been run with it.
+- **nmap host timeouts:** host timeouts are sized per call and a skipped host is
   reported as a limitation, not as an empty result.
-- **Redirect observation** (RC-44): a cross-host HTTP redirect is reported as a finding,
+- **Redirect observation:** a cross-host HTTP redirect is reported as a finding,
   and as a limitation when its target is out of scope; it is never followed.
-- **Cross-platform lab** (RC-60): the lab and its isolation gate run on Linux and macOS
+- **Cross-platform lab:** the lab and its isolation gate run on Linux and macOS
   as well as Windows.
 
 **Before any live client engagement, still required:** a signed, authorized scope, and a
 check of the project board for any newly filed blockers. No known blockers remain in code.
 
-**Open on the board:** multi-IP target handling (RC-27), optional VPN egress (RC-41),
-report remediation and risk narrative (RC-42), the planner putting the port in the target
-(RC-52), hostname-to-IP mapping for vhosts without DNS (RC-58), and a container image
-(RC-62). Product backlog: deployable sensor appliance (RC-30), web UI (RC-32), plugin
-arsenal (RC-33), engagement-driven tool selection (RC-63), one-command cloud deploy
-(RC-65), and smaller lab, report and benchmark follow-ups.
+**Open:** handling targets that resolve to several IPs, optional VPN egress, report
+remediation and risk narrative, the planner putting the port in the target, a
+hostname-to-IP mapping for vhosts without DNS, and a container image. Product backlog:
+deployable sensor appliance, web UI, plugin arsenal, engagement-driven tool selection,
+one-command cloud deploy, and smaller lab, report and benchmark follow-ups.
 
 **Deliberately out of the MVP** (later iterations): exploitation tier (Metasploit),
 breach-and-attack simulation (CALDERA), cloud posture auditing, authenticated app testing,

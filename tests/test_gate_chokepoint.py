@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""RC-48: Gate chokepoint test: prove GatedToolbox.execute() is the only path to the tools
+"""Gate chokepoint test: GatedToolbox.execute() is the only path to the tools.
 
 Static (AST) checks over every module in ``src/op06d/``:
 
@@ -14,7 +14,7 @@ Static (AST) checks over every module in ``src/op06d/``:
 
 Every allowlist is a module-level constant below. The fixtures in
 ``tests/fixtures/chokepoint/`` break one rule each; they are parsed, never
-imported. The RC-21 import check stays in ``test_chokepoint_boundary.py``.
+imported. The concrete-tool import check stays in ``test_chokepoint_boundary.py``.
 """
 
 from __future__ import annotations
@@ -50,7 +50,7 @@ DYNAMIC_IMPORT_ALLOWLIST: frozenset[tuple[str, str, str]] = frozenset()
 
 # (file, scope, top-level module) -> "use" | "probe"
 THIRD_PARTY_LAUNCHER_ALLOWLIST: dict[tuple[str, str, str], str] = {
-    # RC-18 alternative PDF backend: headless Chromium renders the report HTML.
+    # Alternative PDF backend: headless Chromium renders the report HTML.
     ("report_render.py", "_pdf_via_playwright", "playwright"): "use",
     # availability probe for that backend: an unused import inside
     # try/except ImportError, enforced structurally by the check.

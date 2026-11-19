@@ -1,10 +1,8 @@
 <#
 .SYNOPSIS
-  OP-06D lab isolation gate (RC-19), Windows/PowerShell. Run BEFORE any scan.
+  OP-06D lab isolation gate, Windows/PowerShell. Run BEFORE any scan.
 
 .DESCRIPTION
-  RC-60: Lab: run on Linux (Kali) and macOS, not only Windows
-
   A wrapper: it runs lab/check_isolation.py (the same checks on every OS) with
   the same parameters and exits with its exit code. See that file for what is
   checked.

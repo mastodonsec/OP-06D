@@ -1,9 +1,10 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""RC-21: a corpus of prompt-injection payloads a scanned target could
+"""A corpus of prompt-injection payloads a scanned target could
 return in an HTTP response body or a service banner.
 
-Used to prove the layered defense: the RC-12 sanitizer wraps/flags what it
-can recognize, and - the actual point of RC-21 - the RC-9/10/23 gate blocks
+Used to prove the layered defense: the output sanitizer wraps/flags what it
+can recognize, and - the actual point of this corpus - the gate (scope,
+window, rate, resolve-once DNS) blocks
 the resulting out-of-scope action even when the sanitizer is assumed to
 have MISSED the payload entirely (plaintext, translated, base64/hex-encoded,
 homoglyph or RTL-override obfuscated). The sanitizer is allowed to miss;

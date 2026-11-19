@@ -1,12 +1,12 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""RC-29 + RC-8: the ``op06d`` CLI.
+"""The ``op06d`` CLI.
 
 ``op06d run --engagement <file> --out <dir>`` takes an engagement file to
 a client report in one command, wiring together every finished piece of the
-pipeline: the RC-6 engagement loader, the RC-9/10/23 guardrail gate, the
-RC-13/14 tool wrappers (via ``GatedToolbox`` only - this module imports no
-concrete tool class), the RC-11 audit log, the RC-15 normalizer, the RC-16
-evidence store, and the RC-17/18 report renderer.
+pipeline: the engagement loader, the guardrail gate (window, scope, rate,
+resolve-once DNS), the nmap and nuclei wrappers (via ``GatedToolbox`` only -
+this module imports no concrete tool class), the audit log, the normalizer,
+the evidence store, and the report renderer.
 
 The console entry point (``pyproject.toml``: ``op06d = "op06d.cli:main"``)
 is ``main()`` below.
@@ -15,8 +15,7 @@ is ``main()`` below.
 ``GatedToolbox.execute`` - never a tool directly. ``--planner fixed`` (the
 default) runs the deterministic ``plan_recon`` below.
 
-RC-40: LLM planner: wire a real model into the orchestrator and `op06d run`:
-``--planner llm`` runs the RC-7 ``Orchestrator`` with a model adapter from
+``--planner llm`` runs the ``Orchestrator`` loop with a model adapter from
 ``op06d.llm`` against the same gated toolbox, evidence store and report.
 See docs/llm-planner.md.
 """
@@ -160,7 +159,7 @@ def run_engagement(
     ``stdout_isatty`` are injection points for tests: a fake tool list
     removes the need for any real subprocess or network access, a fake
     resolver removes the need for a real DNS lookup (so a hostname-in-scope
-    test can still exercise RC-23's resolve-once ``dns_pinned`` audit entry
+    test can still exercise the resolve-once ``dns_pinned`` audit entry
     deterministically), a fake approver or clock makes the approval/timing
     behavior deterministic, and the tty overrides let a test exercise the
     interactive-vs-unattended selection without a real terminal. Production
@@ -202,7 +201,7 @@ def run_engagement(
 
     out_dir.mkdir(parents=True, exist_ok=True)
     log = AuditLog.for_engagement(eng, out_dir / "audit", clock=clock)
-    # RC-23 follow-up: resolve-once DNS, wired in via audit_pin.
+    # Resolve-once DNS, wired in via audit_pin.
     gate = Gate(eng, resolver=resolver or system_resolver, audit_pin=log.record_dns_pin)
 
     is_tty_in = sys.stdin.isatty() if stdin_isatty is None else stdin_isatty
@@ -441,7 +440,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--approval-timeout", type=float, default=120.0,
         help="seconds to wait for an operator approval before denying",
     )
-    plan = run_p.add_argument_group("planner (RC-40; see docs/llm-planner.md)")
+    plan = run_p.add_argument_group("planner (see docs/llm-planner.md)")
     plan.add_argument("--planner", choices=PLANNERS, default="fixed",
                       help="fixed: deterministic recon plan (default); llm: model-driven orchestrator")
     plan.add_argument("--llm-provider", choices=PROVIDERS, default=None,

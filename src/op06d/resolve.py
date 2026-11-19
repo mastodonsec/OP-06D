@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Centralized DNS resolution and the resolve-once pin (RC-23).
+"""Centralized DNS resolution and the resolve-once pin.
 
 **The only place in OP-06D that may perform a DNS lookup.** The gap this
-closes: the gate (RC-9) used to resolve a hostname once to decide scope, and
+closes: the gate's scope check used to resolve a hostname once to decide scope, and
 the tool (nmap/nuclei) re-resolved the same hostname independently when it
 ran. If DNS changed in between - attacker-controlled rebinding, a short-TTL
 failover, or ordinary drift - the tool would scan an address the gate never
@@ -45,7 +45,7 @@ class DnsPinner:
     resolves to here.
 
     ``on_pin``, if given, is invoked exactly once per hostname, the moment it
-    is first pinned, so the caller can audit it (the RC-23 ``dns_pinned``
+    is first pinned, so the caller can audit it (the ``dns_pinned``
     event). If ``on_pin`` raises, that exception propagates out of
     ``resolve`` on that call - the caller (``Gate``) treats any exception
     from resolution as "resolution failed", so an audit failure here denies

@@ -1,7 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""RC-28: RC-20 follow-up: make the lab harness teardown idempotent (down-before-up)
-
-Docker-free tests of lab/make_lab_engagement.py against the committed
+"""Docker-free tests of lab/make_lab_engagement.py against the committed
 lab/engagement.yaml template: the generated window contains now and is
 bounded, nothing but the window changes, the output loads through
 load_engagement, and broken templates are refused."""

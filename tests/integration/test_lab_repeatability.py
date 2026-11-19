@@ -1,19 +1,19 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""RC-20: gated lab integration + repeatability harness.
+"""Gated lab integration + repeatability harness.
 
 Automates, as a single gated test, the lab validation RUNBOOK.md Steps 4/8
 otherwise walk through by hand: stand up the lab, PROVE isolation, run the
 real scans through the gated toolbox (`lab/scan_driver.py`, shared with the
 runbook so the two cannot drift), and assert the results against the frozen
-baseline in tests/integration/baseline.json - including the RC-23
-resolve-once markers. This does not replace the exploratory one-off steps
+baseline in tests/integration/baseline.json - including the
+resolve-once DNS markers. This does not replace the exploratory one-off steps
 (10/11/12), only the hand-run functional + repeatability check (Step 8/9).
 
 NOT part of the default suite: excluded via the `lab` marker
 (see pyproject.toml's `addopts = "-m 'not lab'"`) and skipped unless
 OP06D_LAB=1 is set, or docker/compose is unavailable.
 
-    OP06D_LAB=1 uv run pytest -m lab tests/integration/test_lab_rc20.py
+    OP06D_LAB=1 uv run pytest -m lab tests/integration/test_lab_repeatability.py
 """
 
 from __future__ import annotations
@@ -41,7 +41,7 @@ import lab_stack as stack  # noqa: E402
 from scan_driver import isolation_failure_reason  # noqa: E402
 
 BASELINE = lab_asserts.load_baseline()
-EPHEMERAL_SUBDIR = "_rc20_ephemeral"  # under the scanner's /captures mount; wiped before every run
+EPHEMERAL_SUBDIR = "_repeatability_ephemeral"  # under the scanner's /captures mount; wiped before every run
 # The engagement with a window around "now", generated once per module run
 # from the lab/engagement.yaml template (lab/make_lab_engagement.py).
 ENGAGEMENT = f"/captures/{EPHEMERAL_SUBDIR}/engagement.yaml"
@@ -49,7 +49,7 @@ ENGAGEMENT = f"/captures/{EPHEMERAL_SUBDIR}/engagement.yaml"
 
 def _require_lab_enabled() -> None:
     if os.environ.get("OP06D_LAB") != "1":
-        pytest.skip("set OP06D_LAB=1 to run the gated lab integration test (RC-20)")
+        pytest.skip("set OP06D_LAB=1 to run the gated lab integration test")
 
 
 def _require_docker() -> None:

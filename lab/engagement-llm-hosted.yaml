@@ -1,8 +1,8 @@
-# RC-47: Lab model relay: let the sealed scanner reach the planner model for lab runs
+# Lab engagement for a hosted-model run through the model relay.
 #
 # The lab engagement (lab/engagement.yaml) plus the one change a hosted-model lab
 # run needs: planner.allowed_providers lists "anthropic". Without a planner block
-# only the local provider is allowed (RC-40), and lab/model_relay.py refuses to
+# only the local provider is allowed, and lab/model_relay.py refuses to
 # start the anthropic relay for an engagement that does not allow it.
 #
 # Everything else must stay identical to lab/engagement.yaml

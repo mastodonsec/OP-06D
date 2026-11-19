@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""RC-36: detect nuclei templates that declare an HTTP *write* method
+"""Detect nuclei templates that declare an HTTP *write* method
 (``PUT``/``DELETE``/``PATCH``/``PURGE``), in either shape nuclei templates use
 to express a request method:
 
@@ -9,7 +9,7 @@ to express a request method:
 
 This is shared by three callers that must never disagree with each other:
 ``NucleiTool`` (which always excludes these ids, regardless of tags - see
-``nuclei_tool.py``'s RC-36 note), the bundled exclusion-list generator
+``nuclei_tool.py``'s write-method backstop note), the bundled exclusion-list generator
 (``scripts/generate_nuclei_write_method_exclusions.py``), and the CI-enforced
 audit test (``tests/test_nuclei_tool.py``) that fails if a write-method
 template is ever selectable in the default pass.

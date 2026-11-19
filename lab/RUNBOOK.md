@@ -1,16 +1,16 @@
-# OP-06D lab runbook (RC-19)
+# OP-06D lab runbook
 
 The maintainer's validation reference for the lab: the ordered steps that
 stand up the lab, **prove it is isolated**, validate the nmap and nuclei
 wrappers against the real, pinned tools, and run the whole chain once. Nothing
-in this repository runs them for you (the RC-24 validation harness below
+in this repository runs them for you (the validation harness below
 automates Steps 4-13 when you start it).
 
 > **These steps have been run.** The first full run, on Windows with Docker
 > Desktop (WSL2 backend), produced the frozen baseline in
 > `lab/PLANTED_VULNS.md` (2026-11-05) and the evidence in `lab/captures/`.
-> RC-60 added Linux and macOS hosts; what was tested there, and when, is in
-> [Linux and macOS hosts](#linux-and-macos-hosts-rc-60). An "Expected" result
+> Linux and macOS hosts were added later; what was tested there, and when, is in
+> [Linux and macOS hosts](#linux-and-macos-hosts). An "Expected" result
 > that does not match is a deviation: keep the full output, with the step
 > number, next to the other captures in `lab/captures/`, and do not scan with
 > OP-06D until it is understood.
@@ -18,21 +18,21 @@ automates Steps 4-13 when you start it).
 Run all commands from the repository root. **Shells:** `powershell` blocks are
 for **PowerShell 7** (`pwsh`); snippets are piped into the container, which
 needs UTF-8 handling that Windows PowerShell 5.1 does not do reliably. `bash`
-blocks (added by RC-60 for Linux and macOS) are for bash or zsh; for the
+blocks (for Linux and macOS) are for bash or zsh; for the
 `docker compose -f $LAB ...` lines in the PowerShell blocks, see
-[Linux and macOS hosts](#linux-and-macos-hosts-rc-60).
+[Linux and macOS hosts](#linux-and-macos-hosts).
 
-> **RC-20: there is now a gated, automated version of Steps 4+8+9** (isolation
+> **There is a gated, automated version of Steps 4+8+9** (isolation
 > precondition, the real scan set, and a repeatability check), driven by
-> `tests/integration/test_lab_rc20.py` against the frozen baseline in
+> `tests/integration/test_lab_repeatability.py` against the frozen baseline in
 > `tests/integration/baseline.json`. It is excluded from the default test
 > suite and needs `OP06D_LAB=1`:
-> `OP06D_LAB=1 pytest -m lab --basetemp .pytest-tmp tests/integration/test_lab_rc20.py`
+> `OP06D_LAB=1 pytest -m lab --basetemp .pytest-tmp tests/integration/test_lab_repeatability.py`
 > (`.pytest-tmp/` is pytest's scratch directory for the run; it is git-ignored).
 > It does not replace the exploratory one-off steps below (10/11/12) or the
 > scripted-orchestrator end-to-end in Step 13.
 
-> **RC-24: a single-command validation harness now runs Steps 5–13 and prints
+> **A single-command validation harness runs Steps 5–13 and prints
 > PASS/FAIL/NEEDS-REVIEW** — `OP06D_LAB=1 python lab/validation_harness.py`.
 > The isolation gate (Step 4) stays a hard fail-closed precondition; Steps 10
 > and 11 are reported as NEEDS-REVIEW, so the go/no-go to scan remains a human
@@ -85,8 +85,8 @@ session and after any change to `lab/docker-compose.yml` or Docker.
 | **nuclei** | **v3.11.1** | release zip, sha256 `ea63d4ae232808cd7c6bc00d0142428e231fab59dae01042246097d195835ab6` |
 | **nuclei-templates** | **v10.5.1** | tag tarball, sha256 `30fe1cfaced4635f886e4a2673641bba86998dceec28e468274524e789aa56eb` |
 | Python packages (inside the scanner) | pydantic 2.14.2, PyYAML 6.0.3, pytest 9.2.0 | `lab/scanner/requirements.txt` (compare with your host's `pip freeze`) |
-| Model relay image (RC-47 overlay only) | alpine 3.24.4, HAProxy 3.4.7, iptables 1.8.13, socat 1.8.1.3 | digest in `lab/relay/Dockerfile`; package versions recorded in `/opt/relay-versions.txt` |
-| Overlay scanner extras (RC-47 overlay only) | anthropic 2.8.0 + dependencies | `lab/relay/scanner-llm-requirements.txt` (hashes, from `uv.lock`) |
+| Model relay image (model-relay overlay only) | alpine 3.24.4, HAProxy 3.4.7, iptables 1.8.13, socat 1.8.1.3 | digest in `lab/relay/Dockerfile`; package versions recorded in `/opt/relay-versions.txt` |
+| Overlay scanner extras (model-relay overlay only) | anthropic 2.8.0 + dependencies | `lab/relay/scanner-llm-requirements.txt` (hashes, from `uv.lock`) |
 
 The `latest` tag is not used anywhere. Step 5 records what is actually installed.
 
@@ -100,7 +100,7 @@ The `latest` tag is not used anywhere. Step 5 records what is actually installed
         |                                                                           |
         |   scanner  172.31.77.20  ----->  juice-shop 172.31.77.10  :3000           |
         |   (nmap, nuclei,         ----->  dvwa        172.31.77.11  :80            |
-        |    OP-06D code)          ----->  redirect    172.31.77.12  :80  (RC-44)   |
+        |    OP-06D code)          ----->  redirect    172.31.77.12  :80            |
         +---------------------------------------------------------------------------+
               |  no route out, no NAT, no published ports, no other network
               X  nothing reaches the internet, the host, or any other network
@@ -109,13 +109,13 @@ The `latest` tag is not used anywhere. Step 5 records what is actually installed
 - **One network, declared `internal: true`.** Docker installs no NAT and gives
   the containers no default route for an internal network, so there is no way
   off it. This is the same mechanism for every container.
-- **No gateway address (RC-60).** labnet also sets
+- **No gateway address.** labnet also sets
   `com.docker.network.bridge.inhibit_ipv4`, so the bridge holds no address and
   IPAM lists no Gateway. Without it, `172.31.77.1` is an address of the Docker
   host (on native Linux, the host itself): any host service listening on
   `0.0.0.0` (sshd, Ollama, ...) answered from inside the lab. Step 4 probes it,
   and the host-side check requires the option.
-- **No IPv6 in the containers (RC-60).** The bridge still holds an IPv6
+- **No IPv6 in the containers.** The bridge still holds an IPv6
   link-local (`fe80::`) address, which reaches host services listening on
   `[::]`. Every lab service sets `net.ipv6.conf.all.disable_ipv6=1` and
   `net.ipv6.conf.default.disable_ipv6=1` in its own network namespace, so no
@@ -138,9 +138,9 @@ The `latest` tag is not used anywhere. Step 5 records what is actually installed
 - **The LLM is scripted in the base lab.** A real model API needs a route out,
   which the base lab must not have. The end-to-end run (Step 13) therefore uses
   a scripted planner inside the scanner. A run with a real model
-  (`op06d run --planner llm`) uses the opt-in RC-47 model-relay overlay, which
+  (`op06d run --planner llm`) uses the opt-in model-relay overlay, which
   adds one relay to exactly one upstream and leaves this network unchanged;
-  see [Model relay](#model-relay-rc-47-opt-in-op06d-run---planner-llm-in-the-lab).
+  see [Model relay](#model-relay-opt-in-op06d-run---planner-llm-in-the-lab).
 
 ---
 
@@ -166,9 +166,7 @@ created lab\captures
 
 On Linux and macOS: `mkdir -p lab/captures && echo "created lab/captures"`.
 
-### Linux and macOS hosts (RC-60)
-
-RC-60: Lab: run on Linux (Kali) and macOS, not only Windows
+### Linux and macOS hosts
 
 > **Tested 2026-11-17.** Kali Linux x86_64 (a VM without a GPU, with Kali's
 > own `docker.io` and Compose v2 packages): the base lab and the local model
@@ -176,7 +174,7 @@ RC-60: Lab: run on Linux (Kali) and macOS, not only Windows
 > Docker-repository fallback for Kali below was not needed on that system.
 > Still untested: Ollama on macOS for the relay, and `check anthropic` on
 > Linux and macOS (see
-> [Model relay](#model-relay-rc-47-opt-in-op06d-run---planner-llm-in-the-lab)).
+> [Model relay](#model-relay-opt-in-op06d-run---planner-llm-in-the-lab)).
 
 Every `docker compose -f $LAB ...` line in this runbook works the same in bash
 or zsh once the variable is set the shell's way (`LAB=lab/docker-compose.yml`),
@@ -393,7 +391,7 @@ This proves the pinned Python packages and Python 3.11 run the existing suite.
 The repo is mounted read-only; pytest needs `-p no:cacheprovider` for that. If it
 fails on versions, align `lab/scanner/requirements.txt` with your host and rebuild.
 
-## Step 7. Flag-name verification (RC-13 / RC-14)
+## Step 7. Flag-name verification (nmap and nuclei wrappers)
 
 The wrappers pass these flags. The authoritative test is that the **real tool
 accepts them and does what they mean**; Step 8 runs every one for real. This step
@@ -408,7 +406,7 @@ from op06d.nuclei_tool import NucleiTool
 from op06d.tools import ProcessResult
 
 seen = []
-def cap(argv, timeout, **kw):      # **kw: since RC-35 nuclei's runner is also passed env=
+def cap(argv, timeout, **kw):      # **kw: nuclei's runner is also passed env=
     seen.append(list(argv))
     return ProcessResult(0, b"", b"")
 
@@ -428,9 +426,9 @@ for argv in seen:
 Expected: eight `nmap` lines and two `nuclei` lines. The `--host-timeout`
 value differs per line: the wrapper sizes it from the port count and the rate
 (at 50 rps: `300s` for most profiles, `485s` for `aggressive`, `3488s` for
-`full`; see "Wrapper timeouts" in Step 12). (Fixed on the RC-24 first
-run: the capture function used to be `cap(argv, timeout)`; since RC-35 the
-nuclei wrapper calls its runner with an extra `env=` argument, so that raised
+`full`; see "Wrapper timeouts" in Step 12). (Fixed on the validation
+harness's first run: the capture function used to be `cap(argv, timeout)`;
+since the ambient-config fix the nuclei wrapper calls its runner with an extra `env=` argument, so that raised
 inside the wrapper and the two `nuclei` lines silently never printed.)
 
 Save to `lab/captures/wrapper-argv.txt`.
@@ -455,9 +453,9 @@ This goes through the **gate and the toolbox** (not the raw tools), so the gate,
 sanitizer and audit log are exercised as well. The scanner has no network beyond
 the lab, and the engagement scopes only the two targets.
 
-**RC-23 (resolve-once):** the two `nuclei` rows target hostnames
+**Resolve-once DNS:** the two `nuclei` rows target hostnames
 (`dvwa.lab`/`juice-shop.lab`), so this run now also exercises the resolve-once
-fix end to end - this *is* the RC-23 "lab verification" acceptance check. The
+fix end to end - this *is* its lab verification. The
 gate resolves each hostname once, pins it (`Gate(..., audit_pin=
 log.record_dns_pin)` below records that as a `dns_pinned` audit entry), and
 the toolbox hands nuclei the pinned IP, never the hostname; nuclei gets
@@ -470,12 +468,12 @@ entry per hostname in the audit log (two total: `dvwa.lab`, `juice-shop.lab`).
 The `nmap` rows already target literal IPs, so they are unaffected beyond
 `-n` now always being in the argv.
 
-**RC-20:** this step now runs through `lab/scan_driver.py` - the same RUNS
+**Shared driver:** this step runs through `lab/scan_driver.py` - the same RUNS
 list and gated-execute logic the automated harness
-(`tests/integration/test_lab_rc20.py`) calls, so the two cannot drift apart.
+(`tests/integration/test_lab_repeatability.py`) calls, so the two cannot drift apart.
 Writing straight to `lab/captures/` here is deliberate (these are the
 committed, by-hand captures); the automated test always uses a fresh,
-ephemeral subdirectory instead (`lab/captures/_rc20_ephemeral/`, wiped before
+ephemeral subdirectory instead (`lab/captures/_repeatability_ephemeral/`, wiped before
 every run), so it never overwrites them.
 
 ```powershell
@@ -489,17 +487,17 @@ template set, nmap `-sV`). That is normal, not a hang.
 
 Expected: every row `outcome=executed`. The Juice Shop nuclei row
 (`nuclei_juice-shop_3000`) now passes `{port: 3000, scheme: http}` explicitly,
-so nuclei is given `http://juice-shop.lab:3000` (RC-14 follow-up). Both halves
+so nuclei is given `http://juice-shop.lab:3000` (the nuclei `port`/`scheme` parameters). Both halves
 matter: without the port, nuclei probes the default ports and Juice Shop only
 listens on 3000; with the port but no scheme, the wrapper defaults the scheme
 to `https`, which is wrong for plain HTTP on 3000. With both, it behaves like
 the DVWA rows rather than coming back empty. This matches the `RUNS` list in
 `lab/scan_driver.py`. Also expect exactly two
 `dns_pinned` lines (`dvwa.lab`, `juice-shop.lab`, each pinned once even
-though each hostname is scanned in more than one row - RC-23). A `denied`/`declined` row is
+though each hostname is scanned in more than one row - resolve-once). A `denied`/`declined` row is
 a deviation: keep the printed lines with the captures and find the cause
 before relying on the run. Each nuclei row's
-`*.findings.json` now also carries `summary.templates_loaded` (RC-26) -
+`*.findings.json` now also carries `summary.templates_loaded` (template-coverage instrumentation) -
 expect a real positive count (thousands, against the pinned v10.5.1 set); `0`
 or missing means the coverage instrumentation itself regressed, not that the
 scan was clean.
@@ -540,10 +538,10 @@ for p in sorted(pathlib.Path("/captures").glob("nuclei_*.jsonl")):
 Also compare by eye the real files with `tests/fixtures/nmap_service_scan.xml`
 and `nuclei_findings.jsonl`: attribute names, `<hosthint>`, `<extraports>`, how
 `matched-at`/`host`/`ip` look for a host with a port, `info.tags` as a list or a
-string, any fields the parser drops that RC-15 will need.
+string, any fields the parser drops that normalization needs.
 
 **Fixtures:** the real captures stay in `lab/captures/` (keep the names); they
-are the evidence and the RC-20 baseline. **Do not overwrite** the hand-written
+are the evidence and the repeatability baseline. **Do not overwrite** the hand-written
 fixtures in `tests/fixtures/`. A `FAIL` or `WARN` line, or a field the parser
 drops, is a parser defect: record it with the capture's file name and fix the
 parser (with a test) before relying on its output.
@@ -678,7 +676,7 @@ as the audit. `-tl` is not needed anywhere else in this runbook.)
 use payloads/fuzzing, use `code`/`headless`/`javascript`, use interactsh, or
 follow redirects. `also-tagged:` rows are already handled by `-exclude-tags`,
 so they are not a problem by themselves. A `method:PUT`/`DELETE`/`PATCH`/`PURGE`
-on a default-selection template is covered by the RC-36 `-eid` backstop (below)
+on a default-selection template is covered by the write-method `-eid` backstop (below)
 only if its id is in `src/op06d/nuclei_write_method_exclusions.json`.
 
 **What to do.** Count the templates of concern, list examples, and keep the
@@ -687,7 +685,7 @@ tighten `-exclude-tags`, exclude by protocol, or (for a write method)
 regenerate the `-eid` list. The validation harness reports this step as
 NEEDS-REVIEW, never PASS, for exactly this reason: a human reads it.
 
-**RESOLVED (RC-36, 2026-11-07).** Against the pinned v10.5.1 set (14,104
+**RESOLVED (write-method backstop, 2026-11-07).** Against the pinned v10.5.1 set (14,104
 templates), 52 templates survive `-exclude-tags` and send a non-GET request -
 all query-style `POST` (GraphQL introspection, JSON-RPC reads, API
 fingerprinting), zero declaring a write method (`PUT`/`DELETE`/`PATCH`/
@@ -701,14 +699,14 @@ shape (an `http`/`requests` block's `method:`, or a `raw:` request line) -
 regenerated with `scripts/generate_nuclei_write_method_exclusions.py` on a
 re-pin. `tests/test_nuclei_method_audit.py` is the CI-enforced,
 synthetic-tree-proven-non-vacuous guarantee against drift;
-`tests/integration/test_lab_rc36.py` (gated) verifies the bundled list
+`tests/integration/test_lab_nuclei_write_methods.py` (gated) verifies the bundled list
 against the real pinned set and confirms `-eid` actually excludes (not just
 accepts) a known write-method id, and that the 52 read-oriented survivors
 are untouched.
 
 ## Step 11. nuclei ambient-config precedence
 
-**Purpose.** (RC-14 follow-up) Can a hostile `~/.config/nuclei` config
+**Purpose.** Can a hostile `~/.config/nuclei` config
 re-enable interactsh, redirects or headers despite the wrapper's flags?
 Everything below is on the scanner's **loopback only** (three tiny local
 servers); it needs no network.
@@ -722,7 +720,7 @@ nuclei would do another.
 **Run.** 11a-11c below, then **always** 11d (clean-up). The same replay,
 reduced to one command and judged automatically, is
 `docker compose -f $LAB exec -T scanner python3 /lab/ambient_config_probe.py`
-(shared by `tests/integration/test_lab_rc35.py` and the validation harness;
+(shared by `tests/integration/test_lab_nuclei_ambient_config.py` and the validation harness;
 it removes its hostile config itself).
 
 **11a. Servers and test templates.** `PROBE` answers 302 to `CANARY`; `CANARY`
@@ -877,7 +875,7 @@ run("E. variant C with the same hostile proxy (does scrubbing help?)", argv_c, d
 | C controlled config | clean | shows what the wrapper must do (always pass its own `-config`, run with a scrubbed environment) |
 | D hostile proxy env | probably traffic goes via the proxy | the wrapper does not scrub the environment today: a real gap if it does |
 
-Since RC-35, `build_argv` always emits `-config <placeholder>`, and that
+Since the ambient-config fix, `build_argv` always emits `-config <placeholder>`, and that
 placeholder path does not exist on disk unless the wrapper's own `run()`
 creates it; so runs B and D above may now exit early with a missing-config
 error instead of scanning. That is an artefact of calling `build_argv` by hand
@@ -894,7 +892,7 @@ NEEDS-REVIEW, never PASS, so a human reads the table. Then run 11d.
 
 The harness reports the redirect, header and OAST sub-checks separately: a
 sub-check the control never demonstrated is `INCONCLUSIVE (... detection not
-proven)`, not "clean". **Known gap (RC-24 first run):** OAST is currently
+proven)`, not "clean". **Known gap (validation harness first run):** OAST is currently
 INCONCLUSIVE. The scheme-less `interactsh-server: 127.0.0.1:18083` makes
 nuclei try to *register* over HTTPS; the stand-in on 18083 is a plain HTTP
 logger, so the TLS handshake fails (`tls: first record does not look like a
@@ -903,7 +901,7 @@ never sees a parseable request. The redirect and header sub-checks are
 proven; the OAST one is not, until a follow-up ticket gives the experiment a
 stand-in that nuclei can actually register with.
 
-**RESOLVED (RC-35, 2026-11-07).** Run B did show the gap exactly as expected:
+**RESOLVED (ambient-config fix, 2026-11-07).** Run B did show the gap exactly as expected:
 the wrapper passed `-config` only when `config_path` was set, and did not
 scrub the environment, so the ambient `follow-redirects: true` fataled the
 scan (fail-closed only by accident) and a non-conflicting setting would have
@@ -915,7 +913,7 @@ and runs with `HOME`/`XDG_CONFIG_HOME` pointed at a fresh, per-run, always-
 cleaned-up temporary directory. Re-run live against the real pinned nuclei
 with the exact hostile config from 11b: no redirect followed, no hostile
 header sent, no OAST contact, `status=ok` (no crash) -
-`tests/integration/test_lab_rc35.py` automates this replay going forward
+`tests/integration/test_lab_nuclei_ambient_config.py` automates this replay going forward
 (gated, skips cleanly by default).
 
 **11d. Clean up** (important: the hostile config must not linger):
@@ -949,7 +947,7 @@ for prof in PROFILES:
 ```
 
 Record, for each profile, root vs unprivileged: works? `syn` vs `connect` scan
-type? degraded? error text? **Confirmed (RC-25), not just expected:** `ping`,
+type? degraded? error text? **Confirmed, not just expected:** `ping`,
 `quick`, `default`, `service`, `full` work unprivileged using a TCP connect
 scan (none of them request OS detection, so none are ever `degraded`).
 `aggressive` (`-A`, which includes OS detection) does **NOT** fail without
@@ -961,7 +959,7 @@ The wrapper surfaces this as `status=ok`, `degraded=['os_detection']`,
 is "no traceback, a structured, correctly-`degraded`-flagged status on every
 profile in both privilege modes" - met.
 
-**Wrapper timeouts.** RC-43: nmap: live run reported no ports and no limitation (silent empty result)
+**Wrapper timeouts.** A host nmap skips at `--host-timeout` is no longer a silent empty result.
 
 The wrapper no longer passes a fixed `--host-timeout 300s`. Per call it
 estimates the scan time from the port count and the rate
@@ -990,7 +988,7 @@ docker compose -f $LAB exec -T scanner sh -c "grep -rl 'is_privileged' /usr/shar
 ```
 
 The confirmed result is recorded in `docs/nmap-tool.md` ("Privilege-degradation
-surfacing (RC-25)"); a result that differs from it is a finding. Also confirm the wrapper returns a structured error, not an exception, when nmap
+surfacing"); a result that differs from it is a finding. Also confirm the wrapper returns a structured error, not an exception, when nmap
 exits non-zero.
 
 ## Step 13. End to end: engagement -> loop -> gate -> real tools -> sanitize -> audit
@@ -1061,7 +1059,7 @@ block (same id) that contains parsed findings, **not** raw XML/JSONL;
 the raw files are only in the evidence (`result.evidence`), not in the planner's
 context. Confirm in the audit log that the out-of-scope attempt produced a
 `gate_decision` with `allowed=False` and that **no** `action_executed` exists for
-`1.1.1.1`. **RC-23:** confirm exactly one `dns_pinned` entry for `dvwa.lab`
+`1.1.1.1`. **Resolve-once:** confirm exactly one `dns_pinned` entry for `dvwa.lab`
 (the two `nuclei ... dvwa.lab` actions, allowed and declined alike, pin the
 same hostname once - not twice) and that the `1.1.1.1` nmap action produced
 no `dns_pinned` entry at all (it's an IP, nothing to resolve).
@@ -1086,9 +1084,7 @@ docker compose -f $LAB down
 
 ---
 
-## Model relay (RC-47, OPT-IN): `op06d run --planner llm` in the lab
-
-RC-47: Lab model relay: let the sealed scanner reach the planner model for lab runs
+## Model relay (OPT-IN): `op06d run --planner llm` in the lab
 
 The base lab above never changes. For an LLM-planner run, an overlay adds one
 relay container and one more internal network:
@@ -1114,7 +1110,7 @@ juice-shop, dvwa: labnet only (never on relaynet)
   `api.anthropic.com`; TLS is never terminated, so the certificate is
   validated end to end by the scanner against the real host.
 - **Why the SNI filter:** the address `api.anthropic.com` resolves to also
-  serves other names (verified while building RC-47: through plain passthrough,
+  serves other names (verified while building the relay: through plain passthrough,
   valid certificates came back for `example.com`, `claude.ai` and
   `anthropic.com`). Without the filter the scanner could reach those. A
   mismatched `Host` header behind the right SNI got `403 Forbidden` from the edge.
@@ -1144,9 +1140,9 @@ Ollama does **not** need to listen on the network for the relay:
   the LAN (elevated PowerShell):
   `New-NetFirewallRule -DisplayName "Ollama 11434 block inbound" -Direction Inbound -Protocol TCP -LocalPort 11434 -RemoteAddress Any -Action Block`
   (Docker Desktop's path arrives as loopback, so this does not break the relay.)
-- Pull the RC-40 default local model once: `ollama pull llama3.1:8b-instruct-q5_K_M`
+- Pull the planner's default local model once: `ollama pull llama3.1:8b-instruct-q5_K_M`
 
-### Ollama on the host (native Linux, e.g. Kali) (RC-60)
+### Ollama on the host (native Linux, e.g. Kali)
 
 > **Tested 2026-11-17** on Kali x86_64 (VM, no GPU): the local model relay
 > PASS with Ollama bound as below.
@@ -1261,7 +1257,7 @@ exits 1, leaving the stack up for inspection; run `down` afterwards.
 `run` limits the acceptance run (`--max-iterations 12 --max-actions 6
 --max-wall-clock 1800 --max-tokens 300000` by default; each is a flag). The
 report, evidence store and audit log land in
-`lab/captures/_rc47_ephemeral/<mode>/run/` (git-ignored); `run` fails if the
+`lab/captures/_relay_ephemeral/<mode>/run/` (git-ignored); `run` fails if the
 report has no Planner section, nothing executed through the gate, a target
 was out of scope, the audit log does not verify, or key material appears in
 any file there.
@@ -1292,12 +1288,12 @@ two interfaces). After `down`, rerun Step 4 before any non-relay scan.
 ```powershell
 # lab acceptance, one upstream per invocation
 $env:OP06D_LAB = "1"; $env:OP06D_LLM_PROVIDER = "local"
-uv run pytest -m lab -rs --basetemp .pytest-tmp tests/integration/test_lab_rc47.py
+uv run pytest -m lab -rs --basetemp .pytest-tmp tests/integration/test_lab_relay_planner_run.py
 $env:OP06D_LLM_PROVIDER = "anthropic"; $env:ANTHROPIC_API_KEY = Read-Host -MaskInput "Anthropic API key"
-uv run pytest -m lab -rs --basetemp .pytest-tmp tests/integration/test_lab_rc47.py
+uv run pytest -m lab -rs --basetemp .pytest-tmp tests/integration/test_lab_relay_planner_run.py
 Remove-Item Env:OP06D_LLM_PROVIDER, Env:ANTHROPIC_API_KEY
 
-# RC-21 live-model gate through the relay (overlay up, see above), local:
+# live-model gate through the relay (overlay up, see above), local:
 docker compose -f lab/docker-compose.yml -f lab/model-relay.local.yml exec -T `
   -e OP06D_LIVE_MODEL=1 -e OP06D_LIVE_PROVIDER=local `
   -e OP06D_LLM_ENDPOINT=http://172.31.78.2:11434 -e OP06D_LLM_ALLOW_PRIVATE=172.31.78.2 `
@@ -1313,9 +1309,7 @@ always finish with `uv run python lab/model_relay.py down` (it also removes the
 relay and its networks; a plain `docker compose -f lab/docker-compose.yml down`
 would leave the relay running as an orphan).
 
-## Planner model benchmark (RC-46, OPT-IN)
-
-RC-46: Planner model benchmark: score candidate models on lab runs
+## Planner model benchmark (OPT-IN)
 
 `lab/benchmark.py` runs `op06d run --planner llm` N times per candidate model
 through the model relay above and scores every run from its audit log and
@@ -1392,7 +1386,7 @@ Metrics per run (definitions in `lab/benchmark_metrics.py`):
 | Baseline coverage | evidence store | share of the fixed-planner run's findings this run also produced |
 | Tokens, wall clock, termination, failure cause | audit log | loop-end entry; first to last entry |
 
-**Finding identity** (what "the same finding" means for coverage): the RC-15
+**Finding identity** (what "the same finding" means for coverage): the normalizer's
 `finding_id`, i.e. the first 16 hex characters of SHA-256 over (source tool,
 asset IP or else hostname, port, category, key), where the key is the nuclei
 template id or the nmap finding title / script id. It has no timestamp or run
@@ -1427,7 +1421,7 @@ have no placement and no `placement_source`.
 Output, both git-ignored:
 
 - run output (report, evidence store, audit log per run):
-  `lab/captures/_rc46_benchmark/<id>/<candidate>/run-NN/run/`
+  `lab/captures/_benchmark/<id>/<candidate>/run-NN/run/`
 - results: `benchmark-results/<id>/results.json`, `results.csv` (one row per
   run) and `summary.md` (per candidate: N, failures, mean ± sample standard
   deviation and min to max). The results directory is scanned for API-key

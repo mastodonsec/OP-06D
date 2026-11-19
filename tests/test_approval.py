@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Tests for RC-8 (op06d.approval.ConsoleApprover): default-deny behavior,
+"""Tests for the operator approval prompt (op06d.approval.ConsoleApprover): default-deny behavior,
 explicit yes/no, EOF, and the cross-platform timeout path."""
 
 from __future__ import annotations

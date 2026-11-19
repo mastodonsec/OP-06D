@@ -1,5 +1,5 @@
 #!/bin/sh
-# RC-47: Lab model relay: let the sealed scanner reach the planner model for lab runs
+# Model relay egress check.
 #
 # Run INSIDE the relay container, as the relay user (the socat process's view):
 #   docker compose -f lab/docker-compose.yml -f lab/model-relay.<mode>.yml \

@@ -179,7 +179,7 @@ def test_legitimate_targets_are_one_argv_element(target):
     assert argv.count(target) == 1 and value_after(argv, "-u") == target
 
 
-# --- port / scheme (RC-14 follow-up: target a non-default port) ------------------
+# --- port / scheme (target a non-default port) ----------------------------------
 
 def test_without_port_or_scheme_the_bare_target_is_unchanged():
     argv = argv_of({})
@@ -230,7 +230,7 @@ def test_port_and_scheme_cannot_smuggle_a_second_host():
     assert "evil" not in " ".join(argv)
 
 
-# --- hostname kwarg (RC-23: vhost/SNI correctness when scanning a pinned IP) ---
+# --- hostname kwarg (resolve-once: vhost/SNI correctness when scanning a pinned IP) ---
 
 def test_hostname_kwarg_adds_host_header_and_sni_without_changing_the_url_host():
     r = Runner()
@@ -331,7 +331,7 @@ def test_only_the_pinned_template_dir_is_ever_passed_as_a_template_path():
         for banned in ("-w", "-workflows", "-wt", "-workflow-templates", "-template-url", "-tu",
                        "-templates", "-H", "-header", "-V", "-var", "-l", "-list", "-code", "-headless"):
             assert banned not in argv
-        # RC-35 always passes `-config <per-run file>`; that file path is the
+        # The wrapper always passes `-config <per-run file>`; that file path is the
         # config, not a template path, and is absolute on Linux (/tmp/...)
         # but not on Windows (C:\...). Exclude exactly that one argument
         # value - by position, after asserting -config occurs once - and keep
@@ -361,7 +361,7 @@ def test_second_target_cannot_be_smuggled_past_the_gate(rig):
     for params in ({}, {"tags": ["tech"], "severity": ["info"]}):
         r.box.execute(ToolAction("nuclei", HOST, params), iteration=1)
     for argv, _ in r.runner.calls:
-        # RC-23: the network target is the gate-pinned IP; the hostname may
+        # The network target is the gate-pinned IP; the hostname may
         # legitimately appear too, but only in the Host header and SNI (for
         # vhost correctness) - never as a second network target.
         assert value_after(argv, "-u") == "198.51.100.7"
@@ -609,7 +609,7 @@ def test_missing_template_directory_refuses_and_never_runs():
 
 
 def _without_config_value(argv):
-    # RC-35: -config now always points at a fresh per-run temp path, which
+    # -config now always points at a fresh per-run temp path, which
     # legitimately differs run to run - everything else about argv
     # construction must still be deterministic/repeatable.
     argv = list(argv)
@@ -725,7 +725,7 @@ def test_scan_only_runs_against_gate_approved_targets(rig):
     assert r.box.execute(ToolAction("nuclei", HOST), iteration=3).executed and len(r.runner.calls) == 1
 
 
-# --- RC-23: resolve-once end to end (gate pins the IP; Host/SNI = hostname) --
+# --- resolve-once end to end (gate pins the IP; Host/SNI = hostname) --
 
 def test_hostname_action_scans_the_pinned_ip_with_host_and_sni_set(rig):
     r = rig()  # rig's gate resolver always answers 198.51.100.7
@@ -761,7 +761,7 @@ def test_rebinding_does_not_change_which_ip_nuclei_targets(rig):
 
 
 def test_planner_sees_sanitized_structured_findings_and_evidence_keeps_the_raw_jsonl(rig):
-    # RC-23: the rig resolves HOST to 198.51.100.7 and nuclei is run against
+    # The rig resolves HOST to 198.51.100.7 and nuclei is run against
     # that pinned IP, so a realistic capture reports the IP (what -u actually
     # was), not the hostname, in host/url/matched-at/ip - swap those in,
     # alongside the usual injected text, so on_target matches as it would for
@@ -813,7 +813,7 @@ def test_default_tools_registers_nuclei_only_when_templates_are_configured():
     assert nuclei._interactsh == "oast.lab.acme-redteam.net" and nuclei._pin == "pin-1"
 
 
-# --- RC-26: templates-loaded instrumentation --------------------------------
+# --- templates-loaded instrumentation ---------------------------------------
 
 REAL_STATS_LINE = (
     '{"duration":"0:00:01","errors":"2","hosts":"1","matched":"0","percent":"5",'
@@ -884,7 +884,7 @@ def test_coverage_warning_does_not_mask_off_target_activity_status():
     assert out.findings["error"]["code"] == "off_target_activity"
 
 
-# --- RC-35: neutralize nuclei's ambient config + control HOME ---------------
+# --- neutralize nuclei's ambient config + control HOME --------------------
 
 def test_build_argv_always_includes_a_wrapper_owned_config_with_no_config_path_set():
     t = tool()
@@ -952,7 +952,7 @@ def test_out_of_band_flag_is_independent_of_any_config_and_cannot_be_overridden(
     # its own: the explicit -no-interactsh/-interactsh-server flag (derived
     # only from the engagement) always wins - adding -config does not
     # regress this. The real ambient-config case is covered by the
-    # lab-gated test (tests/integration/test_lab_rc35.py).
+    # lab-gated test (tests/integration/test_lab_nuclei_ambient_config.py).
     hostile_operator_config = tmp_path / "op-config.yaml"
     hostile_operator_config.write_text("interactsh-server: evil.example\nno-interactsh: false\n", encoding="utf-8")
     r = Runner()
@@ -981,7 +981,7 @@ def test_run_subprocess_explicit_env_replaces_the_parent_environment(monkeypatch
     assert result.stdout.decode().strip() == "MISSING"
 
 
-# --- RC-36: HTTP write-method backstop ----------------------------------------
+# --- HTTP write-method backstop -----------------------------------------------
 
 def _write_write_method_exclusions_file(path, ids):
     path.write_text(json.dumps({

@@ -1,4 +1,4 @@
-"""Unit tests for the RC-23 resolve-once pin (``op06d.resolve.DnsPinner``)."""
+"""Unit tests for the resolve-once pin (``op06d.resolve.DnsPinner``)."""
 
 import ast
 from pathlib import Path
@@ -114,7 +114,7 @@ def test_pinned_snapshot_reflects_resolved_hosts_only():
 def test_nothing_outside_resolve_py_imports_socket():
     """``resolve.py`` is the only module allowed to perform DNS. If another
     module starts importing ``socket``, it can do its own, unaudited,
-    un-pinned resolution - exactly the RC-23 gap this module exists to close."""
+    un-pinned resolution - exactly the DNS-rebinding gap this module exists to close."""
     offenders = []
     for path in SRC.glob("*.py"):
         if path.name == "resolve.py":
@@ -142,7 +142,7 @@ def test_only_gate_and_scope_import_op06d_resolve():
                 names = [a.name for a in node.names]
             if any(n == "op06d.resolve" for n in names):
                 importers.add(path.name)
-    # cli.py (RC-29) is the run wiring that constructs the Gate: it imports
+    # cli.py is the run wiring that constructs the Gate: it imports
     # Resolver/system_resolver only to plumb a resolver through to Gate(...)
     # (and to accept a test's fake resolver as an injection point) - it does
     # no DNS lookup of its own.

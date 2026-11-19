@@ -1,4 +1,4 @@
-"""Manual smoke test for RC-6 (engagement), RC-9 (scope gate), RC-11 (audit log).
+"""Manual smoke test for the engagement loader, the scope check and the audit log.
 
 Run from the repo root:  uv run python examples/demo_gate.py
 No network needed: DNS is faked.
@@ -9,7 +9,7 @@ from op06d.audit import AuditLog, read_log, verify_log
 from op06d.engagement import Scope, load_engagement
 from op06d.scope import check_scope
 
-eng = load_engagement("examples/engagement.yaml")  # RC-6
+eng = load_engagement("examples/engagement.yaml")
 
 # Widen the example scope so the deny-wins cases can be shown.
 scope = Scope(
@@ -32,7 +32,7 @@ cases = [
 ]
 
 with tempfile.TemporaryDirectory() as tmp:
-    log = AuditLog.for_engagement(eng, tmp)  # RC-11
+    log = AuditLog.for_engagement(eng, tmp)
     for target, expect in cases:
         d = check_scope(target, scope, resolver=resolver,
                         audit=log.sink(tool="demo", parameters={"note": "manual test"}))

@@ -1,4 +1,4 @@
-# nmap tool wrapper (RC-13)
+# nmap tool wrapper
 
 Modules: [`src/op06d/nmap_tool.py`](../src/op06d/nmap_tool.py) ·
 [`src/op06d/tools.py`](../src/op06d/tools.py) ·
@@ -16,7 +16,7 @@ is the only place `op06d.nmap_tool` is imported (a test asserts this). By the
 time `NmapTool.run` is called the action has already passed
 `validate -> Gate.check -> approval`.
 
-## Scope of RC-13
+## Scope of the wrapper
 
 **In scope:** the nmap `Tool`, argv construction, XML parsing, per-invocation
 risk, error handling, and the toolbox features it needed (per-invocation
@@ -25,12 +25,12 @@ risk/destructiveness, parameter validation hook, secret redaction, structured
 
 **Not here:**
 
-| Concern | Ticket |
+| Concern | Where |
 |---|---|
-| nuclei wrapper | RC-14 |
-| Normalizing findings into the report schema | RC-15 |
-| Persisting raw output as evidence | RC-16 |
-| Real lab to validate against a live nmap | RC-19 |
+| nuclei wrapper | [nuclei-tool.md](nuclei-tool.md) |
+| Normalizing findings into the report schema | the normalizer, `op06d.normalize` |
+| Persisting raw output as evidence | the evidence store, `op06d.evidence` |
+| Real lab to validate against a live nmap | [lab/RUNBOOK.md](../lab/RUNBOOK.md) |
 | MCP transport (the wrapper is a plain Python `Tool` behind the toolbox) | later |
 
 ## How a scan flows
@@ -45,7 +45,7 @@ planner: {"type":"action","tool":"nmap","target":"203.0.113.5","parameters":{"pr
    |- approval          -> only if invocation risk >= threshold (default INTRUSIVE)
    |- NmapTool.run      -> argv list, no shell, -oX -, --max-rate <max_rps>
    |- parse XML         -> structured findings   (raw XML kept as evidence)
-   |- sanitize findings -> wrapped for the planner (RC-12)
+   |- sanitize findings -> wrapped for the planner
    `- audit record      -> status, risk, output sha256, raw sha256
 ```
 
@@ -80,9 +80,9 @@ nmap -oX - --no-stylesheet -n --max-rate <max_rps> --host-timeout <sized>s <prof
 ```
 
 `--host-timeout` is sized per call (see
-[Host timeouts and timeout sizing](#host-timeouts-and-timeout-sizing-rc-43)).
+[Host timeouts and timeout sizing](#host-timeouts-and-timeout-sizing)).
 `http-title` is added by the wrapper on the `service` and `full` profiles
-only (see [Redirect observation](#redirect-observation-rc-44)).
+only (see [Redirect observation](#redirect-observation)).
 
 The target is one argv element placed after `--`, so it can never be read as an
 option. Before that the wrapper refuses (as `invalid_input`, without starting
@@ -110,7 +110,7 @@ never passed.
 | Selection | Risk | Effect |
 |---|---|---|
 | plain / service / full / ping / quick, or categories `safe`, `default`, `discovery`, `version` | ACTIVE_RECON | runs after the gate |
-| categories `vuln`, `intrusive`, `brute`, `auth`, `external`, `fuzzer`, `malware`, `broadcast`, or profile `aggressive` | **INTRUSIVE** | trips the RC-8 approval threshold |
+| categories `vuln`, `intrusive`, `brute`, `auth`, `external`, `fuzzer`, `malware`, `broadcast`, or profile `aggressive` | **INTRUSIVE** | trips the operator-approval threshold |
 | categories `dos`, `exploit` | **EXPLOIT** and destructive | needs approval **and** an engagement with `destructive: true` |
 
 The highest of the profile and category risks wins. If `risk_for` fails, the
@@ -139,9 +139,9 @@ and a structured error that the loop feeds back to the planner as a tool error:
 | `invalid_input` | target or parameters rejected by the wrapper |
 | `nmap_not_found` | nmap is not installed or not executable (clear message, nothing runs) |
 | `timeout` | the subprocess exceeded this call's run timeout (`--host-timeout` + 60 s, at least `run_timeout_s`, default 900 s); partial output kept as evidence |
-| `profile_too_slow` | the scan cannot finish at the engagement's `max_rps` within `max_host_timeout_s` (default 3600 s); nmap is not started (RC-43) |
-| `host_timeout` | every host that responded was skipped at `--host-timeout`; the result is also `degraded` (RC-43) |
-| `resolution_failed` | nmap reported it could not resolve the target (defense in depth; `-n` means this should not occur in practice - RC-23) |
+| `profile_too_slow` | the scan cannot finish at the engagement's `max_rps` within `max_host_timeout_s` (default 3600 s); nmap is not started |
+| `host_timeout` | every host that responded was skipped at `--host-timeout`; the result is also `degraded` |
+| `resolution_failed` | nmap reported it could not resolve the target (defense in depth; `-n` means this should not occur in practice, see [Resolve-once](#resolve-once)) |
 | `host_unreachable` | no host came up (down, filtered or unreachable) |
 | `nmap_failed` | non-zero exit with no output |
 | `malformed_output` | not valid nmap XML, or contains DTD entity declarations |
@@ -156,7 +156,7 @@ it at startup to fail early.
 `run` returns `ToolOutput(findings, raw, status)`:
 
 - `findings` is parsed, structured data (the planner sees only its sanitized
-  form; RC-15's `normalize_nmap` turns it into report findings):
+  form; the normalizer's `normalize_nmap` turns it into report findings):
 
 ```json
 {"scanner": "nmap", "version": "7.94",
@@ -177,7 +177,7 @@ The parser uses the standard library after rejecting DTD entities and oversized
 documents. Every string field is clipped (2000 characters; fewer for short
 fields), and host, port and script counts are capped.
 
-### Privilege-degradation surfacing (RC-25)
+### Privilege-degradation surfacing
 
 `summary.scan_types` records every `<scaninfo>` technique nmap actually used
 (`syn`, `connect`, ... - empty for a profile with no port-scan phase, e.g.
@@ -207,14 +207,12 @@ accompanied by either signal (e.g. a privileged SYN scan that simply could
 not fingerprint the OS from the available ports) is left alone - that is not
 a privilege problem and must not be reported as one.
 
-`normalize_nmap` (RC-15) turns `degraded` into a `NormalizationIssue`
+`normalize_nmap` turns `degraded` into a `NormalizationIssue`
 (`kind="nmap_degraded"`), so it reaches the evidence store and the client
 report's Limitations section automatically, with no report-layer change
 needed.
 
-### Host timeouts and timeout sizing (RC-43)
-
-RC-43: nmap: live run reported no ports and no limitation (silent empty result)
+### Host timeouts and timeout sizing
 
 **Detection.** When a host is still being scanned at `--host-timeout`, nmap
 skips it, exits 0 and writes the host to the XML as up with
@@ -264,9 +262,7 @@ parameter values alone. The estimate is per host: a CIDR target shares
 `--max-rate` between the hosts nmap scans in parallel, so a range with many
 live hosts can still hit `--host-timeout`; that is then reported as above.
 
-### Redirect observation (RC-44)
-
-RC-44: Recon: report redirects to hostnames outside scope instead of going quiet
+### Redirect observation
 
 **The fixed script.** The `service` and `full` profiles always run nmap's
 `http-title` script: the wrapper appends it by name
@@ -320,12 +316,12 @@ Run the tests (no real nmap is started):
 uv run --extra dev pytest tests/test_nmap_tool.py
 ```
 
-## Resolve-once (RC-23)
+## Resolve-once
 
 `run`/`build_argv` take an optional `hostname` keyword, set only by
 `GatedToolbox` and only when `target` is the IP the gate resolved and pinned
 for an originally-hostname action (see
-[gate-rate-and-window.md](gate-rate-and-window.md#resolve-once-rc-23)). nmap
+[gate-rate-and-window.md](gate-rate-and-window.md#resolve-once)). nmap
 never resolves anything itself: `-n` (disabling nmap's own forward *and*
 reverse DNS) is always in `build_argv`'s output, for every profile. This
 closes what used to be a real gap - nmap used to resolve a hostname target
@@ -340,9 +336,9 @@ does, so nothing else is done with it.
 - **`tests/fixtures/nmap_service_scan.xml` is hand-written**, not captured
   from a live scan. It claims nmap 7.94 (`version="7.94"`), while the lab pins
   7.93, and its recorded command line predates `-n` and `--host-timeout`. The
-  wrapper has been run against the pinned nmap 7.93 in the lab (RC-19,
-  `lab/RUNBOOK.md` Steps 8 and 9; the captures are in `lab/captures/`), and
-  the three `tests/fixtures/nmap_http_title_*.xml` fixtures (RC-44) are real
+  wrapper has been run against the pinned nmap 7.93 in the lab
+  (`lab/RUNBOOK.md` Steps 8 and 9; the captures are in `lab/captures/`), and
+  the three `tests/fixtures/nmap_http_title_*.xml` fixtures (redirect observation) are real
   nmap 7.93 captures with only the address (and port) rewritten.
 - Some options (`-A`, OS detection, SYN scans) need root or administrator rights;
   without them nmap falls back or fails, and the failure comes back as a tool

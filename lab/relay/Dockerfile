@@ -1,5 +1,3 @@
-# RC-47: Lab model relay: let the sealed scanner reach the planner model for lab runs
-#
 # The model relay: HAProxy (TCP mode) forwarding ONE upstream (local Ollama, or
 # api.anthropic.com:443 as raw passthrough filtered on the TLS SNI), behind an
 # iptables egress allowlist that the entrypoint applies before dropping every

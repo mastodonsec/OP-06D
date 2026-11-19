@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""RC-21 suite 3: the chokepoint architectural test.
+"""Adversarial suite 3: the chokepoint architectural test.
 
 Statically asserts (AST scan of ``src/op06d/*.py``) that NOTHING except
 ``tools.py`` imports the concrete ``Tool`` implementations

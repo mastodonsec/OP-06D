@@ -1,6 +1,4 @@
-# RC-47: Lab model relay: let the sealed scanner reach the planner model for lab runs
-#
-# The overlay's scanner: the RC-19 scanner image unchanged, plus the anthropic
+# The overlay's scanner: the base lab scanner image unchanged, plus the anthropic
 # SDK (op06d's llm-anthropic extra) so `op06d run --planner llm` can use the
 # hosted provider. Pins and hashes come from uv.lock via
 # scanner-llm-requirements.txt. Built only by the model-relay overlays; the base

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Tests for op06d.nuclei_method_audit (RC-36): the write-method
+"""Tests for op06d.nuclei_method_audit: the write-method
 detection shared by NucleiTool, the exclusion-list generator, and the
 CI-enforced audit test (the real "drift" guarantee) below.
 """

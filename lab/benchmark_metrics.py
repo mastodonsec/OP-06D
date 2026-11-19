@@ -1,7 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""RC-46: Planner model benchmark: score candidate models on lab runs
-
-Metrics for one finished ``op06d run``, read from the run's audit log and
+"""Planner model benchmark metrics for one finished ``op06d run``, read from the run's audit log and
 evidence store (never from stdout), plus the per-candidate aggregation and the
 JSON / CSV / Markdown writers used by lab/benchmark.py. No docker, no network,
 no subprocess: everything here is a function of files a run left behind.
@@ -48,7 +46,7 @@ redundant action
     different targets.
 
 finding identity (for coverage)
-    The RC-15 ``finding_id``: the first 16 hex characters of the SHA-256 of
+    The normalizer's ``finding_id``: the first 16 hex characters of the SHA-256 of
     ``(source_tool, asset IP or else hostname, port, category, stable key)``,
     where the key is the nuclei template id or the nmap finding title / script
     id. It contains no timestamp and no run id, and a hostname target is
@@ -81,7 +79,7 @@ from op06d.audit import EVENT_ACTION_EXECUTED, EVENT_ITERATION, EVENT_LOOP_END, 
 from op06d.evidence import EvidenceStore
 
 FINDING_IDENTITY = (
-    "RC-15 finding_id = sha256(source_tool, asset IP or else hostname, port, category, "
+    "finding_id = sha256(source_tool, asset IP or else hostname, port, category, "
     "nuclei template id | nmap finding title | nmap script id)[:16]"
 )
 BUDGET_TERMINATIONS = frozenset({"max_tokens", "max_cost"})
@@ -424,7 +422,7 @@ def render_markdown(results: dict[str, Any]) -> str:
     lines = [
         f"# Planner model benchmark: {_md(results.get('benchmark'))}",
         "",
-        "RC-46: Planner model benchmark: score candidate models on lab runs",
+        "Scores candidate planner models on lab runs.",
         "",
         f"- Benchmark id: `{results.get('bench_id')}` ({results.get('status')})",
         f"- Started / finished (UTC): {results.get('started_at')} / {results.get('finished_at')}",

@@ -9,7 +9,7 @@ def scope(inn, out=()):
 
 
 def empty_scope(out=()):
-    # RC-6 forbids empty in_scope; model_construct bypasses validation to
+    # The engagement schema forbids empty in_scope; model_construct bypasses validation to
     # prove the gate itself fails closed.
     return Scope.model_construct(in_scope=[], out_of_scope=list(out))
 
@@ -149,7 +149,7 @@ def test_hostname_resolving_to_out_of_scope_ip_denied():
 
 
 def test_multi_ip_host_with_one_out_of_scope_address_denies_the_whole_action():
-    # RC-23 design decision: a name pointing partly out of scope is
+    # Resolve-once design decision: a name pointing partly out of scope is
     # untrustworthy as a whole - no "scan the in-scope subset" fallback.
     d = run("app.acme.com", resolver=fixed("198.51.100.7", "203.0.113.9"))
     assert not d.allowed and "203.0.113.9" in d.reason

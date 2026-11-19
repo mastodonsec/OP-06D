@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Tests for RC-18 (op06d.report_render): HTML rendering (self-contained,
+"""Tests for the report renderer (op06d.report_render): HTML rendering (self-contained,
 deterministic, print/pagination CSS contract, redaction) and the gated PDF
 path (skips cleanly with no backend installed)."""
 
@@ -161,7 +161,7 @@ def test_redacted_param_never_reaches_the_html(tmp_path):
     assert "api_token" not in doc
 
 
-# --- HTML-escaping of hostile content (defense in depth beyond RC-12 sanitization) --
+# --- HTML-escaping of hostile content (defense in depth beyond output sanitization) --
 
 def test_html_special_characters_in_a_finding_title_are_escaped(tmp_path):
     raw = {

@@ -1,7 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""RC-24: Lab runbook polish + validation harness
-
-Docker-free tests of lab/validation_harness.py's pure decision logic: an
+"""Docker-free tests of lab/validation_harness.py's pure decision logic: an
 isolation failure short-circuits the whole run, a NEEDS-REVIEW step never
 turns into a clean PASS, a findings step never auto-passes, and the run
 skips (exit 3) without OP06D_LAB=1."""
@@ -61,7 +59,7 @@ def test_isolation_abort_skips_every_other_step():
     assert all(r.status == vh.SKIP for r in rest)
 
 
-# -- RC-60: Lab: run on Linux (Kali) and macOS, not only Windows ---------------
+# -- Linux and macOS hosts ------------------------------------------------------
 # Step 4 is lab/check_isolation.py's run_checks, imported: the manual gate and
 # the harness cannot drift.
 
@@ -294,7 +292,7 @@ def test_e2e_pass_and_each_failure_mode():
 
 
 def test_scans_use_the_shared_baseline_asserts():
-    """Step 8 reuses lab_asserts (shared with test_lab_rc20.py): a summary
+    """Step 8 reuses lab_asserts (shared with test_lab_repeatability.py): a summary
     missing a baseline row fails, it is never re-implemented here."""
     summary = {"runs": [], "audit_entries": 3, "dns_pinned": {}, "action_executed": []}
     r = vh.classify_scans(summary, BASELINE)

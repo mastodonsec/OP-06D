@@ -152,7 +152,7 @@ def test_blank_authorization_fields(field):
         parse(d)
 
 
-# --- engagement id (RC-22) -------------------------------------------------
+# --- engagement id --------------------------------------------------------
 # The id becomes "<id>.audit.jsonl", so the schema is the authoritative check;
 # AuditLog re-checks it with the same shared rule as a second line of defense.
 
@@ -206,7 +206,7 @@ def test_engagement_id_uses_fullmatch_not_dollar():
 
 @pytest.mark.parametrize("eid", BAD_IDS + GOOD_IDS + ["acme\n", "acme\r\n", " acme"])
 def test_schema_and_audit_layers_agree(eid, tmp_path):
-    """The RC-6 schema and the RC-11 AuditLog must accept exactly the same ids
+    """The engagement schema and the AuditLog must accept exactly the same ids
     (for the value the schema stores, i.e. after outer-whitespace stripping)."""
     from op06d.audit import AuditError, AuditLog
 

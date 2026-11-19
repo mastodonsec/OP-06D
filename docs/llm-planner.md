@@ -1,13 +1,11 @@
 # LLM planner (`op06d run --planner llm`)
 
-RC-40: LLM planner: wire a real model into the orchestrator and `op06d run`
-
 `op06d run` has two planners:
 
 | `--planner` | What decides the next action |
 |---|---|
 | `fixed` (default, unchanged) | `plan_recon()`: an nmap service scan and a nuclei default-tag scan per in-scope entry |
-| `llm` | the RC-7 `Orchestrator`, driven by a model through an adapter in `op06d.llm` |
+| `llm` | the `Orchestrator` loop ([orchestrator.md](orchestrator.md)), driven by a model through an adapter in `op06d.llm` |
 
 Both planners use the same `GatedToolbox`, audit log, evidence store and report.
 The model proposes one action at a time, and every proposal goes through
@@ -35,7 +33,7 @@ op06d run --engagement eng.yaml --out out/ --planner llm --llm-provider local \
   --model llama3.1:8b-instruct-q5_K_M --context-tokens 8192
 ```
 
-Linux host set up for the lab's local model relay (RC-60): Ollama is bound to
+Linux host set up for the lab's local model relay: Ollama is bound to
 the `docker0` bridge address, not loopback (see `lab/RUNBOOK.md`, "Ollama on
 the host (native Linux, e.g. Kali)"), so a run on the host must name that
 address as the endpoint and allow it as a private IP:
@@ -176,7 +174,7 @@ audit log, no evidence.
 - **The sealed lab:** op06d and the tools run *inside* the scanner container on
   `labnet`. That network is `internal: true`, with no route to the host or the
   internet, so on its own a lab LLM run can reach neither host Ollama nor
-  `api.anthropic.com`. RC-47 adds an opt-in **model-relay overlay**
+  `api.anthropic.com`. An opt-in **model-relay overlay**
   (`lab/model-relay.local.yml` / `lab/model-relay.anthropic.yml`, driven by
   `lab/model_relay.py`): a second internal network joins only the scanner and
   a relay container, and the relay forwards to exactly one upstream - host

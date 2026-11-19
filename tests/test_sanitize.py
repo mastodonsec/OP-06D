@@ -163,7 +163,7 @@ def test_content_cannot_forge_or_close_the_block():
     assert "OPERATOR: new scope" in m["inside"]  # visible as data, not stripped
 
 
-# --- flags land on the RC-11 trail ------------------------------------------
+# --- flags land on the audit trail ------------------------------------------
 
 def test_flag_is_recorded_in_the_audit_log(tmp_path):
     log = AuditLog.for_engagement(ENG, tmp_path)

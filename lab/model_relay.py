@@ -1,7 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""RC-47: Lab model relay: let the sealed scanner reach the planner model for lab runs
-
-Host-side launcher for the opt-in model-relay overlays. Run from the
+"""Host-side launcher for the opt-in model-relay overlays. Run from the
 repository root with the project venv (it imports op06d from src/):
 
     uv run python lab/model_relay.py build  <local|anthropic>
@@ -31,7 +29,7 @@ reads its value from this process's environment.
 
 The docker runner is injectable, so tests/test_lab_model_relay.py exercises
 the policy and command construction without docker;
-tests/integration/test_lab_rc47.py drives the real thing (``-m lab``).
+tests/integration/test_lab_relay_planner_run.py drives the real thing (``-m lab``).
 """
 
 from __future__ import annotations
@@ -72,10 +70,9 @@ RELAY_IP = "172.31.78.2"
 RELAY_PORT = {"local": 11434, "anthropic": 443}
 RELAY_ALLOWED_CAPS = frozenset({"CAP_NET_ADMIN", "CAP_NET_RAW", "CAP_SETUID", "CAP_SETGID", "CAP_SETPCAP"})
 EXPECTED_EXTRA_HOSTS = {"local": [], "anthropic": [f"api.anthropic.com:{RELAY_IP}"]}
-# RC-60: Lab: run on Linux (Kali) and macOS, not only Windows
+# On native Linux the relay reaches host Ollama through host-gateway (the docker0 address).
 EXPECTED_RELAY_EXTRA_HOSTS = {"local": ["host.docker.internal:host-gateway"], "anthropic": []}
 INHIBIT_IPV4 = "com.docker.network.bridge.inhibit_ipv4"
-# RC-44: Recon: report redirects to hostnames outside scope instead of going quiet
 # The redirector is a labnet member like the targets; the planner baseline does not scan it,
 # so wait_for_targets does not wait for it.
 TARGET_SERVICES = ("juice-shop", "dvwa", "redirect")
@@ -83,7 +80,7 @@ TARGET_READY = {"juice-shop": "http://juice-shop.lab:3000/", "dvwa": "http://dvw
 READY_TIMEOUT = 180.0
 READY_INTERVAL = 3.0
 
-CAPTURE_SUBDIR = "_rc47_ephemeral"
+CAPTURE_SUBDIR = "_relay_ephemeral"
 HOST_OLLAMA = "http://127.0.0.1:11434"
 OLLAMA_DEFAULT_PORT = 11434
 KEY_ENV = "ANTHROPIC_API_KEY"
@@ -611,7 +608,7 @@ def _print_check(report: CheckReport) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    p = argparse.ArgumentParser(prog="model_relay.py", description="RC-47 opt-in model relay for lab LLM runs")
+    p = argparse.ArgumentParser(prog="model_relay.py", description="Opt-in model relay for lab LLM runs")
     sub = p.add_subparsers(dest="cmd", required=True)
     for name in ("build", "up", "check", "run"):
         sp = sub.add_parser(name)

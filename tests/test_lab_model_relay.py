@@ -1,11 +1,9 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""RC-47: Lab model relay: let the sealed scanner reach the planner model for lab runs
-
-Docker-free checks of the opt-in model-relay overlays and their launcher
+"""Docker-free checks of the opt-in model-relay overlays and their launcher
 (lab/model_relay.py): overlay structure and the one-upstream rule, the
 engagement-policy refusal, drift guards against the base lab, and a scan of
 lab/ for API-key material. The live overlay is exercised by
-tests/integration/test_lab_rc47.py (-m lab).
+tests/integration/test_lab_relay_planner_run.py (-m lab).
 """
 
 from __future__ import annotations
@@ -398,7 +396,7 @@ def test_every_text_mode_subprocess_call_in_the_lab_and_its_integration_tests_de
 
     seen = 0
     integration = ROOT / "tests" / "integration"
-    assert len(list(integration.glob("test_lab_rc*.py"))) >= 5
+    assert len(list(integration.glob("test_lab_*.py"))) >= 5
     for path in sorted([*LAB.glob("*.py"), *integration.glob("*.py")]):
         for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
             if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
@@ -415,7 +413,7 @@ def test_every_text_mode_subprocess_call_in_the_lab_and_its_integration_tests_de
             assert isinstance(kw.get("encoding"), ast.Constant) and kw["encoding"].value == "utf-8", where
             assert isinstance(kw.get("errors"), ast.Constant) and kw["errors"].value == "replace", where
     # model_relay.default_runner, both branches of validation_harness._run, and the
-    # compose runners of the four older integration tests (rc20 has two calls)
+    # compose runners of the four older integration tests (the repeatability test has two calls)
     assert seen >= 8
 
 
@@ -605,7 +603,7 @@ def test_check_is_inconclusive_when_the_overlay_is_not_up():
 
 
 def test_check_fails_when_the_redirector_joins_the_relay_network():
-    """RC-44: Recon: report redirects to hostnames outside scope instead of going quiet"""
+    """The redirect target must stay on labnet only."""
     def mutate(t):
         t["containers"]["redirect"]["NetworkSettings"]["Networks"][relay.NET_RELAY] = {"IPAddress": "172.31.78.12"}
         t["networks"][relay.NET_RELAY]["Containers"]["id-redirect"] = {"Name": NAMES["redirect"]}
@@ -615,12 +613,12 @@ def test_check_fails_when_the_redirector_joins_the_relay_network():
 
 
 def test_check_fails_when_the_redirector_is_missing_from_labnet():
-    """RC-44: Recon: report redirects to hostnames outside scope instead of going quiet"""
+    """The redirect target must be on labnet."""
     report = _broken("local", lambda t: t["networks"][relay.NET_LAB]["Containers"].pop("id-redirect"))
     assert report.exit_code == 1
 
 
-# --- RC-60: Lab: run on Linux (Kali) and macOS, not only Windows ---------------------------
+# --- Linux and macOS hosts -----------------------------------------------------------------
 
 HOST_GATEWAY = "host.docker.internal:host-gateway"
 

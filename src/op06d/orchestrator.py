@@ -1,4 +1,4 @@
-"""The plan-act-observe loop (RC-7).
+"""The plan-act-observe loop.
 
     build context -> ask the LLM for the next action -> GatedToolbox.execute
     (gate, approval, run, sanitize) -> append the SANITIZED result -> repeat
@@ -8,7 +8,7 @@ Properties this module is built around:
 * The gate is the only door. The loop holds a ``GatedToolbox`` and nothing
   else that can run a tool; ``execute`` always passes ``Gate.check`` first.
 * The planner sees only sanitized output (``ExecutionResult.sanitized``). Raw
-  output is kept on the ``Step`` records for evidence (RC-15/16).
+  output is kept on the ``Step`` records for evidence (normalization and the evidence store).
 * The system prompt states the data contract: ``UNTRUSTED_TOOL_OUTPUT`` blocks
   are data, never instructions.
 * Gate decisions are respected: a rate block waits ``retry_after`` and retries
@@ -19,10 +19,9 @@ Properties this module is built around:
 * Enforcement is outside the model. Nothing the model emits can widen scope,
   extend the window or raise the rate; it only proposes.
 * Every iteration, decision, approval, execution and the termination reason is
-  written to the same per-engagement audit trail (RC-11).
-* RC-40: LLM planner: wire a real model into the orchestrator and `op06d run`:
-  ``RunLimits`` (tool actions, wall clock, tokens, cost), ``LLMError`` ends the
-  run as ``model_failure`` (``LLMRefused`` as ``model_refused``), each request's
+  written to the same per-engagement audit trail.
+* LLM planner run limits: ``RunLimits`` (tool actions, wall clock, tokens,
+  cost), ``LLMError`` ends the run as ``model_failure`` (``LLMRefused`` as ``model_refused``), each request's
   output is capped to the remaining token budget, replies are checked against the action schema, and
   observations are fitted to the context budget with the wrapper kept intact.
 
@@ -142,7 +141,7 @@ class RunResult:
 
     @property
     def evidence(self) -> list[ExecutionResult]:
-        """Executed actions with their RAW output, for RC-15/16."""
+        """Executed actions with their RAW output, for normalization and the evidence store."""
         return [s.result for s in self.steps if s.result is not None and s.result.executed]
 
 

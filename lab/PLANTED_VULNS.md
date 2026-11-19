@@ -1,17 +1,17 @@
-# Planted vulnerabilities: the RC-20 benchmark baseline
+# Planted vulnerabilities: the lab repeatability baseline
 
 What a correct OP-06D run against the lab should (and should not) find.
 
-> **Naming note (RC-37):** everything under `lab/captures/` was recorded under the project's previous name, before the RC-37 rename to OP-06D, and may contain that name; it is frozen and intentionally not updated.
+> **Naming note:** everything under `lab/captures/` was recorded under the project's previous name, before the rename to OP-06D, and may contain that name; it is frozen and intentionally not updated.
 
-> **Prose edit (2026-11-18, RC-66):** the project name in this file's prose was updated to OP-06D and a reference to an unpublished file was removed. No table, no text in Sections 5 and 6 and no baseline value changed.
+> **Prose edits (2026-11-18):** the project name in this file's prose was updated to OP-06D, a reference to an unpublished file was removed, and ticket references were removed from the title and these notes. In Section 4 (rows G-8, G-9) and Section 6, ticket keys were reworded as plain words; nothing else in those sections, and nothing in Section 5 or any baseline value, changed.
 
 > **Status: FROZEN (2026-11-05).** This list was originally written from the
 > public documentation of OWASP Juice Shop (20.3.0) and DVWA, **before** any run.
 > It has now been reconciled against the **first real capture set** (RUNBOOK
 > steps 8–13, operator thomas@mastodonsec.com, nmap 7.93 / nuclei v3.11.1 /
 > templates v10.5.1). The `Observed` column and Section 5/6 record what the tools
-> actually reported. This is the RC-20 repeatability baseline: a re-run with the
+> actually reported. This is the lab repeatability baseline: a re-run with the
 > same pins must reproduce the same open ports and the same set of matched
 > template ids (timestamps and ordering aside).
 
@@ -109,8 +109,8 @@ crypto issues, unvalidated redirects. None are MVP goals.)
 | G-5 | contact an out-of-band (interactsh) server | `-no-interactsh`; none configured | **HELD** — every nuclei capture shows `out_of_band: off`. |
 | G-6 | follow a redirect to another host | `-disable-redirects` + off-target check | **HELD** — every nuclei capture shows `off_target: 0`. |
 | G-7 | scan outside the window | gate (window) | **HELD** — all runs inside the authorized window. |
-| G-8 | exceed the rate cap | `--max-rate` / `-rate-limit` from `max_rps` (50) | **HELD** — rate propagated (RC-10 criterion). |
-| G-9 | leak a secret parameter into the audit log | toolbox redaction | **HELD** — no secrets present in this engagement; redaction path tested in RC-11/12. |
+| G-8 | exceed the rate cap | `--max-rate` / `-rate-limit` from `max_rps` (50) | **HELD** — rate propagated (the rate-cap criterion). |
+| G-9 | leak a secret parameter into the audit log | toolbox redaction | **HELD** — no secrets present in this engagement; redaction path tested with the audit log and output sanitization. |
 
 ## 5. Baseline recorded from the first real run (FROZEN)
 
@@ -134,12 +134,12 @@ crypto issues, unvalidated redirects. None are MVP goals.)
 - **C-1 — nmap service ID on non-standard ports is unreliable.** Port 3000 was
   reported open but labeled `ppp` with no HTTP fingerprint; the real service
   identity (Juice Shop, Swagger) came only from nuclei. The report/normalization
-  layer (RC-15) must treat nmap's service name on non-standard ports as low
+  layer (`op06d.normalize`) must treat nmap's service name on non-standard ports as low
   confidence and corroborate with nuclei before asserting a service.
-- **C-2 — RESOLVED (RC-26, 2026-11-07): root cause identified, coverage limit
+- **C-2 — RESOLVED (nuclei template-coverage investigation, 2026-11-07): root cause identified, coverage limit
   confirmed intentional, not fixed by widening the selection.** Both nuclei
   runs listed `exposure`/`misconfig`/`config` in `selection.tags`, yet no
-  CORS / missing-security-headers / metrics / `/ftp` findings surfaced. RC-26
+  CORS / missing-security-headers / metrics / `/ftp` findings surfaced. The template-coverage investigation
   added `summary.templates_loaded` instrumentation (`-stats -stats-json`) and
   used it, plus a live lab investigation against the pinned v10.5.1 template
   set, to resolve the blind spot:
@@ -170,12 +170,12 @@ crypto issues, unvalidated redirects. None are MVP goals.)
     `template_ids` (bypasses the default tag selection entirely, no change
     to default behavior).
 - **C-3 — `aggressive` degrades, it does not fail, when unprivileged** (RUNBOOK
-  Step 12 / RC-25). Not a Section-row change; noted for the nmap privilege
+  Step 12 / the nmap privilege-degradation check). Not a Section-row change; noted for the nmap privilege
   baseline.
 - **C-4 — DVWA baselined uninitialized.** D-1/D-3/D-4 absence is explained by the
   app not having run `/setup.php`. A future run that completes RUNBOOK 3b is a
   distinct baseline.
 
-For RC-20 repeatability, a second run with the same pins must reproduce the same
+For the lab repeatability baseline, a second run with the same pins must reproduce the same
 open ports (dvwa 80, juice-shop 3000) and the same set of matched template ids
 listed in Section 5.

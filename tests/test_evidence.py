@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Tests for RC-16 (op06d.evidence): round-trip reconstruction, redaction,
+"""Tests for the evidence store (op06d.evidence): round-trip reconstruction, redaction,
 concurrency, schema idempotency, and foreign-key cascade."""
 
 from __future__ import annotations
@@ -102,9 +102,9 @@ def test_reconstruct_run_round_trips_allowed_denied_and_declined_actions(tmp_pat
     assert len(rebuilt.issues) == 0
 
 
-# --- RC-15 findings recorded + queried by severity/category -------------------
+# --- normalized findings recorded + queried by severity/category -------------------
 
-def test_findings_from_real_rc15_output_are_queryable_by_severity_and_category(tmp_path):
+def test_findings_from_real_normalized_output_are_queryable_by_severity_and_category(tmp_path):
     with EvidenceStore.open(tmp_path / "evidence.db") as store:
         run_id = store.start_run(ENG)
         result = _executed_result("nuclei", "juice-shop.lab", resolved_ips=("172.31.77.10",))

@@ -1,8 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""RC-46: Planner model benchmark: score candidate models on lab runs
-
-Opt-in harness: runs ``op06d run --planner llm`` N times per candidate model
-in the sealed lab, through the RC-47 model relay, and scores each run from its
+"""Planner model benchmark. Opt-in harness: runs ``op06d run --planner llm`` N times per candidate model
+in the sealed lab, through the lab model relay, and scores each run from its
 audit log and evidence store (lab/benchmark_metrics.py). Run from the
 repository root with the project venv:
 
@@ -31,7 +29,7 @@ What ``run`` does, in order:
   the results or cut the teardown short.
 
 Run output (reports, evidence stores, audit logs) goes under
-``lab/captures/_rc46_benchmark/<id>/``; results (``results.json``,
+``lab/captures/_benchmark/<id>/``; results (``results.json``,
 ``results.csv``, ``summary.md``) go under ``benchmark-results/<id>/``. Both are
 git-ignored. The results directory is scanned for API-key material every time
 it is written.
@@ -77,8 +75,8 @@ import model_relay as relay  # noqa: E402
 from op06d.llm import ANTHROPIC_PRICES_PER_MTOK, DEFAULT_ANTHROPIC_MODEL  # noqa: E402
 from op06d.redaction import scrub_text  # noqa: E402
 
-TICKET = "RC-46: Planner model benchmark: score candidate models on lab runs"
-CAPTURE_SUBDIR = "_rc46_benchmark"
+DESCRIPTION = "Planner model benchmark: score candidate models on lab runs"
+CAPTURE_SUBDIR = "_benchmark"
 DEFAULT_RESULTS_DIR = ROOT / "benchmark-results"
 PROVIDER_ORDER = ("local", "anthropic")
 DEFAULT_ENGAGEMENTS = {"local": "lab/engagement.yaml", "anthropic": "lab/engagement-llm-hosted.yaml"}
@@ -93,7 +91,7 @@ BASELINE_NAME = "baseline-fixed"
 # model sits is read while the run executes, this often.
 PLACEMENT_POLL_SECONDS = 15.0
 PLACEMENT_JOIN_SECONDS = 2.0
-POLLER_THREAD_NAME = "rc46-placement-poller"
+POLLER_THREAD_NAME = "benchmark-placement-poller"
 
 _TOP_KEYS = frozenset({"benchmark", "limits", "engagements", "hosted_budget", "candidates"})
 _CANDIDATE_KEYS = frozenset({
@@ -317,7 +315,7 @@ def select(config: BenchmarkConfig, *, providers: Sequence[str] | None = None,
 class RunRequest:
     mode: str  # which stack the run executes in
     engagement: str
-    out_rel: str  # under lab/captures/_rc46_benchmark/
+    out_rel: str  # under lab/captures/_benchmark/
     planner: str  # "fixed" or "llm"
     model: str | None = None
     context_tokens: int | None = None
@@ -366,7 +364,7 @@ def parse_nvidia_smi(text: str) -> list[dict[str, Any]]:
 
 
 def op06d_argv(request: RunRequest, engagement_in_scanner: str, out_in_scanner: str) -> list[str]:
-    """The ``op06d run`` command for one benchmark run, built on the RC-47
+    """The ``op06d run`` command for one benchmark run, built on the model-relay
     acceptance command so the tool pins cannot drift from it."""
     limits = {**relay.ACCEPTANCE_LIMITS, **request.limits}
     llm_mode = request.mode
@@ -658,7 +656,7 @@ def run_benchmark(config: BenchmarkConfig, candidates: Sequence[Candidate], laun
     budget = HostedBudget(config.budget_max_tokens, config.budget_max_cost_usd)
     any_hosted = any(c.hosted for c in candidates)
     results: dict[str, Any] = {
-        "ticket": TICKET, "benchmark": config.name, "bench_id": bench_id, "status": "aborted", "error": None,
+        "benchmark": config.name, "bench_id": bench_id, "status": "aborted", "error": None,
         "started_at": _utc().isoformat(timespec="seconds"), "finished_at": None,
         "config": config.as_dict(), "selected": [c.name for c in candidates],
         "finding_identity": bm.FINDING_IDENTITY, "host": {}, "baseline": None, "runs": [], "summary": [],
@@ -794,7 +792,7 @@ def run_benchmark(config: BenchmarkConfig, candidates: Sequence[Candidate], laun
 
 
 def scan_for_key_material(results_dir: pathlib.Path, secret: str | None) -> list[str]:
-    """The RC-47 leak check, on the results directory: the key-shape pattern,
+    """The model-relay leak check, on the results directory: the key-shape pattern,
     and the key itself when there is one long enough to search for. A file
     that matches is deleted and named."""
     if secret is not None and len(secret) < relay.LEAK_SCAN_MIN_SECRET_CHARS:
@@ -822,7 +820,7 @@ def _print_plan(config: BenchmarkConfig, candidates: Sequence[Candidate]) -> Non
 
 
 def main(argv: list[str] | None = None, *, launcher: Launcher | None = None) -> int:
-    p = argparse.ArgumentParser(prog="benchmark.py", description=TICKET)
+    p = argparse.ArgumentParser(prog="benchmark.py", description=DESCRIPTION)
     sub = p.add_subparsers(dest="cmd", required=True)
     for name in ("validate", "models", "run"):
         sp = sub.add_parser(name)

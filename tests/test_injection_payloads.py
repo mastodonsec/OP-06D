@@ -1,9 +1,9 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""RC-21 suite 2: injection via tool output.
+"""Adversarial suite 2: injection via tool output.
 
 Two layers, proven separately:
 
-1. The RC-12 sanitizer wraps every payload in an ``UNTRUSTED_TOOL_OUTPUT``
+1. The output sanitizer wraps every payload in an ``UNTRUSTED_TOOL_OUTPUT``
    block, regardless of language, encoding or obfuscation - defense in
    depth.
 2. CRUCIALLY: even when the planner OBEYS the injected instruction (i.e.

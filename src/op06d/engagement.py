@@ -1,4 +1,4 @@
-"""Engagement-file schema and loader (RC-6).
+"""Engagement-file schema and loader.
 
 The engagement file is the safety boundary: the guardrail gate reads scope,
 window and intensity from it. It is therefore validated strictly on load and
@@ -35,7 +35,7 @@ _MIN_PREFIX_V6 = 32
 
 NonEmptyStr = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 
-# Engagement ID (RC-22): the single source of truth, shared with the RC-11 audit
+# Engagement ID: the single source of truth, shared with the audit
 # log (which uses it as "<id>.audit.jsonl"), so the two layers cannot drift.
 # - 1-128 chars of [A-Za-z0-9._-], first char a letter or digit: no path
 #   separators, no "."/".." or dotfiles, no leading "-" (option-looking), no
@@ -139,7 +139,7 @@ DEFAULT_ALLOWED_PROVIDER = "local"
 
 
 class PlannerPolicy(_Frozen):
-    """RC-40: LLM planner: wire a real model into the orchestrator and `op06d run`"""
+    """Which LLM providers may plan this engagement (``op06d run --planner llm``)."""
 
     allowed_providers: list[Literal["anthropic", "local"]] = Field(min_length=1)
 

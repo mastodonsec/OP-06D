@@ -1,20 +1,20 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""RC-15: normalize nmap and nuclei output into one findings schema.
+"""Normalize nmap and nuclei output into one findings schema.
 
 Input is the already-STRUCTURED ``ToolOutput.findings`` dict each wrapper
 produces (``parse_nmap_xml`` / ``parse_nuclei_jsonl`` output), not raw
-XML/JSONL. This module is pure: no I/O, no evidence-store coupling (RC-16
+XML/JSONL. This module is pure: no I/O, no evidence-store coupling (the store
 consumes the ``Finding`` model; it isn't built here), and it never imports
 the concrete tool modules (``nmap_tool``/``nuclei_tool``) - only ``tools.py``
-does that (RC-21's import-boundary test covers this).
+does that (the import-boundary test covers this).
 
 Design rules, each load-bearing:
 
 * **Deterministic ``finding_id``.** Hashes ``(source_tool, asset.ip or
   asset.hostname, asset.port, category, a stable key)`` - never a timestamp
   or anything else that varies run to run - so re-running a scan or
-  deduplicating across runs is possible (RC-20's repeatability check and
-  RC-16's evidence store both depend on this).
+  deduplicating across runs is possible (the lab repeatability check and
+  the evidence store both depend on this).
 * **No cross-tool reconciliation.** nmap and nuclei disagreeing about a
   service's identity (PLANTED_VULNS correction C-1: nmap calls port 3000
   `ppp`, nuclei says `http`) is real and reported as-is, as two findings.
@@ -182,7 +182,7 @@ def _nmap_script_finding(script: dict[str, Any], asset: Asset, provenance: Prove
     )
 
 
-# RC-44: Recon: report redirects to hostnames outside scope instead of going quiet
+# Redirect observation: an HTTP redirect to another host is reported, never followed.
 
 HostInScope = Callable[[str], bool]
 
@@ -318,7 +318,7 @@ def normalize_nmap(
         issues.append(_malformed("nmap_warning", str(warning), warning))
 
     if findings.get("degraded"):
-        # RC-25: a reduced-fidelity scan (e.g. OS detection skipped running
+        # A reduced-fidelity scan (e.g. OS detection skipped running
         # unprivileged) must not be invisible just because status stayed
         # "ok" - this is what turns it into the report's Limitations section.
         issues.append(_malformed(
@@ -480,7 +480,7 @@ def normalize_execution_result(
     result: object, *, engagement: str, observed_at: str | None = None, scope: object | None = None,
 ) -> NormalizedResult:
     """Convenience: build a ``NormalizedResult`` straight from a
-    ``op06d.tools.ExecutionResult`` (RC-7/RC-8 produce these). Takes
+    ``op06d.tools.ExecutionResult`` (the gated toolbox produces these). Takes
     ``result`` as ``object`` rather than importing ``ExecutionResult`` by
     name to keep this module's import surface minimal; any object with the
     same shape (duck-typed) works, which is what the tests exercise."""
