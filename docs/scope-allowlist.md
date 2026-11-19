@@ -1,7 +1,7 @@
 # Scope allowlist enforcement (RC-9)
 
 Module: [`src/op06d/scope.py`](../src/op06d/scope.py) ·
-Audit stub: [`src/op06d/audit.py`](../src/op06d/audit.py) ·
+Audit log: [`src/op06d/audit.py`](../src/op06d/audit.py) ·
 Tests: [`tests/test_scope.py`](../tests/test_scope.py)
 
 ## Purpose
@@ -93,24 +93,27 @@ Ambiguous targets are denied, for example `127.1`, `2130706433`, `0x7f.0.0.1`,
 ## Usage
 
 ```python
+from op06d.audit import AuditLog
 from op06d.engagement import load_engagement
 from op06d.scope import check_scope, is_in_scope
 
 eng = load_engagement("examples/engagement.yaml")
+log = AuditLog.for_engagement(eng, "logs/")
+audit = log.sink(tool="demo")                # required: every decision is recorded
 
-is_in_scope("203.0.113.5", eng.scope)        # True
-is_in_scope("203.0.113.0/30", eng.scope)     # True  (wholly inside 203.0.113.0/28)
-is_in_scope("billing.acme.com", eng.scope)   # False (deny wins)
-is_in_scope(None, eng.scope)                 # False (default deny)
+is_in_scope("203.0.113.5", eng.scope, audit=audit)        # True
+is_in_scope("203.0.113.0/30", eng.scope, audit=audit)     # True  (wholly inside 203.0.113.0/28)
+is_in_scope("billing.acme.com", eng.scope, audit=audit)   # False (deny wins)
+is_in_scope(None, eng.scope, audit=audit)                 # False (default deny)
 
-d = check_scope("app.acme.com", eng.scope)   # resolves via the OS resolver
+d = check_scope("app.acme.com", eng.scope, audit=audit)   # resolves via the OS resolver
 print(d.allowed, d.reason, d.resolved_ips)
 ```
 
 Inject a resolver in tests or offline use:
 
 ```python
-check_scope("app.acme.com", eng.scope, resolver=lambda host: ["198.51.100.7"])
+check_scope("app.acme.com", eng.scope, resolver=lambda host: ["198.51.100.7"], audit=audit)
 ```
 
 Run the tests:

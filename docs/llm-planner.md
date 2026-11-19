@@ -35,6 +35,17 @@ op06d run --engagement eng.yaml --out out/ --planner llm --llm-provider local \
   --model llama3.1:8b-instruct-q5_K_M --context-tokens 8192
 ```
 
+Linux host set up for the lab's local model relay (RC-60): Ollama is bound to
+the `docker0` bridge address, not loopback (see `lab/RUNBOOK.md`, "Ollama on
+the host (native Linux, e.g. Kali)"), so a run on the host must name that
+address as the endpoint and allow it as a private IP:
+
+```sh
+ip -4 -br addr show docker0              # the address, normally 172.17.0.1
+op06d run --engagement eng.yaml --out out/ --planner llm --llm-provider local \
+  --llm-endpoint http://172.17.0.1:11434 --llm-allow-private 172.17.0.1
+```
+
 Other local runtimes speak the OpenAI-compatible chat API:
 
 ```sh
@@ -129,7 +140,8 @@ audit log, no evidence.
   `0.0.0.0`. The adapter ignores proxy environment variables and does not
   follow redirects.
 - **Data stays on the host:** Ollama runs on the host and listens on
-  loopback. The orchestrator runs on the same host and reaches the tools only
+  loopback (on a Linux host set up for the lab relay, on the `docker0`
+  bridge address instead; see [Quick start](#quick-start)). The orchestrator runs on the same host and reaches the tools only
   through the gated toolbox. Findings never leave the machine.
 - **Constrained output:** Ollama gets the action JSON schema as `format`,
   llama.cpp gets an equivalent GBNF grammar, and OpenAI-compatible servers get

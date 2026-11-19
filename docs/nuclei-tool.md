@@ -363,16 +363,20 @@ uv run --extra dev pytest tests/test_nuclei_tool.py
   scan if nuclei's `-stats-json` never ticks before the scan ends and the
   plain-text fallback line also wasn't printed (see RC-26 above) - treat a
   `coverage_warning` as "look closer", not necessarily as "nothing ran."
-- **The JSONL fixture is hand-written** in nuclei v3 format, not captured from a
-  live run. Replace it with a real capture in the lab (RC-19).
-- **Flags are unverified against a real binary.** The wrapper passes the nuclei
-  v3 long flag names (`-disable-redirects`, `-no-interactsh`,
-  `-interactsh-server`, `-exclude-tags`, `-disable-update-check`, `-rate-limit`,
-  `-c`, `-bs`). Tests prove they are passed, not that your pinned version
-  accepts and honors them. Verify in the lab, including that redirects really
-  stay off and that no traffic reaches a public interactsh server.
-- A user-level nuclei config file could still influence nuclei. Run it under a
-  dedicated account or with an empty config; `config_path` passes `-config`.
+- **`tests/fixtures/nuclei_findings.jsonl` is hand-written** in nuclei v3
+  format, not captured from a live run. Real nuclei v3.11.1 output from the
+  RC-19 lab is in `lab/captures/nuclei_*.jsonl` (`lab/RUNBOOK.md` Step 8), and
+  Step 9 checks the parser against it.
+- **Flags were verified against the pinned binary** (nuclei v3.11.1) in the
+  RC-19 lab: `lab/RUNBOOK.md` Step 7 prints the argv the wrapper builds and
+  cross-checks each flag against `nuclei -h`, Step 8 runs them in real scans,
+  and Step 11 confirmed that redirects stay off and that a hostile ambient
+  config is ignored (RC-35). Step 11's out-of-band sub-check is still
+  INCONCLUSIVE (RC-38: no local interactsh server that nuclei can register
+  with), so `-no-interactsh` is shown to be accepted but a blocked callback is
+  not yet demonstrated. The lab has no egress, so no public interactsh server
+  can be reached from it. Re-run Steps 7, 8 and 11 after any change to the
+  nuclei pin.
 - The curated set is as safe as its contents: a template can still do more than
   its tags suggest. Review what goes in the pinned directory; the tag mapping is
   a classification, not a sandbox.

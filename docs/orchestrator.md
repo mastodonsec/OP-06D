@@ -34,10 +34,10 @@ traceability, tests with a stub LLM.
 | Concern | Ticket |
 |---|---|
 | The interactive CLI approval prompt (implements `ApprovalHook`) | RC-8 |
-| Real nmap / nuclei MCP wrappers | RC-13, RC-14 |
-| A real LLM client | RC-40 (see [llm-planner.md](llm-planner.md)) |
+| Real nmap / nuclei tool wrappers | RC-13, RC-14 |
+| The production LLM adapters (hosted and local) | RC-40 (see [llm-planner.md](llm-planner.md)) |
 | Normalizing raw output into findings; evidence store | RC-15, RC-16 |
-| Live-model injection testing | RC-21 |
+| Live-model injection testing (opt-in `tests/test_live_model_gate.py`) | RC-21, RC-47 (see [Known limits](#known-limits)) |
 
 ## Design properties
 
@@ -181,12 +181,13 @@ from op06d.audit import AuditLog
 from op06d.engagement import load_engagement
 from op06d.gate import Gate
 from op06d.orchestrator import Orchestrator
-from op06d.tools import GatedToolbox, Risk
+from op06d.tools import GatedToolbox, Risk, default_tools
 
 eng = load_engagement("examples/engagement.yaml")
 log = AuditLog.for_engagement(eng, "logs/")
-gate = Gate(eng)                                   # one per engagement; holds rate state
-toolbox = GatedToolbox(eng, gate, log, [NmapTool(), NucleiTool()],
+gate = Gate(eng, audit_pin=log.record_dns_pin)     # one per engagement; holds rate state + DNS pins
+toolbox = GatedToolbox(eng, gate, log, default_tools(eng),   # the only place tools are built
+
                        approver=my_cli_approver,   # RC-8; omit => risky actions are declined
                        approval_threshold=Risk.INTRUSIVE)
 
@@ -232,9 +233,23 @@ uv run --extra dev pytest tests/test_orchestrator.py
 
 - The chokepoint rests on the toolbox design and tests; Python cannot hide
   attributes absolutely.
-- A long-running action is not interrupted when the window ends.
+- A long-running action is not cancelled when the window ends; it is bounded
+  by its tool's own timeouts (nmap: the sized `--host-timeout` and subprocess
+  timeout; nuclei: `run_timeout_s`). The window is checked again before the
+  next LLM call.
 - The loop is single-threaded and synchronous.
 - Sanitization and the data contract reduce, but do not eliminate, the chance a
-  real model is steered. The guarantee is the gate. Validate with a live model
-  and varied/multilingual payloads in RC-21.
+  real model is steered. The guarantee is the gate. The deterministic suites
+  (`tests/test_adversarial_gate.py`, `tests/test_injection_payloads.py`,
+  `tests/test_chokepoint_boundary.py`) run in every default `pytest` run.
+  Live-model validation is the opt-in
+  `tests/test_live_model_gate.py` (RC-47): it drives the production adapter
+  from `op06d.llm` through the RC-21 injection-payload corpus with the tools
+  mocked, and asserts that the gate blocks every out-of-scope action the model
+  proposes. It is skipped unless `OP06D_LIVE_MODEL=1`; `OP06D_LIVE_PROVIDER`
+  selects `anthropic` (the default; needs `ANTHROPIC_API_KEY`) or `local`
+  (`OP06D_LLM_ENDPOINT`, default `http://127.0.0.1:11434`). See
+  [output-sanitization.md](output-sanitization.md#known-limits) for the
+  command, and `lab/RUNBOOK.md` ("Automated acceptance and the live-model
+  gate") for running it through the lab model relay.
 - Production LLM adapters live in `op06d.llm` (RC-40); see [llm-planner.md](llm-planner.md).

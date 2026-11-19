@@ -11,14 +11,6 @@ WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
 PARTICULAR PURPOSE. See the GNU Affero General Public License for more details.
 
 ------------------------------------------------------------------------------
-Dual licensing
-------------------------------------------------------------------------------
-The copyright holder (Thomas Pavan / Mastodon Security) retains all rights in
-this work. In addition to the AGPL-3.0 terms above, commercial licenses that do
-not carry the AGPL's source-disclosure obligations are available from the
-copyright holder. Contact: thomas@mastodonsec.com
-
-------------------------------------------------------------------------------
 Authorized-use notice (read before running)
 ------------------------------------------------------------------------------
 OP-06D drives active security tools (network and web reconnaissance) against
