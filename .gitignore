@@ -61,6 +61,8 @@ lab/captures/validation-*/
 
 # Per-run lab engagements generated from lab/engagement.yaml (hand runs) — never committed
 lab/captures/engagement.now.yaml
+# Lab quick-start run output (lab/README.md: report, evidence store, audit log) - never committed
+lab/captures/quickstart/
 
 # Unit test / coverage reports
 htmlcov/
