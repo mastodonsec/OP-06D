@@ -9,6 +9,7 @@ The setuptools file needs PyPI, so those tests stub uv pip compile; CI's
 from __future__ import annotations
 
 import importlib.util
+import re
 import shutil
 import sys
 from pathlib import Path
@@ -65,9 +66,11 @@ def test_a_regenerated_tree_passes_the_check(repo):
 def test_a_hand_edited_file_fails_and_regeneration_fixes_it(repo):
     path = repo / "docker" / "requirements.txt"
     good = _read(path)
-    path.write_text(good.replace("anthropic==2.8.0", "anthropic==2.7.0"), encoding="utf-8")
+    edited = re.sub(r"anthropic==[0-9][0-9.]*", "anthropic==0.0.0", good, count=1)
+    assert edited != good  # the edit must actually change the file
+    path.write_text(edited, encoding="utf-8")
     assert upd.update(repo, check=True, generate=_offline) == ["docker/requirements.txt"]
-    assert "anthropic==2.7.0" in _read(path)  # --check rewrites nothing
+    assert "anthropic==0.0.0" in _read(path)  # --check rewrites nothing
     assert upd.update(repo, check=False, generate=_offline) == ["docker/requirements.txt"]
     assert _read(path) == good
     assert upd.update(repo, check=True, generate=_offline) == []
