@@ -227,7 +227,12 @@ docker compose -f $LAB config | Out-Null
 if ($LASTEXITCODE -eq 0) { "compose file OK" }
 ```
 
-Expected output:
+```bash
+LAB=lab/docker-compose.yml
+docker compose -f "$LAB" config > /dev/null && echo "compose file OK"
+```
+
+Expected output, in either shell:
 
 ```
 compose file OK

@@ -258,8 +258,15 @@ To try the commands, save [`examples/engagement.yaml`](examples/engagement.yaml)
 **Linux (engagements).** Host networking and two capabilities give nmap raw sockets,
 as your own user. Never use `--privileged`.
 
+Create `out`:
+
 ```bash
 mkdir -p out
+```
+
+Run the engagement:
+
+```bash
 docker run --rm \
   --network host \
   --cap-add NET_RAW --cap-add NET_ADMIN \
@@ -274,10 +281,25 @@ docker run --rm \
 your network: run without host networking and without capabilities. nmap then runs as a
 TCP connect scan, and the report's Limitations say so.
 
+Create `out`.
+
 PowerShell 7:
 
 ```powershell
 New-Item -ItemType Directory -Force out | Out-Null
+```
+
+macOS (zsh):
+
+```zsh
+mkdir -p out
+```
+
+Run the engagement.
+
+PowerShell 7:
+
+```powershell
 docker run --rm `
   -v "${PWD}/engagement.yaml:/work/engagement.yaml:ro" `
   -v "${PWD}/out:/out" `
@@ -288,7 +310,6 @@ docker run --rm `
 macOS (zsh):
 
 ```zsh
-mkdir -p out
 docker run --rm \
   -v "$PWD/engagement.yaml:/work/engagement.yaml:ro" \
   -v "$PWD/out:/out" \
@@ -407,19 +428,45 @@ and git, plus `nmap` and `nuclei` on `PATH` to run real scans, at the validated
 versions: nmap 7.93, nuclei v3.11.1 and nuclei-templates v10.5.1. The unit tests and
 the gate demo don't need the tools; they mock or avoid them.
 
+Clone the repository.
+
 PowerShell 7:
 
 ```powershell
 git clone https://github.com/mastodonsec/OP-06D.git
-cd OP-06D
-uv sync
 ```
 
 bash / zsh:
 
 ```bash
 git clone https://github.com/mastodonsec/OP-06D.git
+```
+
+Change into it.
+
+PowerShell 7:
+
+```powershell
 cd OP-06D
+```
+
+bash / zsh:
+
+```bash
+cd OP-06D
+```
+
+Install the dependencies.
+
+PowerShell 7:
+
+```powershell
+uv sync
+```
+
+bash / zsh:
+
+```bash
 uv sync
 ```
 

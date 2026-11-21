@@ -36,14 +36,15 @@ Run every command from the repository root. PowerShell blocks are for PowerShell
   scripts.
 - About 5 GB of free disk.
 - On Linux, be in the `docker` group (or prefix every docker and
-  `uv run python lab/...` command with `sudo`). Add yourself once, then log out and back
-  in:
+  `uv run python lab/...` command with `sudo`). Add yourself once:
 
   ```bash
   sudo usermod -aG docker "$USER"
   ```
 
-  Membership of `docker` is equivalent to root on that machine.
+  Then reboot the VM or log out and back in; a terminal opened before that still fails
+  with permission denied on `/var/run/docker.sock`. Membership of `docker` is
+  equivalent to root on that machine.
 
 Check the tools:
 
@@ -64,28 +65,69 @@ uv --version
 ```
 
 **Expected output:** a version line from each; `docker compose version` must print v2
-or later.
+or later. Current Docker Desktop prints v5.x, which meets that.
 
-Kali needs a few more steps to get Compose v2; see
-[Linux and macOS hosts](RUNBOOK.md#linux-and-macos-hosts) in the runbook.
+On Kali, install Docker and Compose, one command at a time:
+
+```bash
+sudo apt install -y docker.io docker-compose docker-buildx
+```
+
+```bash
+sudo systemctl enable --now docker
+```
+
+```bash
+docker compose version
+```
+
+If that does not print v2 or later, replace Kali's packages with Docker's own as
+described in [Linux and macOS hosts](RUNBOOK.md#linux-and-macos-hosts) in the runbook,
+then return to step 2 of this guide.
 
 ## 2. Get the code and build the lab
 
 Building needs the internet (Docker Hub, GitHub, PyPI); the running lab never has it.
 
+Clone the repository.
+
 PowerShell 7:
 
 ```powershell
 git clone https://github.com/mastodonsec/OP-06D.git
-cd OP-06D
-docker compose -f lab/docker-compose.yml build scanner
 ```
 
 bash / zsh:
 
 ```bash
 git clone https://github.com/mastodonsec/OP-06D.git
+```
+
+Change into it; every later command runs from here.
+
+PowerShell 7:
+
+```powershell
 cd OP-06D
+```
+
+bash / zsh:
+
+```bash
+cd OP-06D
+```
+
+Build the scanner image.
+
+PowerShell 7:
+
+```powershell
+docker compose -f lab/docker-compose.yml build scanner
+```
+
+bash / zsh:
+
+```bash
 docker compose -f lab/docker-compose.yml build scanner
 ```
 
@@ -96,17 +138,33 @@ checksum fails, stop.
 
 ## 3. Start it
 
+Start the stack.
+
 PowerShell 7:
 
 ```powershell
 docker compose -f lab/docker-compose.yml up -d
-docker compose -f lab/docker-compose.yml ps --format "{{.Service}} {{.State}}"
 ```
 
 bash / zsh:
 
 ```bash
 docker compose -f lab/docker-compose.yml up -d
+```
+
+**Expected output:** each of the four containers reported as started.
+
+List the services and their state.
+
+PowerShell 7:
+
+```powershell
+docker compose -f lab/docker-compose.yml ps --format "{{.Service}} {{.State}}"
+```
+
+bash / zsh:
+
+```bash
 docker compose -f lab/docker-compose.yml ps --format "{{.Service}} {{.State}}"
 ```
 
@@ -216,6 +274,15 @@ audit log:      /captures/quickstart/audit/rc-lab-2026-11.audit.jsonl
   hostnames.
 - `evidence.db`: the evidence store the report is rendered from.
 
+On Linux, the files the scanner writes under `lab/captures/` are owned by root. Take
+ownership of the run's files before opening or deleting them:
+
+```bash
+sudo chown -R "$USER" lab/captures/quickstart
+```
+
+Docker Desktop on Windows and macOS needs nothing.
+
 Check that the audit log's hash chain is intact:
 
 PowerShell 7:
@@ -239,33 +306,101 @@ the same evidence store and audit log.
 ## 8. Optional: the LLM planner
 
 To let a model plan the actions, the model relay overlay opens one path to one upstream.
-With Ollama running on your host (setup per platform in the runbook's model relay
-section), the local mode is:
+This uses Ollama running on your host; its setup per platform is in the runbook's model
+relay section.
+
+Start from a torn-down lab: if the lab from steps 3 to 7 is still up, run step 9 first.
+The relay brings up its own copy of the lab.
+
+Build the overlay images (internet needed).
 
 PowerShell 7:
 
 ```powershell
 uv run python lab/model_relay.py build local
-uv run python lab/model_relay.py up local
-uv run python lab/model_relay.py check local
-uv run python lab/model_relay.py run local
-uv run python lab/model_relay.py down
 ```
 
 bash / zsh:
 
 ```bash
 uv run python lab/model_relay.py build local
+```
+
+**Expected output:** it ends with `built the overlay images (local)`. Anything else:
+stop and fix the build before going on.
+
+Start the lab with the relay.
+
+PowerShell 7:
+
+```powershell
 uv run python lab/model_relay.py up local
+```
+
+bash / zsh:
+
+```bash
+uv run python lab/model_relay.py up local
+```
+
+**Expected output:** it ends with `local relay up and lab targets ready`, followed by the
+engagement it allows and the next command. `up` waits up to three minutes for both
+targets to answer. If it prints `failed: ...` instead, run `down` (below) and start
+again.
+
+Check the isolation with the relay up. This can take several minutes.
+
+PowerShell 7:
+
+```powershell
 uv run python lab/model_relay.py check local
+```
+
+bash / zsh:
+
+```bash
+uv run python lab/model_relay.py check local
+```
+
+**Expected output:** it ends with
+`RESULT: PASS - isolation confirmed with the relay up`. Don't go on to `run local`
+unless it does; on `FAIL` or `INCONCLUSIVE`, run `down`.
+
+Run OP-06D with the LLM planner. Pull the planner's model in Ollama first.
+
+PowerShell 7:
+
+```powershell
 uv run python lab/model_relay.py run local
+```
+
+bash / zsh:
+
+```bash
+uv run python lab/model_relay.py run local
+```
+
+**Expected output:** it ends with `ACCEPTANCE: PASS - report <path to the report>`.
+`run` re-checks the isolation first, then runs OP-06D with `--planner llm` and verifies
+the report; its files land in `lab/captures/_relay_ephemeral/local/run/`. On
+`ACCEPTANCE: FAIL` it lists what failed.
+
+Remove the relay and the lab.
+
+PowerShell 7:
+
+```powershell
 uv run python lab/model_relay.py down
 ```
 
-**Expected output:** `check local` must print `RESULT: PASS` before `run local`. `run`
-re-checks the isolation, runs OP-06D with `--planner llm` and verifies the report; its
-files land in `lab/captures/_relay_ephemeral/local/run/`. `down` removes the relay and
-the lab; run step 4 again before any run without the relay.
+bash / zsh:
+
+```bash
+uv run python lab/model_relay.py down
+```
+
+**Expected output:** each container and network reported as removed. Run step 3 and
+step 4 again before any run without the relay.
 
 The hosted (Anthropic) mode, the API key handling and what `check` proves:
 [Model relay](RUNBOOK.md#model-relay-opt-in-op06d-run---planner-llm-in-the-lab).
