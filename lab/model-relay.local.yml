@@ -60,7 +60,7 @@ services:
       RELAY_BIND: 172.31.78.2
     # The relay only. Native Linux Docker has no host.docker.internal; host-gateway
     # is the docker0 bridge address there (host Ollama must listen on it, see
-    # lab/RUNBOOK.md) and the Docker Desktop host address on Windows and macOS.
+    # lab/model-relay.md) and the Docker Desktop host address on Windows and macOS.
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks:

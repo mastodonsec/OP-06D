@@ -82,7 +82,7 @@ docker compose version
 ```
 
 If that does not print v2 or later, replace Kali's packages with Docker's own as
-described in [Linux and macOS hosts](RUNBOOK.md#linux-and-macos-hosts) in the runbook,
+described in [Kali / Linux](hosts.md#kali--linux) in the lab's host setup,
 then return to step 2 of this guide.
 
 ## 2. Get the code and build the lab
@@ -306,8 +306,8 @@ the same evidence store and audit log.
 ## 8. Optional: the LLM planner
 
 To let a model plan the actions, the model relay overlay opens one path to one upstream.
-This uses Ollama running on your host; its setup per platform is in the runbook's model
-relay section.
+This uses Ollama running on your host; its setup per platform is in
+[model-relay.md](model-relay.md).
 
 Start from a torn-down lab: if the lab from steps 3 to 7 is still up, run step 9 first.
 The relay brings up its own copy of the lab.
@@ -403,7 +403,7 @@ uv run python lab/model_relay.py down
 step 4 again before any run without the relay.
 
 The hosted (Anthropic) mode, the API key handling and what `check` proves:
-[Model relay](RUNBOOK.md#model-relay-opt-in-op06d-run---planner-llm-in-the-lab).
+[Model relay](model-relay.md).
 
 ## 9. Tear down
 
