@@ -406,7 +406,8 @@ def test_a_run_that_does_not_fail_records_no_failure_cause(tmp_path):
     assert "Failure cause" not in summary.report_html_path.read_text(encoding="utf-8")
 
 
-@pytest.mark.parametrize("bad", ["x", "sk-ant-" + "short", "plain-" + "a" * 60])
+@pytest.mark.parametrize("bad", ["x", "sk-ant-" + "short", "plain-" + "a" * 60],
+                         ids=["one-char", "too-short", "wrong-prefix"])  # key-free ids: never print the fake keys
 def test_cli_anthropic_with_an_implausible_key_is_refused_before_anything_is_created(
         tmp_path, capsys, monkeypatch, bad):
     monkeypatch.setenv("ANTHROPIC_API_KEY", bad)

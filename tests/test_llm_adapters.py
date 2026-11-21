@@ -243,7 +243,7 @@ def test_anthropic_requires_the_key_in_the_environment():
     ("plain-" + "a" * 60, "does not start with"),
     ("sk-ant-" + "short", "too short"),
     (FAKE_KEY + " ", "whitespace"),
-])
+], ids=["one-char", "wrong-prefix", "too-short", "whitespace"])  # key-free ids: never print the fake keys
 def test_anthropic_rejects_a_key_that_cannot_be_real_without_echoing_it(bad, why):
     with pytest.raises(LLMConfigError, match=why) as exc:
         AnthropicLLM(environ={"ANTHROPIC_API_KEY": bad})
