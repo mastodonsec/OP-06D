@@ -24,8 +24,9 @@ for, and why it's built this way: [The lab](../README.md#the-lab) in the main RE
 What's planted in the targets, and what OP-06D is expected to find:
 [PLANTED_VULNS.md](PLANTED_VULNS.md).
 
-Run every command from the repository root. PowerShell blocks are for PowerShell 7
-(`pwsh`); bash blocks are for bash or zsh on Linux, Kali and macOS.
+Run every command from the repository root. Blocks labelled "PowerShell 7 or bash / zsh"
+work the same in either shell; "PowerShell 7" blocks are for PowerShell 7 (`pwsh`), and
+"bash / zsh" blocks for bash or zsh on Linux, Kali and macOS.
 
 ## 1. Prerequisites
 
@@ -38,6 +39,8 @@ Run every command from the repository root. PowerShell blocks are for PowerShell
 - On Linux, be in the `docker` group (or prefix every docker and
   `uv run python lab/...` command with `sudo`). Add yourself once:
 
+  bash (Linux):
+
   ```bash
   sudo usermod -aG docker "$USER"
   ```
@@ -48,15 +51,7 @@ Run every command from the repository root. PowerShell blocks are for PowerShell
 
 Check the tools:
 
-PowerShell 7:
-
-```powershell
-docker compose version
-git --version
-uv --version
-```
-
-bash / zsh:
+PowerShell 7 or bash / zsh:
 
 ```bash
 docker compose version
@@ -69,13 +64,19 @@ or later. Current Docker Desktop prints v5.x, which meets that.
 
 On Kali, install Docker and Compose, one command at a time:
 
+bash (Kali):
+
 ```bash
 sudo apt install -y docker.io docker-compose docker-buildx
 ```
 
+bash (Kali):
+
 ```bash
 sudo systemctl enable --now docker
 ```
+
+bash (Kali):
 
 ```bash
 docker compose version
@@ -91,13 +92,7 @@ Building needs the internet (Docker Hub, GitHub, PyPI); the running lab never ha
 
 Clone the repository.
 
-PowerShell 7:
-
-```powershell
-git clone https://github.com/mastodonsec/OP-06D.git
-```
-
-bash / zsh:
+PowerShell 7 or bash / zsh:
 
 ```bash
 git clone https://github.com/mastodonsec/OP-06D.git
@@ -105,13 +100,7 @@ git clone https://github.com/mastodonsec/OP-06D.git
 
 Change into it; every later command runs from here.
 
-PowerShell 7:
-
-```powershell
-cd OP-06D
-```
-
-bash / zsh:
+PowerShell 7 or bash / zsh:
 
 ```bash
 cd OP-06D
@@ -119,13 +108,7 @@ cd OP-06D
 
 Build the scanner image.
 
-PowerShell 7:
-
-```powershell
-docker compose -f lab/docker-compose.yml build scanner
-```
-
-bash / zsh:
+PowerShell 7 or bash / zsh:
 
 ```bash
 docker compose -f lab/docker-compose.yml build scanner
@@ -140,13 +123,7 @@ checksum fails, stop.
 
 Start the stack.
 
-PowerShell 7:
-
-```powershell
-docker compose -f lab/docker-compose.yml up -d
-```
-
-bash / zsh:
+PowerShell 7 or bash / zsh:
 
 ```bash
 docker compose -f lab/docker-compose.yml up -d
@@ -156,13 +133,7 @@ docker compose -f lab/docker-compose.yml up -d
 
 List the services and their state.
 
-PowerShell 7:
-
-```powershell
-docker compose -f lab/docker-compose.yml ps --format "{{.Service}} {{.State}}"
-```
-
-bash / zsh:
+PowerShell 7 or bash / zsh:
 
 ```bash
 docker compose -f lab/docker-compose.yml ps --format "{{.Service}} {{.State}}"
@@ -183,13 +154,7 @@ DVWA needs about a minute for its database before it answers.
 
 Nothing scans until this prints PASS.
 
-PowerShell 7:
-
-```powershell
-uv run python lab/check_isolation.py --with-internet-control
-```
-
-bash / zsh:
+PowerShell 7 or bash / zsh:
 
 ```bash
 uv run python lab/check_isolation.py --with-internet-control
@@ -212,13 +177,7 @@ step 9 and don't scan. The runbook's
 window runs from five minutes ago to four hours from now, so the gate lets the scans
 through.
 
-PowerShell 7:
-
-```powershell
-docker compose -f lab/docker-compose.yml exec -T scanner python3 /lab/make_lab_engagement.py /captures/engagement.now.yaml
-```
-
-bash / zsh:
+PowerShell 7 or bash / zsh:
 
 ```bash
 docker compose -f lab/docker-compose.yml exec -T scanner python3 /lab/make_lab_engagement.py /captures/engagement.now.yaml
@@ -237,13 +196,7 @@ If a session outlasts the window, run it again.
 The fixed planner runs an nmap service scan and a nuclei default-tag scan for each
 in-scope host and IP, through the gate.
 
-PowerShell 7:
-
-```powershell
-docker compose -f lab/docker-compose.yml exec -T scanner op06d run --engagement /captures/engagement.now.yaml --out /captures/quickstart
-```
-
-bash / zsh:
+PowerShell 7 or bash / zsh:
 
 ```bash
 docker compose -f lab/docker-compose.yml exec -T scanner op06d run --engagement /captures/engagement.now.yaml --out /captures/quickstart
@@ -277,6 +230,8 @@ audit log:      /captures/quickstart/audit/rc-lab-2026-11.audit.jsonl
 On Linux, the files the scanner writes under `lab/captures/` are owned by root. Take
 ownership of the run's files before opening or deleting them:
 
+bash (Linux):
+
 ```bash
 sudo chown -R "$USER" lab/captures/quickstart
 ```
@@ -285,13 +240,7 @@ Docker Desktop on Windows and macOS needs nothing.
 
 Check that the audit log's hash chain is intact:
 
-PowerShell 7:
-
-```powershell
-docker compose -f lab/docker-compose.yml exec -T scanner python3 -c "from op06d.audit import verify_log; print('audit entries verified:', verify_log('/captures/quickstart/audit/rc-lab-2026-11.audit.jsonl'))"
-```
-
-bash / zsh:
+PowerShell 7 or bash / zsh:
 
 ```bash
 docker compose -f lab/docker-compose.yml exec -T scanner python3 -c "from op06d.audit import verify_log; print('audit entries verified:', verify_log('/captures/quickstart/audit/rc-lab-2026-11.audit.jsonl'))"
@@ -314,13 +263,7 @@ The relay brings up its own copy of the lab.
 
 Build the overlay images (internet needed).
 
-PowerShell 7:
-
-```powershell
-uv run python lab/model_relay.py build local
-```
-
-bash / zsh:
+PowerShell 7 or bash / zsh:
 
 ```bash
 uv run python lab/model_relay.py build local
@@ -331,13 +274,7 @@ stop and fix the build before going on.
 
 Start the lab with the relay.
 
-PowerShell 7:
-
-```powershell
-uv run python lab/model_relay.py up local
-```
-
-bash / zsh:
+PowerShell 7 or bash / zsh:
 
 ```bash
 uv run python lab/model_relay.py up local
@@ -350,13 +287,7 @@ again.
 
 Check the isolation with the relay up. This can take several minutes.
 
-PowerShell 7:
-
-```powershell
-uv run python lab/model_relay.py check local
-```
-
-bash / zsh:
+PowerShell 7 or bash / zsh:
 
 ```bash
 uv run python lab/model_relay.py check local
@@ -368,13 +299,7 @@ unless it does; on `FAIL` or `INCONCLUSIVE`, run `down`.
 
 Run OP-06D with the LLM planner. Pull the planner's model in Ollama first.
 
-PowerShell 7:
-
-```powershell
-uv run python lab/model_relay.py run local
-```
-
-bash / zsh:
+PowerShell 7 or bash / zsh:
 
 ```bash
 uv run python lab/model_relay.py run local
@@ -387,13 +312,7 @@ the report; its files land in `lab/captures/_relay_ephemeral/local/run/`. On
 
 Remove the relay and the lab.
 
-PowerShell 7:
-
-```powershell
-uv run python lab/model_relay.py down
-```
-
-bash / zsh:
+PowerShell 7 or bash / zsh:
 
 ```bash
 uv run python lab/model_relay.py down
@@ -407,13 +326,7 @@ The hosted (Anthropic) mode, the API key handling and what `check` proves:
 
 ## 9. Tear down
 
-PowerShell 7:
-
-```powershell
-docker compose -f lab/docker-compose.yml down
-```
-
-bash / zsh:
+PowerShell 7 or bash / zsh:
 
 ```bash
 docker compose -f lab/docker-compose.yml down

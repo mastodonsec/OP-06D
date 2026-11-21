@@ -596,6 +596,7 @@ lab/                     isolated Docker lab for live validation:
                          - scanner: the image's `lab` stage (same image plus test tools)
                          - isolation gate: check_isolation.py (Windows, Linux, macOS)
                          - validation_harness.py: one-command run of the RUNBOOK checks
+                         - steps/: the in-scanner checks the runbook and the harness both run
                          - model relay overlay for --planner llm runs (model_relay.py)
                          - planner model benchmark (benchmark.py)
                          - PLANTED_VULNS.md: the frozen baseline; captures/: frozen evidence

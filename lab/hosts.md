@@ -115,10 +115,3 @@ captures folder are as in [Kali / Linux](#kali--linux).
   "Use Rosetta for x86_64/amd64 emulation on Apple Silicon" makes it faster).
   On ARM Linux install `qemu-user-static binfmt-support` first. Expect DVWA to
   be slower than on amd64.
-
-## Running the runbook from bash or zsh
-
-Every `docker compose -f $LAB ...` line in [the runbook](RUNBOOK.md) works the same in bash
-or zsh once the variable is set the shell's way (`LAB=lab/docker-compose.yml`),
-except that PowerShell's escaped newline (backtick n) inside `-w "..."` is
-`\n` there.
