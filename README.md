@@ -260,11 +260,15 @@ as your own user. Never use `--privileged`.
 
 Create `out`:
 
+bash (Linux):
+
 ```bash
 mkdir -p out
 ```
 
 Run the engagement:
+
+bash (Linux):
 
 ```bash
 docker run --rm \
@@ -289,9 +293,9 @@ PowerShell 7:
 New-Item -ItemType Directory -Force out | Out-Null
 ```
 
-macOS (zsh):
+bash / zsh (macOS):
 
-```zsh
+```bash
 mkdir -p out
 ```
 
@@ -307,9 +311,9 @@ docker run --rm `
   run --engagement engagement.yaml --out /out
 ```
 
-macOS (zsh):
+bash / zsh (macOS):
 
-```zsh
+```bash
 docker run --rm \
   -v "$PWD/engagement.yaml:/work/engagement.yaml:ro" \
   -v "$PWD/out:/out" \

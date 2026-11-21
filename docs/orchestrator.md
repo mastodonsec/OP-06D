@@ -214,6 +214,8 @@ Planner reply format (one JSON object, optionally in a code fence):
 Testing: inject `now`, `sleep`, `stop`, the LLM and the tools; no live calls and
 no real waiting. Run:
 
+bash / zsh:
+
 ```bash
 uv run --extra dev pytest tests/test_orchestrator.py
 ```

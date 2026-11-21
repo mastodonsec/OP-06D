@@ -158,6 +158,8 @@ Gate(eng, now=lambda: some_aware_datetime, monotonic=lambda: some_float,
 
 Run the tests:
 
+bash / zsh:
+
 ```bash
 uv run --extra dev pytest tests/test_gate.py
 ```

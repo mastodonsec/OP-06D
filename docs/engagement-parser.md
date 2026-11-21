@@ -74,6 +74,8 @@ Design decisions:
 
 Install (Python 3.11+):
 
+bash / zsh:
+
 ```bash
 pip install -e ".[dev]"
 ```
@@ -105,6 +107,8 @@ engagement file failed validation:
 ```
 
 Run the tests:
+
+bash / zsh:
 
 ```bash
 python -m pytest

@@ -53,8 +53,19 @@ Secrets are passed only at run time, never baked into the image: put
 Host networking plus two capabilities give nmap raw sockets for SYN scans and
 full host discovery, as your own user. Never use `--privileged`.
 
+Create `out`:
+
+bash (Linux):
+
 ```bash
 mkdir -p out
+```
+
+Run the engagement:
+
+bash (Linux):
+
+```bash
 docker run --rm \
   --network host \
   --cap-add NET_RAW --cap-add NET_ADMIN \
@@ -94,10 +105,19 @@ not add `--cap-add NET_RAW --cap-add NET_ADMIN` here: raw packets would leave
 the VM through Docker Desktop's user-space network stack, and the results
 would not be reliable.
 
+Create `out`:
+
 PowerShell 7:
 
 ```powershell
 New-Item -ItemType Directory -Force out | Out-Null
+```
+
+Run the engagement:
+
+PowerShell 7:
+
+```powershell
 docker run --rm `
   -v "${PWD}/engagement.yaml:/work/engagement.yaml:ro" `
   -v "${PWD}/out:/out" `
@@ -105,10 +125,19 @@ docker run --rm `
   run --engagement engagement.yaml --out /out
 ```
 
-macOS (zsh), Apple Silicon runs the native arm64 image:
+On macOS, Apple Silicon runs the native arm64 image. Create `out`:
 
-```zsh
+bash / zsh (macOS):
+
+```bash
 mkdir -p out
+```
+
+Run the engagement:
+
+bash / zsh (macOS):
+
+```bash
 docker run --rm \
   -v "$PWD/engagement.yaml:/work/engagement.yaml:ro" \
   -v "$PWD/out:/out" \
@@ -140,6 +169,8 @@ workflow (GitHub OIDC; no signing key exists) and carries an SBOM and build
 provenance as attestations. The signature covers the image index, which
 references the SBOM and provenance.
 
+bash / zsh:
+
 ```bash
 cosign verify ghcr.io/mastodonsec/op06d@sha256:<digest> \
   --certificate-identity "https://github.com/mastodonsec/OP-06D/.github/workflows/release.yml@refs/tags/v<version>" \
@@ -148,6 +179,8 @@ cosign verify ghcr.io/mastodonsec/op06d@sha256:<digest> \
 
 A valid signature prints the verified claims as JSON and exits 0; anything else
 is a failed verification. Then read the SBOM (SPDX, per platform):
+
+bash / zsh:
 
 ```bash
 docker buildx imagetools inspect ghcr.io/mastodonsec/op06d@sha256:<digest> \
@@ -164,9 +197,21 @@ dependencies' licenses are in their `dist-info` directories under `/opt/op06d`.
 
 ## Building it yourself
 
+bash / zsh:
+
 ```bash
 docker buildx build --platform linux/amd64 --load -t op06d:local .
+```
+
+bash / zsh:
+
+```bash
 docker run --rm op06d:local version
+```
+
+bash / zsh:
+
+```bash
 python3 scripts/check_image.py op06d:local
 ```
 
