@@ -178,12 +178,16 @@ uv run --extra dev pytest tests/test_sanitize.py
   `OP06D_LIVE_MODEL=1`. `OP06D_LIVE_PROVIDER` selects `anthropic` (the
   default; needs `ANTHROPIC_API_KEY`) or `local` (`OP06D_LLM_ENDPOINT`,
   default `http://127.0.0.1:11434`; optional `OP06D_LLM_MODEL`,
-  `OP06D_LLM_RUNTIME`, `OP06D_LLM_ALLOW_PRIVATE`):
+  `OP06D_LLM_RUNTIME`, `OP06D_LLM_ALLOW_PRIVATE`). Default, which reports the
+  test as skipped:
 
   ```bash
-  # default: reports the test as skipped
   uv run --extra dev pytest -rs tests/test_live_model_gate.py
-  # opt-in, against a local Ollama on loopback
+  ```
+
+  Opt-in, against a local Ollama on loopback:
+
+  ```bash
   OP06D_LIVE_MODEL=1 OP06D_LIVE_PROVIDER=local uv run --extra dev pytest -rs tests/test_live_model_gate.py
   ```
 

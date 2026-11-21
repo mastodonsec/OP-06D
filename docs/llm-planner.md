@@ -21,7 +21,13 @@ the environment. There is no flag or config field for the key.
 
 ```sh
 pip install 'op06d[llm-anthropic]'
+```
+
+```sh
 export ANTHROPIC_API_KEY=...            # read from the environment only
+```
+
+```sh
 op06d run --engagement eng.yaml --out out/ --planner llm --llm-provider anthropic
 ```
 
@@ -29,6 +35,9 @@ Local (Ollama on the same host, listening on loopback):
 
 ```sh
 ollama pull llama3.1:8b-instruct-q5_K_M
+```
+
+```sh
 op06d run --engagement eng.yaml --out out/ --planner llm --llm-provider local \
   --model llama3.1:8b-instruct-q5_K_M --context-tokens 8192
 ```
@@ -40,17 +49,25 @@ address as the endpoint and allow it as a private IP:
 
 ```sh
 ip -4 -br addr show docker0              # the address, normally 172.17.0.1
+```
+
+```sh
 op06d run --engagement eng.yaml --out out/ --planner llm --llm-provider local \
   --llm-endpoint http://172.17.0.1:11434 --llm-allow-private 172.17.0.1
 ```
 
-Other local runtimes speak the OpenAI-compatible chat API:
+Other local runtimes speak the OpenAI-compatible chat API.
+
+llama.cpp server (constrained by a GBNF grammar):
 
 ```sh
-# llama.cpp server (constrained by a GBNF grammar)
 op06d run ... --planner llm --llm-provider local --llm-runtime llamacpp \
   --llm-endpoint http://127.0.0.1:8080 --model <name>
-# LM Studio / vLLM (constrained by response_format json_schema)
+```
+
+LM Studio / vLLM (constrained by `response_format` `json_schema`):
+
+```sh
 op06d run ... --planner llm --llm-provider local --llm-runtime openai \
   --llm-endpoint http://127.0.0.1:1234/v1 --model <name>
 ```

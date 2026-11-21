@@ -53,8 +53,15 @@ Secrets are passed only at run time, never baked into the image: put
 Host networking plus two capabilities give nmap raw sockets for SYN scans and
 full host discovery, as your own user. Never use `--privileged`.
 
+Create `out`:
+
 ```bash
 mkdir -p out
+```
+
+Run the engagement:
+
+```bash
 docker run --rm \
   --network host \
   --cap-add NET_RAW --cap-add NET_ADMIN \
@@ -94,10 +101,15 @@ not add `--cap-add NET_RAW --cap-add NET_ADMIN` here: raw packets would leave
 the VM through Docker Desktop's user-space network stack, and the results
 would not be reliable.
 
-PowerShell 7:
+PowerShell 7, create `out`:
 
 ```powershell
 New-Item -ItemType Directory -Force out | Out-Null
+```
+
+Run the engagement:
+
+```powershell
 docker run --rm `
   -v "${PWD}/engagement.yaml:/work/engagement.yaml:ro" `
   -v "${PWD}/out:/out" `
@@ -105,10 +117,15 @@ docker run --rm `
   run --engagement engagement.yaml --out /out
 ```
 
-macOS (zsh), Apple Silicon runs the native arm64 image:
+macOS (zsh), Apple Silicon runs the native arm64 image. Create `out`:
 
 ```zsh
 mkdir -p out
+```
+
+Run the engagement:
+
+```zsh
 docker run --rm \
   -v "$PWD/engagement.yaml:/work/engagement.yaml:ro" \
   -v "$PWD/out:/out" \
@@ -166,7 +183,13 @@ dependencies' licenses are in their `dist-info` directories under `/opt/op06d`.
 
 ```bash
 docker buildx build --platform linux/amd64 --load -t op06d:local .
+```
+
+```bash
 docker run --rm op06d:local version
+```
+
+```bash
 python3 scripts/check_image.py op06d:local
 ```
 

@@ -63,6 +63,9 @@ workflow refuses a tag that does not match it.
 
 ```bash
 docker buildx build --platform linux/amd64 --load -t op06d:local .
+```
+
+```bash
 python3 scripts/check_image.py op06d:local
 ```
 
@@ -84,6 +87,9 @@ On `main`, after the pull request has merged and its CI passed:
 
 ```bash
 git tag -s v<version> -m "OP-06D <version>"
+```
+
+```bash
 git push origin v<version>
 ```
 

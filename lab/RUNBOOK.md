@@ -178,20 +178,49 @@ except that PowerShell's escaped newline (backtick n) inside `-w "..."` is
   `docker-ce docker-ce-cli containerd.io docker-buildx-plugin`) from Docker's
   Debian repository `https://download.docker.com/linux/debian`, suite
   `trixie`, component `stable`. Kali rolling has no suite of its own there,
-  so it uses Debian's current stable one. One command per line:
+  so it uses Debian's current stable one. Run one command at a time:
 
 ```bash
 sudo apt remove -y docker.io docker-compose docker-buildx
+```
+
+```bash
 sudo apt install -y ca-certificates curl
+```
+
+```bash
 sudo install -m 0755 -d /etc/apt/keyrings
+```
+
+```bash
 sudo curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc
+```
+
+```bash
 sudo chmod a+r /etc/apt/keyrings/docker.asc
+```
+
+```bash
 echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian trixie stable" | sudo tee /etc/apt/sources.list.d/docker.list
+```
+
+```bash
 sudo apt update
+```
+
+```bash
 sudo apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+```
+
+```bash
 sudo systemctl enable --now docker
+```
+
+```bash
 docker compose version
 ```
+
+`docker compose version` must print v2 or later.
 
 - **docker group vs sudo:** either prefix every docker command (and
   `uv run python lab/check_isolation.py`) with `sudo`, or add yourself to the
@@ -289,6 +318,9 @@ SHA-256. If a checksum fails, **stop and investigate** before changing the pin.
 
 ```powershell
 docker compose -f $LAB up -d
+```
+
+```powershell
 docker compose -f $LAB ps
 ```
 
@@ -297,6 +329,9 @@ From inside the scanner:
 
 ```powershell
 docker compose -f $LAB exec -T scanner curl -sS -o /dev/null -w "juice-shop HTTP %{http_code}`n" http://juice-shop.lab:3000/
+```
+
+```powershell
 docker compose -f $LAB exec -T scanner curl -sS -o /dev/null -w "dvwa HTTP %{http_code}`n" http://dvwa.lab/
 ```
 
@@ -399,9 +434,21 @@ Steps 8 and 13 use `/captures/engagement.now.yaml`.
 
 ```powershell
 docker compose -f $LAB exec -T scanner cat /opt/lab-versions.txt
+```
+
+```powershell
 docker compose -f $LAB exec -T scanner nmap --version
+```
+
+```powershell
 docker compose -f $LAB exec -T scanner nuclei -version
+```
+
+```powershell
 docker image inspect op06d-lab-scanner:nmap-7.93-nuclei-3.11.1-templates-10.5.1 --format '{{.Id}}'
+```
+
+```powershell
 docker compose -f $LAB images
 ```
 
@@ -460,7 +507,7 @@ value differs per line: the wrapper sizes it from the port count and the rate
 
 Save to `lab/captures/wrapper-argv.txt`.
 
-**7b. Quick cross-check against `--help` (informational; `--` and a few flags do not appear in help):**
+**7b. Quick cross-check against `--help` (informational; `--` and a few flags do not appear in help).** The two lines are safe to paste together:
 
 ```powershell
 docker compose -f $LAB exec -T scanner bash -c 'for f in -oX --no-stylesheet --max-rate --host-timeout -sn -F -sV -p- -A -p --script; do if nmap --help 2>&1 | grep -q -e "$f"; then echo "nmap listed      $f"; else echo "nmap NOT LISTED  $f"; fi; done'
@@ -1166,6 +1213,9 @@ for the relay container only, to `host-gateway`, which on Linux is the
 
 ```bash
 ip -4 -br addr show docker0
+```
+
+```bash
 sudo systemctl edit ollama
 ```
 
@@ -1180,7 +1230,13 @@ Environment="OLLAMA_HOST=172.17.0.1:11434"
 
 ```bash
 sudo systemctl restart ollama
+```
+
+```bash
 export OLLAMA_HOST=172.17.0.1:11434
+```
+
+```bash
 ss -ltnH 'sport = :11434'
 ```
 
@@ -1223,8 +1279,19 @@ uv run python lab/model_relay.py build local
 
 ```powershell
 uv run python lab/model_relay.py up local
+```
+
+```powershell
 uv run python lab/model_relay.py check local     # must print RESULT: PASS
+```
+
+Continue only if it printed `RESULT: PASS`.
+
+```powershell
 uv run python lab/model_relay.py run local       # re-checks isolation, runs op06d, verifies the report
+```
+
+```powershell
 uv run python lab/model_relay.py down
 ```
 
@@ -1232,10 +1299,29 @@ uv run python lab/model_relay.py down
 
 ```powershell
 $env:ANTHROPIC_API_KEY = Read-Host -MaskInput "Anthropic API key"
+```
+
+Check the key's length before going on; see **Pasting the key** below.
+
+```powershell
 uv run python lab/model_relay.py up anthropic --engagement lab/engagement-llm-hosted.yaml
+```
+
+```powershell
 uv run python lab/model_relay.py check anthropic # must print RESULT: PASS
+```
+
+Continue only if it printed `RESULT: PASS`.
+
+```powershell
 uv run python lab/model_relay.py run anthropic --engagement lab/engagement-llm-hosted.yaml
+```
+
+```powershell
 uv run python lab/model_relay.py down
+```
+
+```powershell
 Remove-Item Env:ANTHROPIC_API_KEY
 ```
 
@@ -1296,20 +1382,42 @@ two interfaces). After `down`, rerun Step 4 before any non-relay scan.
 
 ### Automated acceptance and the live-model gate
 
-```powershell
-# lab acceptance, one upstream per invocation
-$env:OP06D_LAB = "1"; $env:OP06D_LLM_PROVIDER = "local"
-uv run pytest -m lab -rs --basetemp .pytest-tmp tests/integration/test_lab_relay_planner_run.py
-$env:OP06D_LLM_PROVIDER = "anthropic"; $env:ANTHROPIC_API_KEY = Read-Host -MaskInput "Anthropic API key"
-uv run pytest -m lab -rs --basetemp .pytest-tmp tests/integration/test_lab_relay_planner_run.py
-Remove-Item Env:OP06D_LLM_PROVIDER, Env:ANTHROPIC_API_KEY
+Lab acceptance, one upstream per invocation. Local:
 
-# live-model gate through the relay (overlay up, see above), local:
+```powershell
+$env:OP06D_LAB = "1"; $env:OP06D_LLM_PROVIDER = "local"
+```
+
+```powershell
+uv run pytest -m lab -rs --basetemp .pytest-tmp tests/integration/test_lab_relay_planner_run.py
+```
+
+Anthropic:
+
+```powershell
+$env:OP06D_LLM_PROVIDER = "anthropic"; $env:ANTHROPIC_API_KEY = Read-Host -MaskInput "Anthropic API key"
+```
+
+```powershell
+uv run pytest -m lab -rs --basetemp .pytest-tmp tests/integration/test_lab_relay_planner_run.py
+```
+
+```powershell
+Remove-Item Env:OP06D_LLM_PROVIDER, Env:ANTHROPIC_API_KEY
+```
+
+Live-model gate through the relay (overlay up, see above), local:
+
+```powershell
 docker compose -f lab/docker-compose.yml -f lab/model-relay.local.yml exec -T `
   -e OP06D_LIVE_MODEL=1 -e OP06D_LIVE_PROVIDER=local `
   -e OP06D_LLM_ENDPOINT=http://172.31.78.2:11434 -e OP06D_LLM_ALLOW_PRIVATE=172.31.78.2 `
   scanner python3 -m pytest -p no:cacheprovider --basetemp /tmp/live-gate -rs /op06d/tests/test_live_model_gate.py
-# ... and anthropic (key from your shell, by name):
+```
+
+... and anthropic (key from your shell, by name):
+
+```powershell
 docker compose -f lab/docker-compose.yml -f lab/model-relay.anthropic.yml exec -T `
   -e OP06D_LIVE_MODEL=1 -e OP06D_LIVE_PROVIDER=anthropic -e ANTHROPIC_API_KEY `
   scanner python3 -m pytest -p no:cacheprovider --basetemp /tmp/live-gate -rs /op06d/tests/test_live_model_gate.py
@@ -1333,6 +1441,11 @@ limits, and the hosted budget). The harness never pulls a model:
 
 ```powershell
 uv run python lab/benchmark.py models --config lab/benchmark.default.yaml   # present / MISSING per local model
+```
+
+The pulls are safe to paste together:
+
+```powershell
 ollama pull llama3.1:8b-instruct-q5_K_M
 ollama pull qwen2.5:7b-instruct-q5_K_M
 ollama pull qwen2.5:14b-instruct-q4_K_M
@@ -1341,13 +1454,31 @@ ollama pull qwen3:30b-a3b-q4_K_M
 
 ```powershell
 uv run python lab/model_relay.py build local    # once, if the overlay images are not built
-# smoke: one local model, one run
+```
+
+Smoke: one local model, one run:
+
+```powershell
 uv run python lab/benchmark.py run --config lab/benchmark.default.yaml --candidate llama3.1-8b-q5 --runs 1
-# every local candidate
+```
+
+Every local candidate:
+
+```powershell
 uv run python lab/benchmark.py run --config lab/benchmark.default.yaml --provider local
-# hosted reference (paid): needs the flag, the key and the config's hosted_budget
+```
+
+Hosted reference (paid): needs the flag, the key and the config's `hosted_budget`:
+
+```powershell
 $env:ANTHROPIC_API_KEY = Read-Host -MaskInput "Anthropic API key"   # paste with right-click, check .Length
+```
+
+```powershell
 uv run python lab/benchmark.py run --config lab/benchmark.default.yaml --provider anthropic --allow-hosted
+```
+
+```powershell
 Remove-Item Env:ANTHROPIC_API_KEY
 ```
 
