@@ -253,6 +253,6 @@ uv run --extra dev pytest tests/test_orchestrator.py
   selects `anthropic` (the default; needs `ANTHROPIC_API_KEY`) or `local`
   (`OP06D_LLM_ENDPOINT`, default `http://127.0.0.1:11434`). See
   [output-sanitization.md](output-sanitization.md#known-limits) for the
-  command, and `lab/RUNBOOK.md` ("Automated acceptance and the live-model
+  command, and [`lab/model-relay.md`](../lab/model-relay.md#automated-acceptance-and-the-live-model-gate) ("Automated acceptance and the live-model
   gate") for running it through the lab model relay.
 - Production LLM adapters live in `op06d.llm`; see [llm-planner.md](llm-planner.md).

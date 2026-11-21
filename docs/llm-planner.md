@@ -53,7 +53,7 @@ op06d run --engagement eng.yaml --out out/ --planner llm --llm-provider local \
 ```
 
 Linux host set up for the lab's local model relay: Ollama is bound to
-the `docker0` bridge address, not loopback (see `lab/RUNBOOK.md`, "Ollama on
+the `docker0` bridge address, not loopback (see [lab/model-relay.md](../lab/model-relay.md#ollama-on-the-host-native-linux-eg-kali), "Ollama on
 the host (native Linux, e.g. Kali)"), so a run on the host must name that
 address as the endpoint and allow it as a private IP:
 
@@ -216,7 +216,7 @@ audit log, no evidence.
   Ollama, or `api.anthropic.com:443` as raw TLS passthrough filtered on the
   SNI. The targets are not on that network, the overlay does not modify the
   base `lab/docker-compose.yml` or its no-egress isolation, and the anthropic relay starts
-  only for an engagement that allows it. See lab/RUNBOOK.md, "Model relay".
+  only for an engagement that allows it. See [lab/model-relay.md](../lab/model-relay.md).
 
 ## Replies, failures and context
 

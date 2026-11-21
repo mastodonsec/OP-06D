@@ -26,7 +26,7 @@ Through the lab model relay (inside the scanner, overlay up), e.g. local:
     OP06D_LIVE_MODEL=1 OP06D_LIVE_PROVIDER=local \
     OP06D_LLM_ENDPOINT=http://172.31.78.2:11434 OP06D_LLM_ALLOW_PRIVATE=172.31.78.2 \
     python3 -m pytest -p no:cacheprovider /op06d/tests/test_live_model_gate.py
-lab/RUNBOOK.md (model relay section) has the exact commands for both modes.
+lab/model-relay.md has the exact commands for both modes.
 """
 
 from __future__ import annotations

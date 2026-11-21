@@ -589,6 +589,9 @@ tests/                   unit suite; tests/integration/ holds the lab-gated test
 lab/                     isolated Docker lab for live validation:
                          - README.md: the lab quick start
                          - RUNBOOK.md: the maintainer's validation reference
+                         - hosts.md: host setup per platform (Windows, Kali / Linux, macOS, ARM)
+                         - model-relay.md: the opt-in model relay for --planner llm runs
+                         - benchmark.md: the opt-in planner model benchmark
                          - targets: OWASP Juice Shop and DVWA, plus an nginx redirector
                          - scanner: the image's `lab` stage (same image plus test tools)
                          - isolation gate: check_isolation.py (Windows, Linux, macOS)
