@@ -125,7 +125,7 @@ ss -ltnH 'sport = :11434'
 
 ## Ollama on the host (macOS)
 
-Not verified; Docker Desktop for Mac is expected to behave like Windows:
+Same as on Windows:
 leave `OLLAMA_HOST` unset, keep Ollama on `127.0.0.1`, and confirm with
 `lsof -nP -iTCP:11434 -sTCP:LISTEN` (only `127.0.0.1`).
 

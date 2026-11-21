@@ -105,10 +105,6 @@ On Linux and macOS: `mkdir -p lab/captures && echo "created lab/captures"`.
 Docker Desktop, as on [Windows](#windows). The Compose v2 check, uv and the
 captures folder are as in [Kali / Linux](#kali--linux).
 
-Ollama on macOS for the relay, and `check anthropic` / `run anthropic` on
-Linux and macOS, are not verified (see
-[model-relay.md](model-relay.md)).
-
 ## ARM hosts
 
 - **ARM hosts (Apple Silicon, ARM Linux):** dvwa is pinned to `linux/amd64`
