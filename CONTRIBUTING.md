@@ -36,9 +36,13 @@ Signed-off-by: Your Name <you@example.com>
 
 Git does this for you with the `-s` flag:
 
-```
+bash / zsh:
+
+```bash
 git commit -s -m "Add a short imperative subject"
 ```
+
+The same command works in PowerShell 7.
 
 The full DCO text is reproduced in `DCO.txt`. A sign-off certifies that you agree
 to it for that contribution.

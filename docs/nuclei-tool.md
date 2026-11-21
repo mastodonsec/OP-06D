@@ -197,6 +197,8 @@ therefore structural:
   tied to `templates_pin`. Regenerate it whenever the template set is
   re-pinned:
 
+  bash / zsh:
+
   ```bash
   python3 scripts/generate_nuclei_write_method_exclusions.py /opt/nuclei-templates <pin>
   ```
@@ -332,6 +334,8 @@ toolbox = GatedToolbox(eng, gate, log, tools, approver=my_approver)
 
 nuclei is registered only when `nuclei_template_dir` is given. For tests, inject
 `runner`, `which` and `isdir`. Run the tests (no real nuclei is started):
+
+bash / zsh:
 
 ```bash
 uv run --extra dev pytest tests/test_nuclei_tool.py

@@ -160,6 +160,8 @@ action still goes through `Gate.check`.
 
 Run the tests:
 
+bash / zsh:
+
 ```bash
 uv run --extra dev pytest tests/test_sanitize.py
 ```
@@ -181,11 +183,15 @@ uv run --extra dev pytest tests/test_sanitize.py
   `OP06D_LLM_RUNTIME`, `OP06D_LLM_ALLOW_PRIVATE`). Default, which reports the
   test as skipped:
 
+  bash / zsh:
+
   ```bash
   uv run --extra dev pytest -rs tests/test_live_model_gate.py
   ```
 
   Opt-in, against a local Ollama on loopback:
+
+  bash / zsh:
 
   ```bash
   OP06D_LIVE_MODEL=1 OP06D_LIVE_PROVIDER=local uv run --extra dev pytest -rs tests/test_live_model_gate.py

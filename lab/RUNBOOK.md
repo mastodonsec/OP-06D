@@ -15,6 +15,8 @@ blocks (for Linux and macOS) are for bash or zsh; for the
 `docker compose -f $LAB ...` lines in the PowerShell blocks, see
 [Linux and macOS hosts](#linux-and-macos-hosts).
 
+PowerShell 7:
+
 ```powershell
 $LAB = "lab/docker-compose.yml"
 ```
@@ -42,9 +44,13 @@ tool versions, the template-set hash and `summary.json` to a new
 failed, 1 a step failed or was skipped, 2 the gate did not pass and nothing
 was scanned.
 
+PowerShell 7:
+
 ```powershell
 $env:OP06D_LAB = "1"; python lab/validation_harness.py
 ```
+
+bash / zsh:
 
 ```bash
 OP06D_LAB=1 python lab/validation_harness.py
@@ -55,9 +61,13 @@ OP06D_LAB=1 python lab/validation_harness.py
 isolation precondition, the real scan set, and comparison with
 `tests/integration/baseline.json`. It is not part of the default suite.
 
+PowerShell 7:
+
 ```powershell
 $env:OP06D_LAB = "1"; uv run pytest -m lab --basetemp .pytest-tmp tests/integration/test_lab_repeatability.py
 ```
+
+bash / zsh:
 
 ```bash
 OP06D_LAB=1 uv run pytest -m lab --basetemp .pytest-tmp tests/integration/test_lab_repeatability.py
@@ -144,6 +154,8 @@ The `latest` tag is not used anywhere. Step 5 records what is actually installed
   **build and pull** steps use the internet.
 - Create the captures folder (it is the one writable mount):
 
+PowerShell 7:
+
 ```powershell
 New-Item -ItemType Directory -Force lab\captures | Out-Null; "created lab\captures"
 ```
@@ -180,41 +192,61 @@ except that PowerShell's escaped newline (backtick n) inside `-w "..."` is
   `trixie`, component `stable`. Kali rolling has no suite of its own there,
   so it uses Debian's current stable one. Run one command at a time:
 
+bash (Kali):
+
 ```bash
 sudo apt remove -y docker.io docker-compose docker-buildx
 ```
+
+bash (Kali):
 
 ```bash
 sudo apt install -y ca-certificates curl
 ```
 
+bash (Kali):
+
 ```bash
 sudo install -m 0755 -d /etc/apt/keyrings
 ```
+
+bash (Kali):
 
 ```bash
 sudo curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc
 ```
 
+bash (Kali):
+
 ```bash
 sudo chmod a+r /etc/apt/keyrings/docker.asc
 ```
+
+bash (Kali):
 
 ```bash
 echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian trixie stable" | sudo tee /etc/apt/sources.list.d/docker.list
 ```
 
+bash (Kali):
+
 ```bash
 sudo apt update
 ```
+
+bash (Kali):
 
 ```bash
 sudo apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 ```
 
+bash (Kali):
+
 ```bash
 sudo systemctl enable --now docker
 ```
+
+bash (Kali):
 
 ```bash
 docker compose version
@@ -251,10 +283,14 @@ Step 4b.
 
 Validate the file syntax without starting anything:
 
+PowerShell 7:
+
 ```powershell
 docker compose -f $LAB config | Out-Null
 if ($LASTEXITCODE -eq 0) { "compose file OK" }
 ```
+
+bash / zsh:
 
 ```bash
 LAB=lab/docker-compose.yml
@@ -276,6 +312,8 @@ sets `PYTHONPATH=/op06d/src`, and Python puts `PYTHONPATH` ahead of the
 installed packages, so **the mounted code runs**, not the installed copy.
 Check it after Step 3:
 
+PowerShell 7:
+
 ```powershell
 docker compose -f $LAB exec -T scanner python3 -c "import op06d; print(op06d.__file__)"
 ```
@@ -290,6 +328,8 @@ Expected output:
 `OP06D_LAB_CODE` to the empty directory `./installed-only` before Step 3, so
 `/op06d` is empty and the import falls back to the installed copy
 (`/opt/op06d/lib/python3.11/site-packages/op06d/__init__.py`):
+
+PowerShell 7:
 
 ```powershell
 $env:OP06D_LAB_CODE = "./installed-only"
@@ -307,6 +347,8 @@ unprivileged `scanner` user.
 
 ## Step 2. Build the scanner image (internet required, outside the lab)
 
+PowerShell 7:
+
 ```powershell
 docker compose -f $LAB build scanner
 ```
@@ -316,9 +358,13 @@ SHA-256. If a checksum fails, **stop and investigate** before changing the pin.
 
 ## Step 3. Start the stack
 
+PowerShell 7:
+
 ```powershell
 docker compose -f $LAB up -d
 ```
+
+PowerShell 7:
 
 ```powershell
 docker compose -f $LAB ps
@@ -327,9 +373,13 @@ docker compose -f $LAB ps
 Wait until all four (`juice-shop`, `dvwa`, `redirect`, `scanner`) are running (DVWA needs about a minute for its database).
 From inside the scanner:
 
+PowerShell 7:
+
 ```powershell
 docker compose -f $LAB exec -T scanner curl -sS -o /dev/null -w "juice-shop HTTP %{http_code}`n" http://juice-shop.lab:3000/
 ```
+
+PowerShell 7:
 
 ```powershell
 docker compose -f $LAB exec -T scanner curl -sS -o /dev/null -w "dvwa HTTP %{http_code}`n" http://dvwa.lab/
@@ -346,14 +396,25 @@ Without it, DVWA's / redirects to /setup.php; after it, / redirects to /login.ph
 (its normal deployed state, which the PLANTED_VULNS baseline assumes). Record "DVWA DB initialized" as a baseline precondition: if the dvwa container
 is ever recreated (down/up), the DB resets and this step must be re-run.
 
-``` docker compose -f $LAB exec -T scanner curl -sS -X POST http://dvwa.lab/setup.php --data "create_db=1" -o /dev/null -w "dvwa setup HTTP %{http_code}`n" ```
+PowerShell 7:
 
-##### Verify: / should now redirect (302) to /login.php instead of /setup.php
-``` docker compose -f $LAB exec -T scanner curl -sS -o /dev/null -w "dvwa / -> HTTP %{http_code}`n" http://dvwa.lab/ ```
+```powershell
+docker compose -f $LAB exec -T scanner curl -sS -X POST http://dvwa.lab/setup.php --data "create_db=1" -o /dev/null -w "dvwa setup HTTP %{http_code}`n"
+```
+
+Verify that `/` now redirects (302) to `/login.php` instead of `/setup.php`:
+
+PowerShell 7:
+
+```powershell
+docker compose -f $LAB exec -T scanner curl -sS -o /dev/null -w "dvwa / -> HTTP %{http_code}`n" http://dvwa.lab/
+```
 
 ## Step 4. ISOLATION GATE (BLOCKING)
 
 **Do not continue unless the following command prints PASS.**
+
+PowerShell 7:
 
 ```powershell
 uv run python lab/check_isolation.py --with-internet-control
@@ -393,6 +454,8 @@ RESULT: PASS - lab isolation confirmed (host-side and from inside). You may proc
 
 Save the full output as evidence:
 
+PowerShell 7:
+
 ```powershell
 uv run python lab/check_isolation.py --with-internet-control *>&1 | Tee-Object lab\captures\isolation-check.txt
 ```
@@ -418,6 +481,8 @@ The gate still refuses to act outside that window. It runs inside the scanner;
 re-run it if a session outlasts the window (`--hours N`, at most 24, changes
 the length):
 
+PowerShell 7:
+
 ```powershell
 docker compose -f $LAB exec -T scanner python3 /lab/make_lab_engagement.py /captures/engagement.now.yaml
 ```
@@ -432,21 +497,31 @@ Steps 8 and 13 use `/captures/engagement.now.yaml`.
 
 ## Step 5. Record the installed versions
 
+PowerShell 7:
+
 ```powershell
 docker compose -f $LAB exec -T scanner cat /opt/lab-versions.txt
 ```
+
+PowerShell 7:
 
 ```powershell
 docker compose -f $LAB exec -T scanner nmap --version
 ```
 
+PowerShell 7:
+
 ```powershell
 docker compose -f $LAB exec -T scanner nuclei -version
 ```
 
+PowerShell 7:
+
 ```powershell
 docker image inspect op06d-lab-scanner:nmap-7.93-nuclei-3.11.1-templates-10.5.1 --format '{{.Id}}'
 ```
+
+PowerShell 7:
 
 ```powershell
 docker compose -f $LAB images
@@ -458,6 +533,8 @@ print to stderr and may mention an update check: note anything it says about
 networking.)
 
 ## Step 6. Run the project's tests inside the scanner (sanity)
+
+PowerShell 7:
 
 ```powershell
 docker compose -f $LAB exec -T scanner python3 -m pytest -q -p no:cacheprovider /op06d/tests
@@ -475,6 +552,8 @@ accepts them and does what they mean**; Step 8 runs every one for real. This ste
 prints exactly what the wrappers build and does a quick `--help` cross-check.
 
 **7a. Print every command line the wrappers build (nothing is executed):** Copy and paste to the command line.
+
+PowerShell 7:
 
 ```powershell
 @'
@@ -508,6 +587,8 @@ value differs per line: the wrapper sizes it from the port count and the rate
 Save to `lab/captures/wrapper-argv.txt`.
 
 **7b. Quick cross-check against `--help` (informational; `--` and a few flags do not appear in help).** The two lines are safe to paste together:
+
+PowerShell 7:
 
 ```powershell
 docker compose -f $LAB exec -T scanner bash -c 'for f in -oX --no-stylesheet --max-rate --host-timeout -sn -F -sV -p- -A -p --script; do if nmap --help 2>&1 | grep -q -e "$f"; then echo "nmap listed      $f"; else echo "nmap NOT LISTED  $f"; fi; done'
@@ -548,6 +629,8 @@ Writing straight to `lab/captures/` here is deliberate (these are the
 committed, by-hand captures); the automated test always uses a fresh,
 ephemeral subdirectory instead (`lab/captures/_repeatability_ephemeral/`, wiped before
 every run), so it never overwrites them.
+
+PowerShell 7:
 
 ```powershell
 docker compose -f $LAB exec -T scanner python3 /lab/scan_driver.py /captures --engagement /captures/engagement.now.yaml
@@ -590,6 +673,8 @@ sometimes present and sometimes absent (nuclei's `matcher-name`), or a field tha
 a list in reality but was a string in the sample (`info.tags`). Any of those can
 make a parser quietly drop data or fail. This step catches that before we trust the
 output — it's the bridge from "passes its tests" to "works on reality."
+
+PowerShell 7:
 
 ```powershell
 @'
@@ -634,6 +719,8 @@ default, no-approval pass. This step counts exactly that.
 **Run.** It walks ~14,000 template files and takes a minute or two; it prints
 `[i/N] scanning templates...` every 1,000 files (`-u` keeps that unbuffered)
 and `scanned N templates` at the end, then the table:
+
+PowerShell 7:
 
 ```powershell
 @'
@@ -715,6 +802,8 @@ Also list what the **default selection really selects** - the templates that
 carry a default tag and none of the tags the wrapper's `-exclude-tags` drops -
 read deterministically from the same YAML as the audit above:
 
+PowerShell 7:
+
 ```powershell
 @'
 import pathlib, sys, yaml
@@ -791,6 +880,8 @@ it removes its hostile config itself).
 **11a. Servers and test templates.** `PROBE` answers 302 to `CANARY`; `CANARY`
 and `OAST` just log. Anything that reaches CANARY or OAST, or carries the hostile
 header, shows up in `lab/captures/cfgtest-requests.log`.
+
+PowerShell 7:
 
 ```powershell
 @'
@@ -870,6 +961,8 @@ started servers.py (detached)
 
 **11b. The hostile ambient config** (inside the container's `/root`):
 
+PowerShell 7:
+
 ```powershell
 @'
 interactsh-server: 127.0.0.1:18083
@@ -890,6 +983,8 @@ wrote /root/.config/nuclei/config.yaml
 and record that.)
 
 **11c. Control, wrapper-as-built, and wrapper with a controlled config:**
+
+PowerShell 7:
 
 ```powershell
 @'
@@ -975,6 +1070,8 @@ replay.
 
 **11d. Clean up** (important: the hostile config must not linger):
 
+PowerShell 7:
+
 ```powershell
 docker compose -f $LAB exec -T scanner sh -c "rm -f /root/.config/nuclei/config.yaml; pkill -f servers.py; rm -rf /tmp/cfgtest"
 ```
@@ -984,6 +1081,8 @@ docker compose -f $LAB exec -T scanner sh -c "rm -f /root/.config/nuclei/config.
 Which profiles and scripts need root, and what the wrapper does without it.
 Runs only the profiles (and read-only analysis of scripts), against the lab
 target, as root and as the unprivileged `scanner` user:
+
+PowerShell 7:
 
 ```powershell
 $privprobe = @'
@@ -1043,6 +1142,8 @@ Two statuses come from this:
 
 Which NSE scripts need raw sockets (read-only, offline):
 
+PowerShell 7:
+
 ```powershell
 docker compose -f $LAB exec -T scanner sh -c "grep -rl 'is_privileged' /usr/share/nmap/scripts | sed 's#.*/##' | sort | head -100"
 ```
@@ -1067,6 +1168,8 @@ or raw tool output reaching the planner).
 
 **Run** (one pasteable command; it takes a minute or two and prints only at
 the end):
+
+PowerShell 7:
 
 ```powershell
 @'
@@ -1134,6 +1237,8 @@ missing or doubled `dns_pinned`) is a finding: **do not scan with OP-06D**
 until it is understood, and keep the full output.
 
 ## Step 14. Tear down
+
+PowerShell 7:
 
 ```powershell
 docker compose -f $LAB down
@@ -1211,9 +1316,13 @@ for the relay container only, to `host-gateway`, which on Linux is the
 127.0.0.1-only Ollama is therefore not reachable from the relay, and
 `0.0.0.0` would put it on the LAN. Bind it to the bridge address instead:
 
+bash (Linux):
+
 ```bash
 ip -4 -br addr show docker0
 ```
+
+bash (Linux):
 
 ```bash
 sudo systemctl edit ollama
@@ -1228,13 +1337,19 @@ After=docker.service
 Environment="OLLAMA_HOST=172.17.0.1:11434"
 ```
 
+bash (Linux):
+
 ```bash
 sudo systemctl restart ollama
 ```
 
+bash (Linux):
+
 ```bash
 export OLLAMA_HOST=172.17.0.1:11434
 ```
+
+bash (Linux):
 
 ```bash
 ss -ltnH 'sport = :11434'
@@ -1271,15 +1386,21 @@ the backtick line continuations, are PowerShell only. `check anthropic` and
 Build once (internet needed; builds the base scanner if missing, then the
 overlay scanner and the relay):
 
+PowerShell 7:
+
 ```powershell
 uv run python lab/model_relay.py build local
 ```
 
 **local** (host Ollama):
 
+PowerShell 7:
+
 ```powershell
 uv run python lab/model_relay.py up local
 ```
+
+PowerShell 7:
 
 ```powershell
 uv run python lab/model_relay.py check local     # must print RESULT: PASS
@@ -1287,9 +1408,13 @@ uv run python lab/model_relay.py check local     # must print RESULT: PASS
 
 Continue only if it printed `RESULT: PASS`.
 
+PowerShell 7:
+
 ```powershell
 uv run python lab/model_relay.py run local       # re-checks isolation, runs op06d, verifies the report
 ```
+
+PowerShell 7:
 
 ```powershell
 uv run python lab/model_relay.py down
@@ -1297,15 +1422,21 @@ uv run python lab/model_relay.py down
 
 **anthropic** (egress via the relay only):
 
+PowerShell 7:
+
 ```powershell
 $env:ANTHROPIC_API_KEY = Read-Host -MaskInput "Anthropic API key"
 ```
 
 Check the key's length before going on; see **Pasting the key** below.
 
+PowerShell 7:
+
 ```powershell
 uv run python lab/model_relay.py up anthropic --engagement lab/engagement-llm-hosted.yaml
 ```
+
+PowerShell 7:
 
 ```powershell
 uv run python lab/model_relay.py check anthropic # must print RESULT: PASS
@@ -1313,13 +1444,19 @@ uv run python lab/model_relay.py check anthropic # must print RESULT: PASS
 
 Continue only if it printed `RESULT: PASS`.
 
+PowerShell 7:
+
 ```powershell
 uv run python lab/model_relay.py run anthropic --engagement lab/engagement-llm-hosted.yaml
 ```
 
+PowerShell 7:
+
 ```powershell
 uv run python lab/model_relay.py down
 ```
+
+PowerShell 7:
 
 ```powershell
 Remove-Item Env:ANTHROPIC_API_KEY
@@ -1329,6 +1466,8 @@ Remove-Item Env:ANTHROPIC_API_KEY
 character, not as a paste, so the variable ends up one character long. Paste
 with a right-click or Ctrl+Shift+V, then check the length before going on (a
 real key is around 100 characters and starts with `sk-ant-`):
+
+PowerShell 7:
 
 ```powershell
 $env:ANTHROPIC_API_KEY.Length
@@ -1384,9 +1523,13 @@ two interfaces). After `down`, rerun Step 4 before any non-relay scan.
 
 Lab acceptance, one upstream per invocation. Local:
 
+PowerShell 7:
+
 ```powershell
 $env:OP06D_LAB = "1"; $env:OP06D_LLM_PROVIDER = "local"
 ```
+
+PowerShell 7:
 
 ```powershell
 uv run pytest -m lab -rs --basetemp .pytest-tmp tests/integration/test_lab_relay_planner_run.py
@@ -1394,19 +1537,27 @@ uv run pytest -m lab -rs --basetemp .pytest-tmp tests/integration/test_lab_relay
 
 Anthropic:
 
+PowerShell 7:
+
 ```powershell
 $env:OP06D_LLM_PROVIDER = "anthropic"; $env:ANTHROPIC_API_KEY = Read-Host -MaskInput "Anthropic API key"
 ```
 
+PowerShell 7:
+
 ```powershell
 uv run pytest -m lab -rs --basetemp .pytest-tmp tests/integration/test_lab_relay_planner_run.py
 ```
+
+PowerShell 7:
 
 ```powershell
 Remove-Item Env:OP06D_LLM_PROVIDER, Env:ANTHROPIC_API_KEY
 ```
 
 Live-model gate through the relay (overlay up, see above), local:
+
+PowerShell 7:
 
 ```powershell
 docker compose -f lab/docker-compose.yml -f lab/model-relay.local.yml exec -T `
@@ -1416,6 +1567,8 @@ docker compose -f lab/docker-compose.yml -f lab/model-relay.local.yml exec -T `
 ```
 
 ... and anthropic (key from your shell, by name):
+
+PowerShell 7:
 
 ```powershell
 docker compose -f lab/docker-compose.yml -f lab/model-relay.anthropic.yml exec -T `
@@ -1439,11 +1592,15 @@ The candidates are in a YAML config; `lab/benchmark.default.yaml` is the
 shortlist (provider, model, quantization label, context size, N, per-run
 limits, and the hosted budget). The harness never pulls a model:
 
+PowerShell 7:
+
 ```powershell
 uv run python lab/benchmark.py models --config lab/benchmark.default.yaml   # present / MISSING per local model
 ```
 
 The pulls are safe to paste together:
+
+PowerShell 7:
 
 ```powershell
 ollama pull llama3.1:8b-instruct-q5_K_M
@@ -1452,11 +1609,15 @@ ollama pull qwen2.5:14b-instruct-q4_K_M
 ollama pull qwen3:30b-a3b-q4_K_M
 ```
 
+PowerShell 7:
+
 ```powershell
 uv run python lab/model_relay.py build local    # once, if the overlay images are not built
 ```
 
 Smoke: one local model, one run:
+
+PowerShell 7:
 
 ```powershell
 uv run python lab/benchmark.py run --config lab/benchmark.default.yaml --candidate llama3.1-8b-q5 --runs 1
@@ -1464,19 +1625,27 @@ uv run python lab/benchmark.py run --config lab/benchmark.default.yaml --candida
 
 Every local candidate:
 
+PowerShell 7:
+
 ```powershell
 uv run python lab/benchmark.py run --config lab/benchmark.default.yaml --provider local
 ```
 
 Hosted reference (paid): needs the flag, the key and the config's `hosted_budget`:
 
+PowerShell 7:
+
 ```powershell
 $env:ANTHROPIC_API_KEY = Read-Host -MaskInput "Anthropic API key"   # paste with right-click, check .Length
 ```
 
+PowerShell 7:
+
 ```powershell
 uv run python lab/benchmark.py run --config lab/benchmark.default.yaml --provider anthropic --allow-hosted
 ```
+
+PowerShell 7:
 
 ```powershell
 Remove-Item Env:ANTHROPIC_API_KEY

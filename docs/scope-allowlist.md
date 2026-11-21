@@ -118,6 +118,8 @@ check_scope("app.acme.com", eng.scope, resolver=lambda host: ["198.51.100.7"], a
 
 Run the tests:
 
+bash / zsh:
+
 ```bash
 uv run --extra dev pytest tests/test_scope.py
 ```

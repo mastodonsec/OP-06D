@@ -37,6 +37,8 @@ When Python dependencies change (`uv.lock`), regenerate the image's
 requirement files (`docker/requirements.txt`, `docker/requirements-lab.txt`,
 `docker/build-requirements.txt`):
 
+bash / zsh:
+
 ```bash
 uv run python scripts/update_docker_requirements.py
 ```
@@ -61,9 +63,13 @@ workflow refuses a tag that does not match it.
 
 ## 2. Rebuild
 
+bash / zsh:
+
 ```bash
 docker buildx build --platform linux/amd64 --load -t op06d:local .
 ```
+
+bash / zsh:
 
 ```bash
 python3 scripts/check_image.py op06d:local
@@ -85,9 +91,13 @@ releasing.
 
 On `main`, after the pull request has merged and its CI passed:
 
+bash / zsh:
+
 ```bash
 git tag -s v<version> -m "OP-06D <version>"
 ```
+
+bash / zsh:
 
 ```bash
 git push origin v<version>

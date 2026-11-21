@@ -336,6 +336,8 @@ NmapTool(20, runner=fake_runner, which=lambda name: "/usr/bin/nmap")
 
 Run the tests (no real nmap is started):
 
+bash / zsh:
+
 ```bash
 uv run --extra dev pytest tests/test_nmap_tool.py
 ```

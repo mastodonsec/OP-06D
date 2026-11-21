@@ -19,25 +19,35 @@ Hosted (Anthropic). The engagement file must allow it explicitly (see
 [Engagement policy](#engagement-policy)). Install the extra and put the key in
 the environment. There is no flag or config field for the key.
 
-```sh
+bash / zsh:
+
+```bash
 pip install 'op06d[llm-anthropic]'
 ```
 
-```sh
+bash / zsh:
+
+```bash
 export ANTHROPIC_API_KEY=...            # read from the environment only
 ```
 
-```sh
+bash / zsh:
+
+```bash
 op06d run --engagement eng.yaml --out out/ --planner llm --llm-provider anthropic
 ```
 
 Local (Ollama on the same host, listening on loopback):
 
-```sh
+bash / zsh:
+
+```bash
 ollama pull llama3.1:8b-instruct-q5_K_M
 ```
 
-```sh
+bash / zsh:
+
+```bash
 op06d run --engagement eng.yaml --out out/ --planner llm --llm-provider local \
   --model llama3.1:8b-instruct-q5_K_M --context-tokens 8192
 ```
@@ -47,11 +57,15 @@ the `docker0` bridge address, not loopback (see `lab/RUNBOOK.md`, "Ollama on
 the host (native Linux, e.g. Kali)"), so a run on the host must name that
 address as the endpoint and allow it as a private IP:
 
-```sh
+bash (Linux):
+
+```bash
 ip -4 -br addr show docker0              # the address, normally 172.17.0.1
 ```
 
-```sh
+bash (Linux):
+
+```bash
 op06d run --engagement eng.yaml --out out/ --planner llm --llm-provider local \
   --llm-endpoint http://172.17.0.1:11434 --llm-allow-private 172.17.0.1
 ```
@@ -60,14 +74,18 @@ Other local runtimes speak the OpenAI-compatible chat API.
 
 llama.cpp server (constrained by a GBNF grammar):
 
-```sh
+bash / zsh:
+
+```bash
 op06d run ... --planner llm --llm-provider local --llm-runtime llamacpp \
   --llm-endpoint http://127.0.0.1:8080 --model <name>
 ```
 
 LM Studio / vLLM (constrained by `response_format` `json_schema`):
 
-```sh
+bash / zsh:
+
+```bash
 op06d run ... --planner llm --llm-provider local --llm-runtime openai \
   --llm-endpoint http://127.0.0.1:1234/v1 --model <name>
 ```
