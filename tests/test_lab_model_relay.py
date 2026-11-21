@@ -333,7 +333,11 @@ def test_anthropic_acceptance_without_key_is_refused_before_docker():
 BAD_KEYS = ["", "x", "sk-ant-" + "short", "plain-" + "a" * 60, FAKE_KEY + "\n"]
 
 
-@pytest.mark.parametrize("bad", BAD_KEYS)
+# Key-free ids: pytest would otherwise print the fake keys in its output.
+BAD_KEY_IDS = ["empty", "one-char", "too-short", "wrong-prefix", "trailing-newline"]
+
+
+@pytest.mark.parametrize("bad", BAD_KEYS, ids=BAD_KEY_IDS)
 def test_an_implausible_key_is_refused_by_up_and_run_before_docker(bad):
     env = {relay.KEY_ENV: bad}
     for call in (
@@ -439,6 +443,22 @@ def test_no_api_key_material_anywhere_under_lab():
             if m:
                 hits.append(f"{path.relative_to(ROOT)}: {m.group(0)[:24]!r}...")
     assert hits == []
+
+
+def test_no_test_id_carries_key_material():
+    """The suite's fake keys are built in pieces so the tree never holds a
+    key-shaped literal; a parametrized test id would reassemble one in
+    pytest's output (a CI log, or the lab harness's Step 6 evidence under
+    lab/captures/), which the scan above would then flag. Every test id,
+    lab-gated ones included, must stay key-free."""
+    cp = subprocess.run([sys.executable, "-m", "pytest", "--collect-only", "-q", "-p", "no:cacheprovider",
+                         "-m", "lab or not lab", str(ROOT / "tests")],
+                        cwd=ROOT, capture_output=True, timeout=300)
+    assert cp.returncode == 0, cp.stdout[-2000:] + cp.stderr[-2000:]
+    ids = cp.stdout.splitlines()
+    assert len(ids) > 1000  # the whole suite was collected
+    hits = sorted({line.split(b"[")[0].decode() for line in ids for rx in KEY_PATTERNS if rx.search(line)})
+    assert hits == [], "give these parametrizations key-free ids="  # names only: never echo the id
 
 
 def test_the_key_scan_is_not_vacuous(tmp_path):
