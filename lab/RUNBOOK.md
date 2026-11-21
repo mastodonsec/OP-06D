@@ -4,7 +4,9 @@ The maintainer's validation reference for the lab: the ordered steps that
 stand up the lab, **prove it is isolated**, validate the nmap and nuclei
 wrappers against the real, pinned tools, and run the whole chain once. The
 steps are run by hand; [Automated runs](#automated-runs) covers the parts
-that can be run in one command.
+that can be run in one command. The first time you run the lab, start with
+the quick start, [lab/README.md](README.md); this runbook is the maintainer's
+validation reference.
 
 Run all commands from the repository root. **Shells:** `powershell` blocks are
 for **PowerShell 7** (`pwsh`); snippets are piped into the container, which
@@ -225,7 +227,12 @@ docker compose -f $LAB config | Out-Null
 if ($LASTEXITCODE -eq 0) { "compose file OK" }
 ```
 
-Expected output:
+```bash
+LAB=lab/docker-compose.yml
+docker compose -f "$LAB" config > /dev/null && echo "compose file OK"
+```
+
+Expected output, in either shell:
 
 ```
 compose file OK
