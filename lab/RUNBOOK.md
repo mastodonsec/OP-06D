@@ -16,18 +16,12 @@ Related:
   `op06d run --planner llm` in the lab.
 - [lab/benchmark.md](benchmark.md): the opt-in planner model benchmark.
 
-Run all commands from the repository root. **Shells:** `powershell` blocks are
-for **PowerShell 7** (`pwsh`); snippets are piped into the container, which
-needs UTF-8 handling that Windows PowerShell 5.1 does not do reliably. `bash`
-blocks (for Linux and macOS) are for bash or zsh; for the
-`docker compose -f $LAB ...` lines in the PowerShell blocks, see
-[Running the runbook from bash or zsh](hosts.md#running-the-runbook-from-bash-or-zsh).
-
-PowerShell 7:
-
-```powershell
-$LAB = "lab/docker-compose.yml"
-```
+Run all commands from the repository root. **Shells:** blocks labelled
+"PowerShell 7 or bash / zsh" work the same in either shell. Where the host
+shell differs (environment variables, host folders, reading a key), a
+"PowerShell 7" block is for **PowerShell 7** (`pwsh`) and a "bash / zsh" block
+for bash or zsh. The checks that run inside the scanner are the scripts in
+`lab/steps/`; the [validation harness](#automated-runs) runs the same scripts.
 
 ---
 
@@ -182,21 +176,13 @@ Step 4b.
 
 Validate the file syntax without starting anything:
 
-PowerShell 7:
-
-```powershell
-docker compose -f $LAB config | Out-Null
-if ($LASTEXITCODE -eq 0) { "compose file OK" }
-```
-
-bash / zsh:
+PowerShell 7 or bash / zsh:
 
 ```bash
-LAB=lab/docker-compose.yml
-docker compose -f "$LAB" config > /dev/null && echo "compose file OK"
+docker compose -f lab/docker-compose.yml config --quiet && echo "compose file OK"
 ```
 
-Expected output, in either shell:
+Expected output:
 
 ```
 compose file OK
@@ -211,10 +197,10 @@ sets `PYTHONPATH=/op06d/src`, and Python puts `PYTHONPATH` ahead of the
 installed packages, so **the mounted code runs**, not the installed copy.
 Check it after Step 3:
 
-PowerShell 7:
+PowerShell 7 or bash / zsh:
 
-```powershell
-docker compose -f $LAB exec -T scanner python3 -c "import op06d; print(op06d.__file__)"
+```bash
+docker compose -f lab/docker-compose.yml exec -T scanner python3 -c "import op06d; print(op06d.__file__)"
 ```
 
 Expected output:
@@ -246,10 +232,10 @@ unprivileged `scanner` user.
 
 ## Step 2. Build the scanner image (internet required, outside the lab)
 
-PowerShell 7:
+PowerShell 7 or bash / zsh:
 
-```powershell
-docker compose -f $LAB build scanner
+```bash
+docker compose -f lab/docker-compose.yml build scanner
 ```
 
 The build verifies the nuclei zip and the templates tarball against their
@@ -257,31 +243,31 @@ SHA-256. If a checksum fails, **stop and investigate** before changing the pin.
 
 ## Step 3. Start the stack
 
-PowerShell 7:
+PowerShell 7 or bash / zsh:
 
-```powershell
-docker compose -f $LAB up -d
+```bash
+docker compose -f lab/docker-compose.yml up -d
 ```
 
-PowerShell 7:
+PowerShell 7 or bash / zsh:
 
-```powershell
-docker compose -f $LAB ps
+```bash
+docker compose -f lab/docker-compose.yml ps
 ```
 
 Wait until all four (`juice-shop`, `dvwa`, `redirect`, `scanner`) are running (DVWA needs about a minute for its database).
 From inside the scanner:
 
-PowerShell 7:
+PowerShell 7 or bash / zsh:
 
-```powershell
-docker compose -f $LAB exec -T scanner curl -sS -o /dev/null -w "juice-shop HTTP %{http_code}`n" http://juice-shop.lab:3000/
+```bash
+docker compose -f lab/docker-compose.yml exec -T scanner curl -sS -o /dev/null -w "juice-shop HTTP %{http_code}\n" http://juice-shop.lab:3000/
 ```
 
-PowerShell 7:
+PowerShell 7 or bash / zsh:
 
-```powershell
-docker compose -f $LAB exec -T scanner curl -sS -o /dev/null -w "dvwa HTTP %{http_code}`n" http://dvwa.lab/
+```bash
+docker compose -f lab/docker-compose.yml exec -T scanner curl -sS -o /dev/null -w "dvwa HTTP %{http_code}\n" http://dvwa.lab/
 ```
 
 **Step 3b (optional): initialise the DVWA database.** Only needed for the
@@ -295,31 +281,30 @@ Without it, DVWA's / redirects to /setup.php; after it, / redirects to /login.ph
 (its normal deployed state, which the PLANTED_VULNS baseline assumes). Record "DVWA DB initialized" as a baseline precondition: if the dvwa container
 is ever recreated (down/up), the DB resets and this step must be re-run.
 
-PowerShell 7:
+PowerShell 7 or bash / zsh:
 
-```powershell
-docker compose -f $LAB exec -T scanner curl -sS -X POST http://dvwa.lab/setup.php --data "create_db=1" -o /dev/null -w "dvwa setup HTTP %{http_code}`n"
+```bash
+docker compose -f lab/docker-compose.yml exec -T scanner curl -sS -X POST http://dvwa.lab/setup.php --data "create_db=1" -o /dev/null -w "dvwa setup HTTP %{http_code}\n"
 ```
 
 Verify that `/` now redirects (302) to `/login.php` instead of `/setup.php`:
 
-PowerShell 7:
+PowerShell 7 or bash / zsh:
 
-```powershell
-docker compose -f $LAB exec -T scanner curl -sS -o /dev/null -w "dvwa / -> HTTP %{http_code}`n" http://dvwa.lab/
+```bash
+docker compose -f lab/docker-compose.yml exec -T scanner curl -sS -o /dev/null -w "dvwa / -> HTTP %{http_code}\n" http://dvwa.lab/
 ```
 
 ## Step 4. ISOLATION GATE (BLOCKING)
 
 **Do not continue unless the following command prints PASS.**
 
-PowerShell 7:
+PowerShell 7 or bash / zsh:
 
-```powershell
+```bash
 uv run python lab/check_isolation.py --with-internet-control
 ```
 
-The same command works in bash and zsh on Linux and macOS.
 `pwsh -File lab\check_isolation.ps1 -WithInternetControl` is a thin wrapper
 around it (same exit code). The expected services are
 read from `lab/docker-compose.yml` (`docker compose config --services`).
@@ -347,7 +332,7 @@ RESULT: PASS - lab isolation confirmed (host-side and from inside). You may proc
 | Result | Exit | What to do |
 |---|---|---|
 | `PASS` | 0 | continue |
-| `FAIL ... REACHABLE` | 1 | **STOP.** `docker compose -f $LAB down`. Fix the compose file (network must be `internal: true` with `inhibit_ipv4`; one network only). Do not scan. If only the labnet-gateway lines FAIL, this Docker Engine ignored `inhibit_ipv4`: do not scan, report the engine version. |
+| `FAIL ... REACHABLE` | 1 | **STOP.** `docker compose -f lab/docker-compose.yml down`. Fix the compose file (network must be `internal: true` with `inhibit_ipv4`; one network only). Do not scan. If only the labnet-gateway lines FAIL, this Docker Engine ignored `inhibit_ipv4`: do not scan, report the engine version. |
 | `INCONCLUSIVE` | 2 | a control failed (stack still starting, or a tool is missing). Wait and rerun; it is not a pass. |
 | `NOT RUN` | 3 | Docker is unreachable, the compose file cannot be read, or the stack is not up. Nothing was checked. |
 
@@ -380,10 +365,10 @@ The gate still refuses to act outside that window. It runs inside the scanner;
 re-run it if a session outlasts the window (`--hours N`, at most 24, changes
 the length):
 
-PowerShell 7:
+PowerShell 7 or bash / zsh:
 
-```powershell
-docker compose -f $LAB exec -T scanner python3 /lab/make_lab_engagement.py /captures/engagement.now.yaml
+```bash
+docker compose -f lab/docker-compose.yml exec -T scanner python3 /lab/make_lab_engagement.py /captures/engagement.now.yaml
 ```
 
 Expected output (your times):
@@ -392,39 +377,75 @@ Expected output (your times):
 wrote /captures/engagement.now.yaml (window 2026-11-10T09:55:00Z .. 2026-11-10T14:00:00Z; validated)
 ```
 
+Check that now is inside the generated window:
+
+PowerShell 7 or bash / zsh:
+
+```bash
+docker compose -f lab/docker-compose.yml exec -T scanner python3 /lab/steps/engagement_window.py /captures/engagement.now.yaml
+```
+
+Expected output, for example:
+
+```
+window 2026-11-21T05:01:48+00:00 .. 2026-11-21T09:06:48+00:00
+now    2026-11-21T05:06:48.770266+00:00 (inside the window)
+```
+
+The times are your session's; the second line must say `inside the window`.
+
 Steps 8 and 13 use `/captures/engagement.now.yaml`.
 
 ## Step 5. Record the installed versions
 
-PowerShell 7:
+PowerShell 7 or bash / zsh:
 
-```powershell
-docker compose -f $LAB exec -T scanner cat /opt/lab-versions.txt
+```bash
+docker compose -f lab/docker-compose.yml exec -T scanner cat /opt/lab-versions.txt
 ```
 
-PowerShell 7:
+PowerShell 7 or bash / zsh:
 
-```powershell
-docker compose -f $LAB exec -T scanner nmap --version
+```bash
+docker compose -f lab/docker-compose.yml exec -T scanner nmap --version
 ```
 
-PowerShell 7:
+PowerShell 7 or bash / zsh:
 
-```powershell
-docker compose -f $LAB exec -T scanner nuclei -version
+```bash
+docker compose -f lab/docker-compose.yml exec -T scanner nuclei -version
 ```
 
-PowerShell 7:
+PowerShell 7 or bash / zsh:
 
-```powershell
+```bash
 docker image inspect op06d-lab-scanner:nmap-7.93-nuclei-3.11.1-templates-10.5.1 --format '{{.Id}}'
 ```
 
-PowerShell 7:
+PowerShell 7 or bash / zsh:
 
-```powershell
-docker compose -f $LAB images
+```bash
+docker compose -f lab/docker-compose.yml images
 ```
+
+Hash the template set (sha256 over the sorted relative path, NUL and
+sha256 of every file, so it does not depend on filesystem order):
+
+PowerShell 7 or bash / zsh:
+
+```bash
+docker compose -f lab/docker-compose.yml exec -T scanner python3 /lab/steps/template_hash.py
+```
+
+Expected output:
+
+```
+85a3f728ea20148258ae2cf13f18606b41bc6ffd5b36db078e3c7d27431612d2  /opt/nuclei-templates (14481 files)
+```
+
+The hash and file count are those of the pinned v10.5.1 set and are the same
+on every run; a different value means the template set on disk is not the
+one validated.
 
 Save to `lab/captures/versions.txt`. Confirm: nmap 7.93, nuclei v3.11.1, templates
 v10.5.1. Fill these into `lab/PLANTED_VULNS.md` section 5. (`nuclei -version` may
@@ -433,10 +454,10 @@ networking.)
 
 ## Step 6. Run the project's tests inside the scanner (sanity)
 
-PowerShell 7:
+PowerShell 7 or bash / zsh:
 
-```powershell
-docker compose -f $LAB exec -T scanner python3 -m pytest -q -p no:cacheprovider /op06d/tests
+```bash
+docker compose -f lab/docker-compose.yml exec -T scanner python3 -m pytest -q -p no:cacheprovider /op06d/tests
 ```
 
 This proves the pinned Python packages and Python 3.11 run the existing suite.
@@ -450,32 +471,12 @@ The wrappers pass these flags. The authoritative test is that the **real tool
 accepts them and does what they mean**; Step 8 runs every one for real. This step
 prints exactly what the wrappers build and does a quick `--help` cross-check.
 
-**7a. Print every command line the wrappers build (nothing is executed):** Copy and paste to the command line.
+**7a. Print every command line the wrappers build (nothing is executed):**
 
-PowerShell 7:
+PowerShell 7 or bash / zsh:
 
-```powershell
-@'
-from op06d.nmap_tool import NmapTool, PROFILES
-from op06d.nuclei_tool import NucleiTool
-from op06d.tools import ProcessResult
-
-seen = []
-def cap(argv, timeout, **kw):      # **kw: nuclei's runner is also passed env=
-    seen.append(list(argv))
-    return ProcessResult(0, b"", b"")
-
-nm = NmapTool(50, runner=cap)
-for prof in PROFILES:
-    nm.run("172.31.77.11", {"profile": prof})
-nm.run("172.31.77.11", {"profile": "service", "ports": "80,443"})
-nm.run("172.31.77.11", {"scripts": ["safe", "default", "discovery", "version", "vuln"]})
-nu = NucleiTool(50, template_dir="/opt/nuclei-templates", runner=cap)
-nu.run("dvwa.lab", {})
-nu.run("dvwa.lab", {"tags": ["tech", "cve"], "severity": ["info", "high"]})
-for argv in seen:
-    print(" ".join(argv))
-'@ | docker compose -f $LAB exec -T scanner python3 -
+```bash
+docker compose -f lab/docker-compose.yml exec -T scanner python3 /lab/steps/wrapper_argv.py
 ```
 
 Expected: eight `nmap` lines and two `nuclei` lines. The `--host-timeout`
@@ -485,13 +486,12 @@ value differs per line: the wrapper sizes it from the port count and the rate
 
 Save to `lab/captures/wrapper-argv.txt`.
 
-**7b. Quick cross-check against `--help` (informational; `--` and a few flags do not appear in help).** The two lines are safe to paste together:
+**7b. Quick cross-check against `--help` (informational; `--` and a few flags do not appear in help):**
 
-PowerShell 7:
+PowerShell 7 or bash / zsh:
 
-```powershell
-docker compose -f $LAB exec -T scanner bash -c 'for f in -oX --no-stylesheet --max-rate --host-timeout -sn -F -sV -p- -A -p --script; do if nmap --help 2>&1 | grep -q -e "$f"; then echo "nmap listed      $f"; else echo "nmap NOT LISTED  $f"; fi; done'
-docker compose -f $LAB exec -T scanner bash -c 'for f in -config -u -t -jsonl -silent -no-color -disable-update-check -rate-limit -c -bs -timeout -retries -disable-redirects -no-interactsh -interactsh-server -severity -tags -exclude-tags -id; do if nuclei -h 2>&1 | grep -q -e " $f"; then echo "nuclei listed     $f"; else echo "nuclei NOT LISTED $f"; fi; done'
+```bash
+docker compose -f lab/docker-compose.yml exec -T scanner python3 /lab/steps/flag_help.py
 ```
 
 **7c. Record, per flag:** accepted / rejected ("unrecognized option", "flag
@@ -529,10 +529,10 @@ committed, by-hand captures); the automated test always uses a fresh,
 ephemeral subdirectory instead (`lab/captures/_repeatability_ephemeral/`, wiped before
 every run), so it never overwrites them.
 
-PowerShell 7:
+PowerShell 7 or bash / zsh:
 
-```powershell
-docker compose -f $LAB exec -T scanner python3 /lab/scan_driver.py /captures --engagement /captures/engagement.now.yaml
+```bash
+docker compose -f lab/docker-compose.yml exec -T scanner python3 /lab/scan_driver.py /captures --engagement /captures/engagement.now.yaml
 ```
 
 **Takes a few minutes.** Before each of the seven rows the driver prints
@@ -573,23 +573,10 @@ a list in reality but was a string in the sample (`info.tags`). Any of those can
 make a parser quietly drop data or fail. This step catches that before we trust the
 output — it's the bridge from "passes its tests" to "works on reality."
 
-PowerShell 7:
+PowerShell 7 or bash / zsh:
 
-```powershell
-@'
-import pathlib, json
-from op06d.nmap_tool import parse_nmap_xml
-from op06d.nuclei_tool import parse_nuclei_jsonl
-for p in sorted(pathlib.Path("/captures").glob("nmap_*.xml")):
-    try:
-        f = parse_nmap_xml(p.read_text(encoding="utf-8"))
-        print("OK  ", p.name, "hosts:", len(f["hosts"]), "ports:", [x["port"] for h in f["hosts"] for x in h["ports"]])
-    except Exception as e:
-        print("FAIL", p.name, type(e).__name__, e)
-for p in sorted(pathlib.Path("/captures").glob("nuclei_*.jsonl")):
-    findings, bad = parse_nuclei_jsonl(p.read_text(encoding="utf-8"))
-    print("OK  " if bad == 0 else "WARN", p.name, "findings:", len(findings), "unparsed lines:", bad)
-'@ | docker compose -f $LAB exec -T scanner python3 -
+```bash
+docker compose -f lab/docker-compose.yml exec -T scanner python3 /lab/steps/parser_check.py
 ```
 
 Also compare by eye the real files with `tests/fixtures/nmap_service_scan.xml`
@@ -605,8 +592,8 @@ parser (with a test) before relying on its output.
 
 ## Step 10. nuclei tag-vocabulary audit
 
-**Purpose.** Does any tag the wrapper treats as safe (`ACTIVE_TAGS`) pull a
-template that is actually intrusive or state-changing? The wrapper selects
+**Purpose.** Does the default selection (what runs when the planner selects
+no tags) pull a template that is actually intrusive or state-changing? The wrapper selects
 templates by tag, so "safe" is only as good as the community's tagging. This
 is offline, read-only analysis of the pinned template set on disk; nothing is
 sent anywhere.
@@ -617,123 +604,57 @@ default, no-approval pass. This step counts exactly that.
 
 **Run.** It walks ~14,000 template files and takes a minute or two; it prints
 `[i/N] scanning templates...` every 1,000 files (`-u` keeps that unbuffered)
-and `scanned N templates` at the end, then the table:
+and `scanned N templates` at the end, then the summary of the default
+selection: every template with a tag in `DEFAULT_TAGS` and none of the tags
+the wrapper's `-exclude-tags` drops:
 
-PowerShell 7:
+PowerShell 7 or bash / zsh:
 
-```powershell
-@'
-import pathlib, re, collections, sys, yaml
-from op06d.nuclei_tool import ACTIVE_TAGS, INTRUSIVE_TAGS, EXPLOIT_TAGS, DEFAULT_TAGS
-
-ROOT = pathlib.Path("/opt/nuclei-templates")
-DANGER = INTRUSIVE_TAGS | EXPLOIT_TAGS
-rows = collections.defaultdict(lambda: collections.Counter())
-examples = collections.defaultdict(list)
-
-def tags_of(info):
-    t = info.get("tags", [])
-    if isinstance(t, str):
-        t = t.split(",")
-    return {str(x).strip().lower() for x in t if str(x).strip()}
-
-FILES = sorted(ROOT.rglob("*.yaml"))
-N = len(FILES)
-for i, p in enumerate(FILES, 1):
-    if i % 1000 == 0:
-        print(f"[{i}/{N}] scanning templates...", file=sys.stderr, flush=True)
-    try:
-        text = p.read_text(encoding="utf-8", errors="replace")
-        d = yaml.safe_load(text)
-    except Exception:
-        continue
-    if not isinstance(d, dict) or not isinstance(d.get("info"), dict):
-        continue
-    tags = tags_of(d["info"])
-    hit = tags & ACTIVE_TAGS
-    if not hit:
-        continue
-    reasons = []
-    if tags & DANGER:
-        reasons.append("also-tagged:" + ",".join(sorted(tags & DANGER)))   # the wrapper excludes these via -exclude-tags
-    for proto in ("code", "headless", "javascript", "tcp", "dns", "file", "ssl", "whois"):
-        if proto in d:
-            reasons.append("protocol:" + proto)
-    for key in ("http", "requests"):
-        for blk in d.get(key) or []:
-            if not isinstance(blk, dict):
-                continue
-            if blk.get("method") and str(blk["method"]).upper() not in ("GET", "HEAD", "OPTIONS"):
-                reasons.append("method:" + str(blk["method"]).upper())
-            if "fuzzing" in blk or "payloads" in blk or "attack" in blk:
-                reasons.append("fuzz/payloads")
-            if blk.get("redirects"):
-                reasons.append("redirects")
-            for raw in blk.get("raw") or []:
-                m = re.match(r"\s*(POST|PUT|DELETE|PATCH)\b", str(raw))
-                if m:
-                    reasons.append("method:" + m.group(1))
-    if "interactsh" in text:
-        reasons.append("uses-interactsh")
-    if str(d["info"].get("severity", "")).lower() in ("high", "critical"):
-        reasons.append("severity:" + str(d["info"]["severity"]).lower())
-    for t in hit:
-        rows[t]["templates"] += 1
-        for r in set(reasons):
-            rows[t][r.split(":")[0] if r.startswith(("also-tagged", "protocol", "method", "severity")) else r] += 1
-            if len(examples[(t, r)]) < 3:
-                examples[(t, r)].append(str(p.relative_to(ROOT)))
-
-print(f"scanned {N} templates", file=sys.stderr, flush=True)
-print("DEFAULT_TAGS (what runs when the planner selects nothing):", DEFAULT_TAGS)
-for t in sorted(rows):
-    print(f"\n== {t}  ({'DEFAULT' if t in DEFAULT_TAGS else 'optional'})")
-    for k, v in sorted(rows[t].items()):
-        print(f"   {k:28} {v}")
-print("\nExamples of concern (tag, reason -> up to 3 templates):")
-for (t, r), ex in sorted(examples.items()):
-    if r.startswith(("method:", "fuzz", "protocol:code", "protocol:headless", "protocol:javascript", "uses-interactsh", "redirects")):
-        print(f"  [{t}] {r}: {ex}")
-'@ | docker compose -f $LAB exec -T scanner python3 -u -
+```bash
+docker compose -f lab/docker-compose.yml exec -T scanner python3 -u /lab/steps/tag_audit.py
 ```
 
-Also list what the **default selection really selects** - the templates that
-carry a default tag and none of the tags the wrapper's `-exclude-tags` drops -
-read deterministically from the same YAML as the audit above:
+Also list what the **default selection really selects**, read from the same
+YAML as the audit above:
 
-PowerShell 7:
+PowerShell 7 or bash / zsh:
 
-```powershell
-@'
-import pathlib, sys, yaml
-from op06d.nuclei_tool import DEFAULT_TAGS, INTRUSIVE_TAGS, EXPLOIT_TAGS
-ROOT = pathlib.Path("/opt/nuclei-templates")
-default = set(DEFAULT_TAGS)
-blocked = (INTRUSIVE_TAGS | EXPLOIT_TAGS) - default      # what the wrapper passes to -exclude-tags
-out = []
-for p in sorted(ROOT.rglob("*.yaml")):
-    try:
-        d = yaml.safe_load(p.read_text(encoding="utf-8", errors="replace"))
-    except Exception:
-        continue
-    if not isinstance(d, dict) or not isinstance(d.get("info"), dict):
-        continue
-    t = d["info"].get("tags", [])
-    tags = {str(x).strip().lower() for x in (t.split(",") if isinstance(t, str) else t) if str(x).strip()}
-    if tags & default and not tags & blocked:
-        out.append(str(p.relative_to(ROOT)))
-pathlib.Path("/captures/default-selection-templates.txt").write_text("\n".join(out) + "\n", encoding="utf-8")
-print(f"wrote /captures/default-selection-templates.txt ({len(out)} templates)")
-'@ | docker compose -f $LAB exec -T scanner python3 -u -
+```bash
+docker compose -f lab/docker-compose.yml exec -T scanner python3 -u /lab/steps/default_selection.py
 ```
 
-**How to read it.** A tag in `ACTIVE_TAGS` is a problem if templates under the
-*default* selection (after `-exclude-tags`) still send non-GET/HEAD requests,
-use payloads/fuzzing, use `code`/`headless`/`javascript`, use interactsh, or
-follow redirects. `also-tagged:` rows are already handled by `-exclude-tags`,
-so they are not a problem by themselves. A `method:PUT`/`DELETE`/`PATCH`/`PURGE`
-on a default-selection template is covered by the write-method `-eid` backstop (below)
-only if its id is in `src/op06d/nuclei_write_method_exclusions.json`.
+Expected output against the pinned v10.5.1 set. The audit's summary (the 52
+non-GET templates are listed after it, one per line, as id, method and path):
+
+```
+templates scanned:                  14104
+in the default selection:           3102
+  send a non-GET request:           52 (POST 52)
+  declare a write method:           0
+  write method not covered by -eid: 0
+  other:                            protocol:code 1, protocol:headless 3, protocol:javascript 13, uses-interactsh 2
+non-GET templates in the default selection:
+  google-adk-api-exposed POST http/exposed-panels/google-adk-api-exposed.yaml
+  ...
+```
+
+and the selection list:
+
+```
+wrote /captures/default-selection-templates.txt (3102 templates)
+```
+
+These counts are the same on every run against the pinned set; a different
+count is a finding.
+
+**How to read it.** Every template listed as sending a non-GET request needs
+a look: it runs in the default, no-approval pass. So does every template
+counted on the `other:` line (a `code`, `headless` or `javascript` protocol
+block, or interactsh use, in the default selection). A write method (`PUT`/`DELETE`/`PATCH`/`PURGE`)
+on a default-selection template is covered by the write-method `-eid`
+backstop (below) only if its id is in
+`src/op06d/nuclei_write_method_exclusions.json`; one that is not is listed
+after `NOT COVERED by -eid:`.
 
 **What to do.** Count the templates of concern, list examples, and keep the
 output with the captures. If something new shows up, the fix is to remove or demote the tag,
@@ -770,235 +691,95 @@ own. If that file can override the wrapper's `-disable-redirects` /
 what a "safe" scan actually does - the gate would approve one thing and
 nuclei would do another.
 
-**Run.** 11a-11c below, then **always** 11d (clean-up). The same replay,
-reduced to one command and judged automatically, is
-`docker compose -f $LAB exec -T scanner python3 /lab/ambient_config_probe.py`
-(shared by `tests/integration/test_lab_nuclei_ambient_config.py` and the [validation harness](#automated-runs);
-it removes its hostile config itself).
+**Run.** One command replays the whole experiment and judges nothing itself:
+it starts the three servers, writes the hostile config to the scanner's
+`~/.config/nuclei/config.yaml`, runs nuclei five ways (A-E below), and always
+removes the hostile config again; the servers stop with it. The
+[validation harness](#automated-runs) and
+`tests/integration/test_lab_nuclei_ambient_config.py` run the same script.
+It takes about a minute.
 
-**11a. Servers and test templates.** `PROBE` answers 302 to `CANARY`; `CANARY`
-and `OAST` just log. Anything that reaches CANARY or OAST, or carries the hostile
-header, shows up in `lab/captures/cfgtest-requests.log`.
+PowerShell 7 or bash / zsh:
 
-PowerShell 7:
-
-```powershell
-@'
-import http.server, socketserver, threading, datetime, sys
-LOG = open("/captures/cfgtest-requests.log", "a", buffering=1)
-def note(who, h):
-    LOG.write(f"{datetime.datetime.utcnow().isoformat()}Z {who} {h.command} {h.path} headers={dict(h.headers)}\n")
-class Probe(http.server.BaseHTTPRequestHandler):
-    def do_GET(self):
-        note("PROBE", self)
-        self.send_response(302); self.send_header("Location", "http://127.0.0.1:18082/redirected"); self.end_headers()
-    log_message = lambda *a: None
-class Canary(http.server.BaseHTTPRequestHandler):
-    who = "CANARY"
-    def do_GET(self):
-        note(self.who, self); self.send_response(200); self.end_headers(); self.wfile.write(b"ok")
-    do_POST = do_HEAD = do_CONNECT = do_GET
-    log_message = lambda *a: None
-class Oast(Canary):
-    who = "OAST"
-class S(socketserver.ThreadingMixIn, http.server.HTTPServer):
-    daemon_threads = True
-for port, h in ((18081, Probe), (18082, Canary), (18083, Oast)):
-    threading.Thread(target=S(("127.0.0.1", port), h).serve_forever, daemon=True).start()
-threading.Event().wait()
-'@ | docker compose -f $LAB exec -T scanner sh -c "mkdir -p /tmp/cfgtest/templates && cat > /tmp/cfgtest/servers.py && echo 'wrote /tmp/cfgtest/servers.py'"
-
-@'
-id: cfgtest-redirect-probe
-info:
-  name: cfgtest redirect probe
-  author: lab
-  severity: info
-  tags: tech
-http:
-  - method: GET
-    path:
-      - "{{BaseURL}}/"
-    redirects: true
-    max-redirects: 3
-    matchers:
-      - type: status
-        status:
-          - 200
-'@ | docker compose -f $LAB exec -T scanner sh -c "cat > /tmp/cfgtest/templates/redirect-probe.yaml && echo 'wrote /tmp/cfgtest/templates/redirect-probe.yaml'"
-
-@'
-id: cfgtest-oast-probe
-info:
-  name: cfgtest oast probe
-  author: lab
-  severity: info
-  tags: tech
-http:
-  - method: GET
-    path:
-      - "{{BaseURL}}/?u=http://{{interactsh-url}}"
-    matchers:
-      - type: word
-        part: interactsh_protocol
-        words:
-          - dns
-          - http
-'@ | docker compose -f $LAB exec -T scanner sh -c "cat > /tmp/cfgtest/templates/oast-probe.yaml && echo 'wrote /tmp/cfgtest/templates/oast-probe.yaml'"
-
-docker compose -f $LAB exec -d scanner python3 /tmp/cfgtest/servers.py; "started servers.py (detached)"
+```bash
+docker compose -f lab/docker-compose.yml exec -T scanner python3 /lab/ambient_config_probe.py
 ```
 
-Expected output:
+`PROBE` answers 302 to `CANARY`; `CANARY` and `OAST` just log. The hostile
+config points interactsh at `OAST`, turns redirects on and adds an
+`X-Hostile-Config: 1` header:
 
 ```
-wrote /tmp/cfgtest/servers.py
-wrote /tmp/cfgtest/templates/redirect-probe.yaml
-wrote /tmp/cfgtest/templates/oast-probe.yaml
-started servers.py (detached)
-```
-
-**11b. The hostile ambient config** (inside the container's `/root`):
-
-PowerShell 7:
-
-```powershell
-@'
-interactsh-server: 127.0.0.1:18083
+interactsh-server: 127.0.0.1:18093
 no-interactsh: false
 follow-redirects: true
 header:
   - "X-Hostile-Config: 1"
-'@ | docker compose -f $LAB exec -T scanner sh -c "mkdir -p /root/.config/nuclei && cat > /root/.config/nuclei/config.yaml && echo 'wrote /root/.config/nuclei/config.yaml'"
 ```
 
-Expected output:
-
-```
-wrote /root/.config/nuclei/config.yaml
-```
-
-(The keys mirror nuclei's flag names; if nuclei complains about a key, adjust it
-and record that.)
-
-**11c. Control, wrapper-as-built, and wrapper with a controlled config:**
-
-PowerShell 7:
-
-```powershell
-@'
-import os, subprocess, pathlib, time
-from op06d.nuclei_tool import NucleiTool
-
-LOG = pathlib.Path("/captures/cfgtest-requests.log")
-pathlib.Path("/tmp/cfgtest/empty.yaml").write_text("", encoding="utf-8")
-pathlib.Path("/tmp/cfgtest/home").mkdir(exist_ok=True)
-
-def run(label, argv, env=None):
-    LOG.write_text("", encoding="utf-8")
-    p = subprocess.run(argv, capture_output=True, timeout=120, env=env, stdin=subprocess.DEVNULL)
-    time.sleep(1)
-    log = LOG.read_text(encoding="utf-8")
-    print(f"--- {label}: exit={p.returncode}")
-    print("    probe hit:             ", "PROBE" in log)
-    print("    redirect followed (CANARY got a request):", "CANARY" in log)
-    print("    hostile header sent:   ", "X-Hostile-Config" in log)
-    print("    oast contacted:        ", "OAST" in log)
-    print("    stderr tail:", p.stderr.decode(errors="replace")[-300:].strip().replace("\n", " | "))
-
-TARGET = "http://127.0.0.1:18081"
-control = ["nuclei", "-u", TARGET, "-t", "/tmp/cfgtest/templates", "-jsonl", "-silent", "-no-color", "-disable-update-check"]
-run("A. CONTROL (hostile ambient config, no wrapper flags)", control)
-
-tool = NucleiTool(50, template_dir="/tmp/cfgtest/templates")
-argv = tool.build_argv("nuclei", "127.0.0.1", {})
-argv[argv.index("-u") + 1] = TARGET          # the wrapper takes hosts only; swap in the loopback URL
-run("B. WRAPPER ARGV AS BUILT (ambient config still present)", argv)
-
-argv_c = argv + ["-config", "/tmp/cfgtest/empty.yaml"]
-env_c = {"PATH": os.environ["PATH"], "HOME": "/tmp/cfgtest/home"}
-run("C. WRAPPER ARGV + controlled -config + scrubbed env", argv_c, env_c)
-
-env_d = dict(os.environ, HTTP_PROXY="http://127.0.0.1:18082", HTTPS_PROXY="http://127.0.0.1:18082")
-run("D. WRAPPER ARGV with a hostile HTTP_PROXY in the environment", argv, env_d)
-run("E. variant C with the same hostile proxy (does scrubbing help?)", argv_c, dict(env_c, **{k: env_d[k] for k in ("HTTP_PROXY", "HTTPS_PROXY")}))
-'@ | docker compose -f $LAB exec -T scanner python3 -
-```
+(The keys mirror nuclei's flag names.) For each run it prints whether the
+probe was hit, a redirect was followed, the hostile header was sent and OAST
+was contacted (for D and E also whether traffic went through the hostile
+proxy), then `hostile config removed: True`.
 
 **How to read it.**
 
 | Run | Expected if the tool and the wrapper behave | Meaning if not |
 |---|---|---|
-| A control | redirect followed, header sent, OAST contacted | the experiment can't detect the behaviour; fix the experiment before drawing conclusions |
-| B wrapper as built | **no** redirect, **no** hostile header, **no** OAST | if the header or OAST appears, the ambient config **does** override the wrapper: a real finding |
-| C controlled config | clean | shows what the wrapper must do (always pass its own `-config`, run with a scrubbed environment) |
-| D hostile proxy env | a hostile `HTTP_PROXY`/`HTTPS_PROXY` in the environment is not honored by nuclei (no traffic via the proxy) | the wrapper would need to scrub the environment: a real finding |
-| E variant C + the same proxy | clean | the controlled config and scrubbed environment do not keep the proxy out: a real finding |
+| A control (raw nuclei, no wrapper flags) | redirect followed, header sent (OAST is not contacted; see below) | the experiment can't detect the behaviour; fix the experiment before drawing conclusions |
+| B wrapper as built (`NucleiTool.run`) | **no** redirect, **no** hostile header, **no** OAST, `status=ok` | if the header or OAST appears, the ambient config **does** override the wrapper: a real finding |
+| C empty `-config` + scrubbed `HOME` | clean | shows what the wrapper must do (always pass its own `-config`, run with a scrubbed environment) |
+| D wrapper argv + hostile proxy in the full environment (`HOME` scrubbed) | probe hit, and a hostile `HTTP_PROXY`/`HTTPS_PROXY` in the environment is not honored by nuclei (no traffic through the hostile proxy) | the wrapper would need to scrub the environment: a real finding |
+| E wrapper argv + scrubbed `HOME` + the same proxy | probe hit, clean | the controlled config and scrubbed environment do not keep the proxy out: a real finding |
 
-`build_argv` always emits `-config <placeholder>`, and that
-placeholder path does not exist on disk unless the wrapper's own `run()`
-creates it; so runs B and D above may exit early with a missing-config
-error instead of scanning. That is an artefact of calling `build_argv` by hand
-here, not a wrapper regression. The authoritative wrapper-as-built result is
-the `wrapper` row of `/lab/ambient_config_probe.py` (it calls `NucleiTool.run`,
-exactly as a scan does), and its `control` row is run A.
+D keeps the real environment except `HOME` and `XDG_CONFIG_HOME`: with the
+real `HOME`, nuclei reads the hostile config too and stops with
+`[FTL] ... both follow redirects and disable redirects specified` before
+sending anything, which would prove nothing about the proxy. If D or E shows
+`probe hit: False`, the proxy check did not run.
 
-**What to do.** If run A (or the probe's `control` row) shows nothing, fix the
-experiment before concluding anything. If the wrapper row shows a redirect,
+**What to do.** If run A shows nothing, fix the
+experiment before concluding anything. If run B shows a redirect,
 the hostile header, OAST contact or a non-`ok` status, the ambient config is
 overriding the wrapper: stop, keep the full output, and do not scan with
 OP-06D until it is fixed (the [harness](#automated-runs) reports that as FAIL). Otherwise the step is reviewed and done - the harness reports it as
-NEEDS-REVIEW, never PASS, so a human reads the table. Then run 11d.
+NEEDS-REVIEW, never PASS, so a human reads the table.
 
 The harness reports the redirect, header and OAST sub-checks separately: a
 sub-check the control never demonstrated is `INCONCLUSIVE (... detection not
 proven)`, not "clean". In this experiment the OAST sub-check is
-INCONCLUSIVE: the scheme-less `interactsh-server: 127.0.0.1:18083` makes
-nuclei *register* over HTTPS, and the stand-in on 18083 is a plain HTTP
+INCONCLUSIVE: the scheme-less `interactsh-server: 127.0.0.1:18093` makes
+nuclei *register* over HTTPS, and the stand-in on 18093 is a plain HTTP
 logger, so the TLS handshake fails (`tls: first record does not look like a
 TLS handshake`) and the interactsh client never initialises. The redirect and
 header sub-checks are proven.
 
 **Expected result.** The wrapper always passes its own `-config` (an empty
 file when none is configured) and runs nuclei with `HOME`/`XDG_CONFIG_HOME`
-pointed at a fresh per-run temporary directory. Against the hostile config
-from 11b, the wrapper row shows no redirect followed, no hostile header sent,
+pointed at a fresh per-run temporary directory. Against the hostile config,
+run B shows no redirect followed, no hostile header sent,
 no OAST contact, and `status=ok`.
 `tests/integration/test_lab_nuclei_ambient_config.py` (gated) automates the
 replay.
-
-**11d. Clean up** (important: the hostile config must not linger):
-
-PowerShell 7:
-
-```powershell
-docker compose -f $LAB exec -T scanner sh -c "rm -f /root/.config/nuclei/config.yaml; pkill -f servers.py; rm -rf /tmp/cfgtest"
-```
 
 ## Step 12. nmap privilege behavior
 
 Which profiles and scripts need root, and what the wrapper does without it.
 Runs only the profiles (and read-only analysis of scripts), against the lab
-target, as root and as the unprivileged `scanner` user:
+target, as root and as the unprivileged `scanner` user. As root:
 
-PowerShell 7:
+PowerShell 7 or bash / zsh:
 
-```powershell
-$privprobe = @'
-import os
-from op06d.nmap_tool import NmapTool, PROFILES
-t = NmapTool(50)
-print("uid:", os.getuid())
-for prof in PROFILES:
-    r = t.run("172.31.77.11", {"profile": prof})
-    f = r.findings if isinstance(r.findings, dict) else {}
-    err = f.get("error", {}).get("message", "") if f.get("error") else ""
-    scan_types = ",".join(f.get("summary", {}).get("scan_types", [])) or "-"
-    degraded = f.get("degraded_capabilities") if f.get("degraded") else "-"
-    print(f"{prof:11} status={r.status:18} scan-types={scan_types:10} degraded={degraded} {err[:150]}")
-'@
-"=== as root ===";            $privprobe | docker compose -f $LAB exec -T scanner python3 -
-"=== as scanner (unprivileged) ==="; $privprobe | docker compose -f $LAB exec -u scanner -T scanner python3 -
+```bash
+docker compose -f lab/docker-compose.yml exec -T scanner python3 /lab/steps/nmap_privilege.py
+```
+
+As the unprivileged `scanner` user:
+
+PowerShell 7 or bash / zsh:
+
+```bash
+docker compose -f lab/docker-compose.yml exec -u scanner -T scanner python3 /lab/steps/nmap_privilege.py
 ```
 
 Record, for each profile, root vs unprivileged: works? `syn` vs `connect` scan
@@ -1041,10 +822,10 @@ Two statuses come from this:
 
 Which NSE scripts need raw sockets (read-only, offline):
 
-PowerShell 7:
+PowerShell 7 or bash / zsh:
 
-```powershell
-docker compose -f $LAB exec -T scanner sh -c "grep -rl 'is_privileged' /usr/share/nmap/scripts | sed 's#.*/##' | sort | head -100"
+```bash
+docker compose -f lab/docker-compose.yml exec -T scanner sh -c "grep -rl 'is_privileged' /usr/share/nmap/scripts | sed 's#.*/##' | sort | head -100"
 ```
 
 The confirmed result is recorded in `docs/nmap-tool.md` ("Privilege-degradation
@@ -1065,52 +846,14 @@ sanitizer and the audit log all run in one loop, so it is where a wiring gap
 between them would show up (for example, a denied action that still executes,
 or raw tool output reaching the planner).
 
-**Run** (one pasteable command; it takes a minute or two and prints only at
-the end):
+**Run** (it takes a minute or two and prints only at the end; the audit log
+goes to `lab/captures/e2e-audit/`, and the engagement is Step 4b's
+`/captures/engagement.now.yaml`):
 
-PowerShell 7:
+PowerShell 7 or bash / zsh:
 
-```powershell
-@'
-import json
-from op06d.engagement import load_engagement
-from op06d.audit import AuditLog, read_log, verify_log
-from op06d.gate import Gate
-from op06d.tools import GatedToolbox, default_tools
-from op06d.orchestrator import Orchestrator
-
-eng = load_engagement("/captures/engagement.now.yaml")
-log = AuditLog.for_engagement(eng, "/captures/e2e-audit")
-box = GatedToolbox(eng, Gate(eng, audit_pin=log.record_dns_pin), log,
-                   default_tools(eng, nuclei_template_dir="/opt/nuclei-templates", nuclei_templates_pin="v10.5.1"))
-
-def act(tool, target, **params):
-    return json.dumps({"type": "action", "tool": tool, "target": target, "parameters": params, "reason": "lab e2e"})
-
-class ScriptedLLM:
-    def __init__(self, replies): self.replies, self.seen = list(replies), []
-    def complete(self, system, messages):
-        self.seen.append(messages[-1]["content"])
-        return self.replies.pop(0)
-
-llm = ScriptedLLM([
-    act("nmap", "172.31.77.11", profile="service", ports="80"),
-    act("nuclei", "dvwa.lab"),
-    act("nmap", "1.1.1.1"),                              # out of scope: the gate must deny
-    act("nuclei", "dvwa.lab", tags=["default-login"]),    # INTRUSIVE: no approver -> declined
-    json.dumps({"type": "done", "summary": "lab e2e finished"}),
-])
-result = Orchestrator(eng, llm, box, log, max_iterations=10).run()
-print("termination:", result.termination.value, "iterations:", result.iterations)
-for s in result.steps:
-    d = s.result.decision if s.result else None
-    print(f"  step {s.iteration}: {s.kind:14}", (d.stage + ": " + d.reason[:90]) if d else "")
-print("audit entries verified:", verify_log(log.path))
-for e in read_log(log.path):
-    print(f"  #{e.seq:<3} {e.event:16} tool={e.tool or '-':12} target={e.target or '-':18} allowed={e.allowed}  {(e.reason or '')[:70]}")
-print("\nWhat the planner saw after the first scan (sanitized, wrapped):\n")
-print(llm.seen[1][:1200])
-'@ | docker compose -f $LAB exec -T scanner python3 -
+```bash
+docker compose -f lab/docker-compose.yml exec -T scanner python3 /lab/steps/end_to_end.py
 ```
 
 **How to read it.** Expected: `termination: objective_met`; steps `executed`, `executed`, `denied`
@@ -1137,10 +880,10 @@ until it is understood, and keep the full output.
 
 ## Step 14. Tear down
 
-PowerShell 7:
+PowerShell 7 or bash / zsh:
 
-```powershell
-docker compose -f $LAB down
+```bash
+docker compose -f lab/docker-compose.yml down
 ```
 
 (`down -v` is unnecessary; no volumes are used. Images stay cached.)

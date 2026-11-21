@@ -91,7 +91,7 @@ def lab_stack():
 
 
 def test_hostile_ambient_config_cannot_override_the_wrapper_against_real_nuclei(lab_stack):
-    r = _exec("scanner", "python3", "/lab/ambient_config_probe.py", timeout=420)
+    r = _exec("scanner", "python3", "/lab/ambient_config_probe.py", "--json", timeout=420)
     assert r.returncode == 0, f"probe failed:\n{r.stdout}\n{r.stderr}"
     result = json.loads(r.stdout.strip().splitlines()[-1])
 
