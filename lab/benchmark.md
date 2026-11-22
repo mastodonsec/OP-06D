@@ -13,42 +13,42 @@ The candidates are in a YAML config; `lab/benchmark.default.yaml` is the
 shortlist (provider, model, quantization label, context size, N, per-run
 limits, and the hosted budget). The harness never pulls a model:
 
-PowerShell 7:
+PowerShell 7 or bash / zsh:
 
-```powershell
+```bash
 uv run python lab/benchmark.py models --config lab/benchmark.default.yaml   # present / MISSING per local model
 ```
 
 The pulls are safe to paste together:
 
-PowerShell 7:
+PowerShell 7 or bash / zsh:
 
-```powershell
+```bash
 ollama pull llama3.1:8b-instruct-q5_K_M
 ollama pull qwen2.5:7b-instruct-q5_K_M
 ollama pull qwen2.5:14b-instruct-q4_K_M
 ollama pull qwen3:30b-a3b-q4_K_M
 ```
 
-PowerShell 7:
+PowerShell 7 or bash / zsh:
 
-```powershell
+```bash
 uv run python lab/model_relay.py build local    # once, if the overlay images are not built
 ```
 
 Smoke: one local model, one run:
 
-PowerShell 7:
+PowerShell 7 or bash / zsh:
 
-```powershell
+```bash
 uv run python lab/benchmark.py run --config lab/benchmark.default.yaml --candidate llama3.1-8b-q5 --runs 1
 ```
 
 Every local candidate:
 
-PowerShell 7:
+PowerShell 7 or bash / zsh:
 
-```powershell
+```bash
 uv run python lab/benchmark.py run --config lab/benchmark.default.yaml --provider local
 ```
 
@@ -60,9 +60,15 @@ PowerShell 7:
 $env:ANTHROPIC_API_KEY = Read-Host -MaskInput "Anthropic API key"   # paste with right-click, check .Length
 ```
 
-PowerShell 7:
+bash / zsh:
 
-```powershell
+```bash
+printf 'Anthropic API key: '; read -rs ANTHROPIC_API_KEY; echo; export ANTHROPIC_API_KEY
+```
+
+PowerShell 7 or bash / zsh:
+
+```bash
 uv run python lab/benchmark.py run --config lab/benchmark.default.yaml --provider anthropic --allow-hosted
 ```
 
@@ -70,6 +76,12 @@ PowerShell 7:
 
 ```powershell
 Remove-Item Env:ANTHROPIC_API_KEY
+```
+
+bash / zsh:
+
+```bash
+unset ANTHROPIC_API_KEY
 ```
 
 `validate` instead of `run` checks the config and the selection and starts
