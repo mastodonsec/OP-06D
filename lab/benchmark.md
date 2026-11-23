@@ -16,7 +16,7 @@ limits, and the hosted budget). The harness never pulls a model:
 PowerShell 7 or bash / zsh:
 
 ```bash
-uv run python lab/benchmark.py models --config lab/benchmark.default.yaml   # present / MISSING per local model
+uv run python lab/benchmark.py models --config lab/benchmark.default.yaml
 ```
 
 The pulls are safe to paste together:
@@ -30,10 +30,12 @@ ollama pull qwen2.5:14b-instruct-q4_K_M
 ollama pull qwen3:30b-a3b-q4_K_M
 ```
 
+Build the overlay images once, if they are not built yet:
+
 PowerShell 7 or bash / zsh:
 
 ```bash
-uv run python lab/model_relay.py build local    # once, if the overlay images are not built
+uv run python lab/model_relay.py build local
 ```
 
 Smoke: one local model, one run:
@@ -54,10 +56,12 @@ uv run python lab/benchmark.py run --config lab/benchmark.default.yaml --provide
 
 Hosted reference (paid): needs the flag, the key and the config's `hosted_budget`:
 
+In PowerShell, paste the key with right-click and check it with `$env:ANTHROPIC_API_KEY.Length`.
+
 PowerShell 7:
 
 ```powershell
-$env:ANTHROPIC_API_KEY = Read-Host -MaskInput "Anthropic API key"   # paste with right-click, check .Length
+$env:ANTHROPIC_API_KEY = Read-Host -MaskInput "Anthropic API key"
 ```
 
 bash / zsh:

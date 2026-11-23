@@ -156,15 +156,17 @@ uv run python lab/model_relay.py up local
 PowerShell 7 or bash / zsh:
 
 ```bash
-uv run python lab/model_relay.py check local     # must print RESULT: PASS
+uv run python lab/model_relay.py check local
 ```
 
 Continue only if it printed `RESULT: PASS`.
 
+`run` re-checks isolation, then runs op06d and verifies the report:
+
 PowerShell 7 or bash / zsh:
 
 ```bash
-uv run python lab/model_relay.py run local       # re-checks isolation, runs op06d, verifies the report
+uv run python lab/model_relay.py run local
 ```
 
 PowerShell 7 or bash / zsh:
@@ -192,7 +194,7 @@ uv run python lab/model_relay.py up anthropic --engagement lab/engagement-llm-ho
 PowerShell 7:
 
 ```powershell
-uv run python lab/model_relay.py check anthropic # must print RESULT: PASS
+uv run python lab/model_relay.py check anthropic
 ```
 
 Continue only if it printed `RESULT: PASS`.
