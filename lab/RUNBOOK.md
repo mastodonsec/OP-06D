@@ -23,17 +23,19 @@ Working through this runbook shows that:
   validated with, listed under [Pinned versions](#pinned-versions) (Step 5);
 - nmap and nuclei accept every option OP-06D gives them, and OP-06D reads their
   real output correctly (Steps 7-9);
-- you can see which nuclei checks OP-06D runs without asking for approval and
-  whether any of them could change a target, and a stray nuclei settings file on
-  the scanner can't change what a scan does (Steps 10-11);
+- which nuclei checks OP-06D runs without asking for approval, and whether any
+  of them could change a target (Step 10), and whether a nuclei settings file
+  left on the scanner can turn back on features OP-06D switches off (Step 11).
+  You review the results of both steps yourself, which is why the harness marks
+  them NEEDS-REVIEW;
 - how nmap behaves with and without administrator rights (root), and what OP-06D
   reports when a scan has to fall back to a weaker method (Step 12);
 - one complete OP-06D run works: from the engagement file (the file that says
   what you may scan, and when) through the real tools to the audit log, with an
   out-of-scope target refused and an intrusive check declined (Step 13).
 
-Evidence goes under `lab/captures/`, the only folder the lab can write to. The
-validation harness saves every step's output there.
+Evidence goes under `lab/captures/`, the only folder on your machine the lab can
+write to. The validation harness saves every step's output there.
 
 ## Which document do you need?
 
@@ -42,7 +44,8 @@ validation harness saves every step's output there.
 - **To prove a setup** before a first engagement, after an upgrade, or after
   changing OP-06D: this runbook, step by step, or the
   [validation harness](#automated-runs), which runs Steps 5-13 in one command.
-  A harness run usually takes under an hour, most of it in Step 12.
+  A harness run takes about one to two hours, depending on the machine, most of
+  it in Step 12.
 
 ---
 
@@ -744,8 +747,8 @@ survivors are untouched. A different count is a finding.
 
 ## Step 11. nuclei ambient-config precedence
 
-**Purpose.** This step checks that a nuclei settings file left on the scanner
-can't turn back on the features OP-06D switches off. Can a hostile
+**Purpose.** This step checks whether a nuclei settings file left on the scanner
+can turn back on the features OP-06D switches off. Can a hostile
 `~/.config/nuclei` config re-enable interactsh, redirects or headers despite the
 wrapper's flags?
 Everything below is on the scanner's **loopback only** (three tiny local
