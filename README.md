@@ -539,8 +539,8 @@ It has two jobs:
 
 Run it once after installing, before your first authorized engagement, to confirm your
 setup works and to see real output. Start with the quick start,
-[`lab/README.md`](lab/README.md). [`lab/RUNBOOK.md`](lab/RUNBOOK.md) is the maintainer's
-validation reference.
+[`lab/README.md`](lab/README.md). [`lab/RUNBOOK.md`](lab/RUNBOOK.md) is the step-by-step
+procedure for proving a setup.
 
 ## Project layout
 
