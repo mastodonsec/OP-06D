@@ -28,7 +28,7 @@ pip install 'op06d[llm-anthropic]'
 bash / zsh:
 
 ```bash
-export ANTHROPIC_API_KEY=...            # read from the environment only
+printf 'Anthropic API key: '; read -rs ANTHROPIC_API_KEY; echo; export ANTHROPIC_API_KEY
 ```
 
 bash / zsh:
@@ -57,10 +57,12 @@ the `docker0` bridge address, not loopback (see [lab/model-relay.md](../lab/mode
 the host (native Linux, e.g. Kali)"), so a run on the host must name that
 address as the endpoint and allow it as a private IP:
 
+The address is normally `172.17.0.1`; this prints it:
+
 bash (Linux):
 
 ```bash
-ip -4 -br addr show docker0              # the address, normally 172.17.0.1
+ip -4 -br addr show docker0
 ```
 
 bash (Linux):

@@ -139,37 +139,39 @@ the backtick line continuations, are PowerShell only. `check anthropic` and
 Build once (internet needed; builds the base scanner if missing, then the
 overlay scanner and the relay):
 
-PowerShell 7:
+PowerShell 7 or bash / zsh:
 
-```powershell
+```bash
 uv run python lab/model_relay.py build local
 ```
 
 **local** (host Ollama):
 
-PowerShell 7:
+PowerShell 7 or bash / zsh:
 
-```powershell
+```bash
 uv run python lab/model_relay.py up local
 ```
 
-PowerShell 7:
+PowerShell 7 or bash / zsh:
 
-```powershell
-uv run python lab/model_relay.py check local     # must print RESULT: PASS
+```bash
+uv run python lab/model_relay.py check local
 ```
 
 Continue only if it printed `RESULT: PASS`.
 
-PowerShell 7:
+`run` re-checks isolation, then runs op06d and verifies the report:
 
-```powershell
-uv run python lab/model_relay.py run local       # re-checks isolation, runs op06d, verifies the report
+PowerShell 7 or bash / zsh:
+
+```bash
+uv run python lab/model_relay.py run local
 ```
 
-PowerShell 7:
+PowerShell 7 or bash / zsh:
 
-```powershell
+```bash
 uv run python lab/model_relay.py down
 ```
 
@@ -192,7 +194,7 @@ uv run python lab/model_relay.py up anthropic --engagement lab/engagement-llm-ho
 PowerShell 7:
 
 ```powershell
-uv run python lab/model_relay.py check anthropic # must print RESULT: PASS
+uv run python lab/model_relay.py check anthropic
 ```
 
 Continue only if it printed `RESULT: PASS`.
@@ -310,13 +312,10 @@ Remove-Item Env:OP06D_LLM_PROVIDER, Env:ANTHROPIC_API_KEY
 
 Live-model gate through the relay (overlay up, see above), local:
 
-PowerShell 7:
+PowerShell 7 or bash / zsh:
 
-```powershell
-docker compose -f lab/docker-compose.yml -f lab/model-relay.local.yml exec -T `
-  -e OP06D_LIVE_MODEL=1 -e OP06D_LIVE_PROVIDER=local `
-  -e OP06D_LLM_ENDPOINT=http://172.31.78.2:11434 -e OP06D_LLM_ALLOW_PRIVATE=172.31.78.2 `
-  scanner python3 -m pytest -p no:cacheprovider --basetemp /tmp/live-gate -rs /op06d/tests/test_live_model_gate.py
+```bash
+docker compose -f lab/docker-compose.yml -f lab/model-relay.local.yml exec -T -e OP06D_LIVE_MODEL=1 -e OP06D_LIVE_PROVIDER=local -e OP06D_LLM_ENDPOINT=http://172.31.78.2:11434 -e OP06D_LLM_ALLOW_PRIVATE=172.31.78.2 scanner python3 -m pytest -p no:cacheprovider --basetemp /tmp/live-gate -rs /op06d/tests/test_live_model_gate.py
 ```
 
 ... and anthropic (key from your shell, by name):

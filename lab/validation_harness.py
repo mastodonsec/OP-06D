@@ -41,9 +41,11 @@ Exit codes: 0 = no step FAILed (NEEDS-REVIEW steps still need a human read),
 PASS (nothing was scanned), 3 = skipped: ``OP06D_LAB`` unset, no docker, or
 an invalid compose file (prints ``RESULT: SKIPPED``; nothing ran).
 
-Code shared with the gated tests: the scan set is
-``lab/scan_driver.py``, the baseline + ambient-config assertions are
-``lab/lab_asserts.py``, the Step 11 replay is ``lab/ambient_config_probe.py``.
+Code shared with the runbook and the gated tests: every in-scanner check is
+a script the runbook runs too (``lab/steps/*.py``, called here with
+``--json``), the scan set is ``lab/scan_driver.py``, the baseline +
+ambient-config assertions are ``lab/lab_asserts.py``, and the Step 11 replay is
+``lab/ambient_config_probe.py``.
 The small docker helpers (``_compose``/``_exec``/``_wait_for_targets``) are
 copied from tests/integration/test_lab_repeatability.py (they call ``pytest.fail``
 there, so they can't be imported into a non-pytest script).
@@ -193,7 +195,7 @@ NMAP_SOMEWHERE = ("-sn", "-F", "-sV", "-p-", "-A", "-p", "--script=")
 NUCLEI_EVERY = ("-config", "-u", "-t", "-jsonl", "-silent", "-no-color", "-disable-update-check",
                 "-rate-limit", "-c", "-bs", "-timeout", "-retries", "-disable-redirects",
                 "-stats", "-eid", "-no-interactsh", "-severity", "-tags", "-exclude-tags")
-EXPECTED_NMAP_ARGVS, EXPECTED_NUCLEI_ARGVS = 8, 2  # what the RUNBOOK 7a snippet builds
+EXPECTED_NMAP_ARGVS, EXPECTED_NUCLEI_ARGVS = 8, 2  # what lab/steps/wrapper_argv.py builds (RUNBOOK 7a)
 
 
 def _has_flag(argv: list[str], flag: str) -> bool:
@@ -403,227 +405,6 @@ def format_report(results: list[StepResult], started: str, final_line: str) -> s
 
 
 # ============================================================================
-# In-container snippets (piped to `python3 -` in the scanner, like the runbook)
-# ============================================================================
-
-SNIPPET_WINDOW = r"""
-import json, datetime, sys
-from op06d.engagement import load_engagement
-w = load_engagement(sys.argv[1]).authorization.window
-print(json.dumps({"start": w[0].isoformat(), "end": w[1].isoformat(),
-                  "now": datetime.datetime.now(datetime.timezone.utc).isoformat()}))
-"""
-
-# sha256 over sorted (relative path, NUL, sha256(content)) of every file in the
-# pinned template tree: stable, order-independent of the filesystem.
-SNIPPET_TEMPLATE_HASH = r"""
-import hashlib, json, pathlib
-root = pathlib.Path("/opt/nuclei-templates")
-files = sorted((p.relative_to(root).as_posix(), p) for p in root.rglob("*") if p.is_file())
-h = hashlib.sha256()
-for rel, p in files:
-    h.update(rel.encode("utf-8") + b"\0" + hashlib.sha256(p.read_bytes()).digest())
-print(json.dumps({"sha256": h.hexdigest(), "files": len(files)}))
-"""
-
-# RUNBOOK Step 7a, emitting JSON instead of joined strings.
-SNIPPET_ARGV = r"""
-import json
-from op06d.nmap_tool import NmapTool, PROFILES
-from op06d.nuclei_tool import NucleiTool
-from op06d.tools import ProcessResult
-seen = []
-def cap(argv, timeout, **kw):  # nuclei's runner is also passed env=
-    seen.append(list(argv))
-    return ProcessResult(0, b"", b"")
-nm = NmapTool(50, runner=cap)
-for prof in PROFILES:
-    nm.run("172.31.77.11", {"profile": prof})
-nm.run("172.31.77.11", {"profile": "service", "ports": "80,443"})
-nm.run("172.31.77.11", {"scripts": ["safe", "default", "discovery", "version", "vuln"]})
-nu = NucleiTool(50, template_dir="/opt/nuclei-templates", runner=cap)
-nu.run("dvwa.lab", {})
-nu.run("dvwa.lab", {"tags": ["tech", "cve"], "severity": ["info", "high"]})
-print(json.dumps(seen))
-"""
-
-# RUNBOOK Step 9 over the Step 8 captures, emitting JSON rows.
-SNIPPET_PARSERS = r"""
-import json, pathlib, sys
-from op06d.nmap_tool import parse_nmap_xml
-from op06d.nuclei_tool import parse_nuclei_jsonl
-d = pathlib.Path(sys.argv[1])
-rows = []
-for p in sorted(d.glob("nmap_*.xml")):
-    try:
-        f = parse_nmap_xml(p.read_text(encoding="utf-8"))
-        rows.append({"file": p.name, "ok": True, "unparsed": 0, "hosts": len(f["hosts"]),
-                     "ports": [x["port"] for h in f["hosts"] for x in h["ports"]]})
-    except Exception as e:
-        rows.append({"file": p.name, "ok": False, "unparsed": 0, "error": f"{type(e).__name__}: {e}"})
-for p in sorted(d.glob("nuclei_*.jsonl")):
-    try:
-        findings, bad = parse_nuclei_jsonl(p.read_text(encoding="utf-8"))
-        rows.append({"file": p.name, "ok": True, "unparsed": bad, "findings": len(findings)})
-    except Exception as e:
-        rows.append({"file": p.name, "ok": False, "unparsed": 0, "error": f"{type(e).__name__}: {e}"})
-print(json.dumps(rows))
-"""
-
-# Step 10: the default selection (DEFAULT_TAGS minus the -exclude-tags the
-# wrapper adds) read deterministically from the YAML, as in the RUNBOOK's
-# Step 10 audit; counts survivors that send a non-GET request and any
-# write-method one the bundled -eid list would miss. Progress on stderr.
-SNIPPET_TAG_AUDIT = r"""
-import collections, json, pathlib, re, sys, yaml
-from op06d.nuclei_tool import DEFAULT_TAGS, INTRUSIVE_TAGS, EXPLOIT_TAGS
-from op06d.nuclei_method_audit import template_declares_write_method
-ROOT = pathlib.Path("/opt/nuclei-templates")
-with open("/op06d/src/op06d/nuclei_write_method_exclusions.json", encoding="utf-8") as f:
-    EID = set(json.load(f)["write_method_template_ids"])
-default = set(DEFAULT_TAGS)
-blocked = (INTRUSIVE_TAGS | EXPLOIT_TAGS) - default
-def tags_of(info):
-    t = info.get("tags", [])
-    if isinstance(t, str):
-        t = t.split(",")
-    return {str(x).strip().lower() for x in t if str(x).strip()}
-files = sorted(ROOT.rglob("*.yaml"))
-N = len(files)
-survivors, non_get, write, unexcluded = 0, [], [], []
-other = collections.Counter()
-for i, p in enumerate(files, 1):
-    if i % 1000 == 0:
-        print(f"[{i}/{N}] scanning templates...", file=sys.stderr, flush=True)
-    try:
-        text = p.read_text(encoding="utf-8", errors="replace")
-        d = yaml.safe_load(text)
-    except Exception:
-        continue
-    if not isinstance(d, dict) or not isinstance(d.get("info"), dict):
-        continue
-    tags = tags_of(d["info"])
-    if not (tags & default) or (tags & blocked):
-        continue
-    survivors += 1
-    tid, rel = str(d.get("id")), str(p.relative_to(ROOT))
-    methods = set()
-    for key in ("http", "requests"):
-        for blk in d.get(key) or []:
-            if not isinstance(blk, dict):
-                continue
-            if isinstance(blk.get("method"), str):
-                methods.add(blk["method"].strip().upper())
-            for raw in blk.get("raw") or []:
-                s = str(raw).lstrip()
-                m = re.match(r"([A-Z]+)\s", s.splitlines()[0]) if s else None
-                if m:
-                    methods.add(m.group(1))
-    ng = sorted(methods - {"GET", "HEAD", "OPTIONS"})
-    if ng:
-        non_get.append({"id": tid, "path": rel, "methods": ng})
-    if template_declares_write_method(d):
-        write.append(tid)
-        if tid not in EID:
-            unexcluded.append(tid)
-    for proto in ("code", "headless", "javascript"):
-        if proto in d:
-            other["protocol:" + proto] += 1
-    if "interactsh" in text:
-        other["uses-interactsh"] += 1
-print(f"scanned {N} templates", file=sys.stderr, flush=True)
-print(json.dumps({"templates_scanned": N, "default_survivors": survivors, "non_get": non_get,
-                  "non_get_methods": dict(collections.Counter(m for r in non_get for m in r["methods"])),
-                  "write_method": write, "write_method_unexcluded": unexcluded, "other": dict(other)}))
-"""
-
-# RUNBOOK Step 12's priv-probe, one JSON row per profile.
-SNIPPET_PRIV = r"""
-import json, os, traceback
-from op06d.nmap_tool import NmapTool, PROFILES
-t = NmapTool(50)
-rows = []
-for prof in PROFILES:
-    try:
-        r = t.run("172.31.77.11", {"profile": prof})
-        f = r.findings if isinstance(r.findings, dict) else {}
-        rows.append({"profile": prof, "status": r.status,
-                     "scan_types": f.get("summary", {}).get("scan_types", []),
-                     "degraded": bool(f.get("degraded")),
-                     "degraded_capabilities": f.get("degraded_capabilities"),
-                     "error": (f.get("error") or {}).get("message", "")})
-    except Exception:
-        rows.append({"profile": prof, "status": None, "traceback": traceback.format_exc()})
-print(json.dumps({"uid": os.getuid(), "profiles": list(PROFILES), "rows": rows}))
-"""
-
-# RUNBOOK Step 13, emitting the facts the runbook says to confirm as JSON.
-SNIPPET_E2E = r"""
-import ast, json, re, sys
-from op06d.engagement import load_engagement
-from op06d.audit import AuditLog, read_log, verify_log
-from op06d.gate import Gate
-from op06d.tools import GatedToolbox, default_tools
-from op06d.orchestrator import Orchestrator
-
-eng = load_engagement(sys.argv[2])
-log = AuditLog.for_engagement(eng, sys.argv[1])
-box = GatedToolbox(eng, Gate(eng, audit_pin=log.record_dns_pin), log,
-                   default_tools(eng, nuclei_template_dir="/opt/nuclei-templates", nuclei_templates_pin="v10.5.1"))
-
-def act(tool, target, **params):
-    return json.dumps({"type": "action", "tool": tool, "target": target, "parameters": params, "reason": "lab e2e"})
-
-class ScriptedLLM:
-    def __init__(self, replies): self.replies, self.seen = list(replies), []
-    def complete(self, system, messages):
-        self.seen.append(messages[-1]["content"])
-        return self.replies.pop(0)
-
-llm = ScriptedLLM([
-    act("nmap", "172.31.77.11", profile="service", ports="80"),
-    act("nuclei", "dvwa.lab"),
-    act("nmap", "1.1.1.1"),
-    act("nuclei", "dvwa.lab", tags=["default-login"]),
-    json.dumps({"type": "done", "summary": "lab e2e finished"}),
-])
-result = Orchestrator(eng, llm, box, log, max_iterations=10).run()
-
-def plain(v):
-    try:
-        return ast.literal_eval(v) if isinstance(v, str) else v
-    except (ValueError, SyntaxError):
-        return v
-
-entries = read_log(log.path)
-steps = []
-for s in result.steps:
-    d = s.result.decision if s.result else None
-    steps.append({"iteration": s.iteration, "kind": s.kind,
-                  "stage": d.stage if d else None, "reason": (d.reason[:120] if d else None)})
-print(json.dumps({
-    "termination": result.termination.value,
-    "iterations": result.iterations,
-    "steps": steps,
-    "audit_verified": verify_log(log.path),
-    "audit_path": str(log.path),
-    "dns_pinned": [plain(e.target) for e in entries if e.event == "dns_pinned"],
-    "denied_out_of_scope": any(e.event == "gate_decision" and e.allowed is False and plain(e.target) == "1.1.1.1"
-                               for e in entries),
-    "executed_out_of_scope": any(e.event == "action_executed" and plain(e.target) == "1.1.1.1" for e in entries),
-    # the orchestrator prefixes one "Result of step N ... untrusted data." line,
-    # then the sanitizer's block; the tool output must sit inside it, and no
-    # raw nmap XML may reach the planner.
-    "planner_view_wrapped": len(llm.seen) > 1 and bool(re.search(
-        r"^<<<UNTRUSTED_TOOL_OUTPUT id=(\w+) .*?^<<<END_UNTRUSTED_TOOL_OUTPUT id=\1>>>\s*$",
-        llm.seen[1], re.S | re.M)),
-    "planner_view_has_raw_xml": len(llm.seen) > 1 and ("<?xml" in llm.seen[1] or "<nmaprun" in llm.seen[1]),
-    "planner_view_head": llm.seen[1][:1200] if len(llm.seen) > 1 else "",
-}))
-"""
-
-
-# ============================================================================
 # Docker plumbing (copied from tests/integration/test_lab_repeatability.py, minus pytest)
 # ============================================================================
 
@@ -670,9 +451,12 @@ def _exec(*args: str, timeout: float = 300, user: str | None = None, **kw: Any) 
     return _compose("exec", "-T", *u, "scanner", *args, timeout=timeout, **kw)
 
 
-def _py(snippet: str, *args: str, timeout: float = 300, user: str | None = None,
-        stream: bool = False) -> subprocess.CompletedProcess:
-    return _exec("python3", "-u", "-", *args, input_text=snippet, timeout=timeout, user=user, stream=stream)
+def _step(name: str, *args: str, timeout: float = 300, user: str | None = None,
+          stream: bool = False) -> subprocess.CompletedProcess:
+    """Run lab/steps/<name>.py inside the scanner with --json: the same script
+    the runbook shows, so the two cannot drift."""
+    return _exec("python3", "-u", f"/lab/steps/{name}.py", *args, "--json", timeout=timeout, user=user,
+                 stream=stream)
 
 
 def _wait_for_targets(attempts: int = 30, delay: float = 2.0) -> bool:
@@ -747,7 +531,7 @@ class Harness:
         if gen.returncode != 0:
             return StepResult("1w", "engagement window", FAIL,
                               "could not generate the run's engagement from lab/engagement.yaml - see step01-window.txt")
-        cp = _py(SNIPPET_WINDOW, self.engagement_ctr, timeout=60)
+        cp = _step("engagement_window", self.engagement_ctr, timeout=60)
         self.capture("step01-window.txt", cp)
         w = _last_json(cp)
         return classify_window(*(dt.datetime.fromisoformat(w[k]) for k in ("now", "start", "end")))
@@ -758,7 +542,7 @@ class Harness:
         nu = _exec("nuclei", "-version", "-disable-update-check", timeout=60)
         img = _run(["docker", "image", "inspect", SCANNER_IMAGE, "--format", "{{.Id}}"], timeout=30)
         imgs = _compose("images", timeout=60)
-        th = _py(SNIPPET_TEMPLATE_HASH, timeout=600)
+        th = _step("template_hash", timeout=600)
         self.capture("step05-versions.txt", lv, nm, nu, img, imgs, th)
         (self.host / "versions.txt").write_text(
             lv.stdout + "\n" + nm.stdout + "\n" + nu.stdout + nu.stderr + "\nimage " + img.stdout,
@@ -782,7 +566,7 @@ class Harness:
         return classify_pytest(cp.returncode, cp.stdout + cp.stderr)
 
     def step7_flags(self) -> StepResult:
-        cp = _py(SNIPPET_ARGV, timeout=120)
+        cp = _step("wrapper_argv", timeout=120)
         self.capture("step07-argv.txt", cp)
         return classify_flags(_last_json(cp))
 
@@ -797,12 +581,12 @@ class Harness:
         return classify_scans(summary, self.baseline)
 
     def step9_parsers(self) -> StepResult:
-        cp = _py(SNIPPET_PARSERS, self.scans_ctr, timeout=120)
+        cp = _step("parser_check", self.scans_ctr, timeout=120)
         self.capture("step09-parsers.txt", cp)
         return classify_parsers(_last_json(cp))
 
     def step10_tag_audit(self) -> StepResult:
-        cp = _py(SNIPPET_TAG_AUDIT, timeout=1200, stream=True)
+        cp = _step("tag_audit", timeout=1200, stream=True)
         self.capture("step10-tag-audit.txt", cp)
         audit = _last_json(cp)
         (self.host / "step10-tag-audit.json").write_text(json.dumps(audit, indent=2), encoding="utf-8")
@@ -818,7 +602,7 @@ class Harness:
 
     def step11_ambient(self) -> StepResult:
         try:
-            cp = _exec("python3", "/lab/ambient_config_probe.py", timeout=420)
+            cp = _exec("python3", "/lab/ambient_config_probe.py", "--json", timeout=420)
             self.capture("step11-ambient-config.txt", cp)
             result = _last_json(cp)
         finally:
@@ -839,7 +623,7 @@ class Harness:
         tracebacks = []
         for mode, user in (("root", None), ("scanner", "scanner")):
             _say(f"      ({mode}: six profiles against dvwa; `full`/`aggressive` can take minutes each)")
-            cp = _py(SNIPPET_PRIV, timeout=3600, user=user)
+            cp = _step("nmap_privilege", timeout=3600, user=user)
             self.capture("step12-nmap-privilege.txt", f"=== as {mode} ===", cp)
             if "Traceback" in cp.stderr:
                 tracebacks.append(mode)
@@ -849,7 +633,8 @@ class Harness:
         return classify_priv(rows, profiles, tracebacks)
 
     def step13_e2e(self) -> StepResult:
-        cp = _py(SNIPPET_E2E, f"{self.ctr}/step13-e2e-audit", self.engagement_ctr, timeout=1800)
+        cp = _step("end_to_end", "--audit-dir", f"{self.ctr}/step13-e2e-audit", "--engagement", self.engagement_ctr,
+                   timeout=1800)
         self.capture("step13-e2e.txt", cp)
         r = _last_json(cp)
         (self.host / "step13-e2e.json").write_text(json.dumps(r, indent=2), encoding="utf-8")
