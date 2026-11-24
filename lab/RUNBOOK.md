@@ -1,27 +1,48 @@
 # OP-06D lab runbook
 
-The maintainer's validation reference for the lab: the ordered steps that
-stand up the lab, **prove it is isolated**, validate the nmap and nuclei
-wrappers against the real, pinned tools, and run the whole chain once. The
-steps are run by hand; [Automated runs](#automated-runs) covers the parts
-that can be run in one command. The first time you run the lab, start with
-the quick start, [lab/README.md](README.md); this runbook is the maintainer's
-validation reference.
+## What this is for
 
-Related:
+OP-06D runs real scans, so it has to be tested against real targets without
+putting real systems at risk. The lab does that. It is a sealed Docker network
+with deliberately vulnerable web applications and a scanner built from the same
+OP-06D image you use on an engagement. Nothing in it can reach the internet, your
+network or your machine, and Step 4 proves that before anything scans.
 
-- [lab/hosts.md](hosts.md): host setup per platform (Windows, Kali / Linux,
-  macOS, ARM).
-- [lab/model-relay.md](model-relay.md): the opt-in model relay for
-  `op06d run --planner llm` in the lab.
-- [lab/benchmark.md](benchmark.md): the opt-in planner model benchmark.
+You use the lab for two things:
 
-Run all commands from the repository root. **Shells:** blocks labelled
-"PowerShell 7 or bash / zsh" work the same in either shell. Where the host
-shell differs (environment variables, host folders, reading a key), a
-"PowerShell 7" block is for **PowerShell 7** (`pwsh`) and a "bash / zsh" block
-for bash or zsh. The checks that run inside the scanner are the scripts in
-`lab/steps/`; the [validation harness](#automated-runs) runs the same scripts.
+1. To validate OP-06D and its tools in a safe environment.
+2. To practise using OP-06D in a confined environment before you use it on a
+   live, authorized engagement.
+
+More on the lab: [The lab](../README.md#the-lab) in the main README.
+
+Working through this runbook shows that:
+
+- the lab is sealed: nothing inside it can get out (Step 4);
+- the scanner has exactly the nmap, nuclei and template versions OP-06D was
+  validated with, listed under [Pinned versions](#pinned-versions) (Step 5);
+- nmap and nuclei accept every option OP-06D gives them, and OP-06D reads their
+  real output correctly (Steps 7-9);
+- you can see which nuclei checks OP-06D runs without asking for approval and
+  whether any of them could change a target, and a stray nuclei settings file on
+  the scanner can't change what a scan does (Steps 10-11);
+- how nmap behaves with and without administrator rights (root), and what OP-06D
+  reports when a scan has to fall back to a weaker method (Step 12);
+- one complete OP-06D run works: from the engagement file (the file that says
+  what you may scan, and when) through the real tools to the audit log, with an
+  out-of-scope target refused and an intrusive check declined (Step 13).
+
+Evidence goes under `lab/captures/`, the only folder the lab can write to. The
+validation harness saves every step's output there.
+
+## Which document do you need?
+
+- **To see OP-06D work and to practise with it:** the quick start,
+  [lab/README.md](README.md).
+- **To prove a setup** before a first engagement, after an upgrade, or after
+  changing OP-06D: this runbook, step by step, or the
+  [validation harness](#automated-runs), which runs Steps 5-13 in one command.
+  A harness run usually takes under an hour, most of it in Step 12.
 
 ---
 
@@ -33,6 +54,27 @@ applications and a scanner; if the network were quietly routable, the scanner
 could reach real systems, which is exactly the harm this project exists to
 prevent. Isolation is *proven*, not assumed. Re-run Step 4 at the start of every
 session and after any change to `lab/docker-compose.yml` or Docker.
+
+## Before you start
+
+Run every command from the repository root.
+
+**Shells:** a block labelled "PowerShell 7 or bash / zsh" works the same in either
+shell. Where the shells differ (environment variables, host folders, reading a
+key), a "PowerShell 7" block is for **PowerShell 7** (`pwsh`) and a "bash / zsh"
+block is for bash or zsh.
+
+The checks that run inside the scanner are the scripts in `lab/steps/`; the
+[validation harness](#automated-runs) runs the same scripts.
+
+Related documents:
+
+- [lab/hosts.md](hosts.md): host setup for your platform (Windows, Kali / Linux,
+  macOS, ARM).
+- [lab/model-relay.md](model-relay.md): the optional model relay, for
+  `op06d run --planner llm` in the lab.
+- [lab/benchmark.md](benchmark.md): the optional benchmark that compares planner
+  models.
 
 ## Automated runs
 
@@ -300,6 +342,9 @@ docker compose -f lab/docker-compose.yml exec -T scanner curl -sS -o /dev/null -
 
 ## Step 4. ISOLATION GATE (BLOCKING)
 
+This step proves the lab is sealed: nothing inside it can reach the internet,
+your network or your machine.
+
 **Do not continue unless the following command prints PASS.**
 
 PowerShell 7 or bash / zsh:
@@ -360,6 +405,9 @@ uv run python lab/check_isolation.py --with-internet-control 2>&1 | tee lab/capt
 default route, and every outbound attempt blocked.)
 
 ## Step 4b. Generate this session's engagement
+
+This step writes the engagement file for this session: the file that tells
+OP-06D which targets it may scan, and during which time window.
 
 Only after Step 4 printed PASS. `lab/engagement.yaml` is a template; this writes
 a copy whose `window` is now - 5 min .. now + 4 h (everything else as in the template),
@@ -472,6 +520,9 @@ files with the commands in their headers and rebuild.
 
 ## Step 7. Flag-name verification (nmap and nuclei wrappers)
 
+This step checks that nmap and nuclei recognise every option OP-06D passes to
+them.
+
 The wrappers pass these flags. The authoritative test is that the **real tool
 accepts them and does what they mean**; Step 8 runs every one for real. This step
 prints exactly what the wrappers build and does a quick `--help` cross-check.
@@ -507,6 +558,10 @@ likely to change between versions are nuclei's `-disable-redirects`, `-no-intera
 caught by the behavior tests in Step 11.
 
 ## Step 8. Real scans and captures (only after Step 4 passed)
+
+This step runs OP-06D's real scans against the lab targets, through the same
+scope checks and audit log as on an engagement, and saves the raw output for
+Step 9.
 
 This goes through the **gate and the toolbox** (not the raw tools), so the gate,
 sanitizer and audit log are exercised as well. The scanner has no network beyond
@@ -566,8 +621,10 @@ Outputs land in `lab/captures/` (raw XML/JSONL, parsed `*.findings.json`, and th
 audit log under `lab/captures/audit/`). These are the real fixtures.
 
 ## Step 9. Do the parsers handle real output unchanged?
-**Purpose.** The parsers (`parse_nmap_xml`, `parse_nuclei_jsonl`) were written and
-unit-tested against *hand-written* example files — our best guess at what nmap and
+
+**Purpose.** This step proves that OP-06D reads the real output of nmap and
+nuclei correctly, not just the hand-written examples its tests use. The parsers
+(`parse_nmap_xml`, `parse_nuclei_jsonl`) were written and unit-tested against *hand-written* example files — our best guess at what nmap and
 nuclei produce. Step 8 just captured what the real tools *actually* produce. This
 step proves the parsers handle the real thing, not just our approximation of it.
 
@@ -597,7 +654,9 @@ parser (with a test) before relying on its output.
 
 ## Step 10. nuclei tag-vocabulary audit
 
-**Purpose.** Does the default selection (what runs when the planner selects
+**Purpose.** This step looks for any nuclei check (nuclei calls them templates)
+that OP-06D runs without asking for approval but that could change or attack a
+target. Does the default selection (what runs when the planner selects
 no tags) pull a template that is actually intrusive or state-changing? The wrapper selects
 templates by tag, so "safe" is only as good as the community's tagging. This
 is offline, read-only analysis of the pinned template set on disk; nothing is
@@ -685,8 +744,10 @@ survivors are untouched. A different count is a finding.
 
 ## Step 11. nuclei ambient-config precedence
 
-**Purpose.** Can a hostile `~/.config/nuclei` config
-re-enable interactsh, redirects or headers despite the wrapper's flags?
+**Purpose.** This step checks that a nuclei settings file left on the scanner
+can't turn back on the features OP-06D switches off. Can a hostile
+`~/.config/nuclei` config re-enable interactsh, redirects or headers despite the
+wrapper's flags?
 Everything below is on the scanner's **loopback only** (three tiny local
 servers); it needs no network.
 
@@ -769,6 +830,10 @@ replay.
 
 ## Step 12. nmap privilege behavior
 
+This step shows what each nmap scan does with and without administrator rights
+(root), and checks that OP-06D says clearly when a scan had to fall back to a
+weaker method.
+
 Which profiles and scripts need root, and what the wrapper does without it.
 Runs only the profiles (and read-only analysis of scripts), against the lab
 target, as root and as the unprivileged `scanner` user. As root:
@@ -839,8 +904,10 @@ exits non-zero.
 
 ## Step 13. End to end: engagement -> loop -> gate -> real tools -> sanitize -> audit
 
-**Purpose.** Prove the whole chain works together on real tools: a scripted
-planner (no LLM, no network) drives the real orchestrator against the lab. It
+**Purpose.** This step runs OP-06D once from start to finish against the lab and
+checks that it scans what the engagement allows, refuses what it doesn't, and
+records every decision in the audit log. A scripted planner (no LLM, no network)
+drives the real orchestrator against the lab. It
 proposes allowed scans, one **out-of-scope** target (must be denied by the
 gate), one **intrusive** selection (must be declined: no approver), and then
 finishes.
