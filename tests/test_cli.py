@@ -18,7 +18,17 @@ import yaml
 from op06d.audit import read_log, verify_log
 from op06d.cli import RunSummary, build_parser, main, run_engagement
 from op06d.evidence import EvidenceStore
+from op06d.toolchain import TOOLCHAIN_ENV
 from op06d.tools import Outcome, Risk, ToolAction, ToolOutput
+
+
+@pytest.fixture(autouse=True)
+def _host_mode(monkeypatch):
+    """These tests exercise the CLI on a host. The scanner image sets the
+    toolchain variable, which puts the CLI in image mode (baked versions, output
+    only on a mounted volume); tests/test_toolchain.py covers that mode."""
+    monkeypatch.delenv(TOOLCHAIN_ENV, raising=False)
+
 
 # --- fakes: no subprocess, no network ----------------------------------------
 

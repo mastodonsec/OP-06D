@@ -6,6 +6,8 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -196,3 +198,15 @@ def test_only_a_mounted_volume_keeps_the_output(path, ok):
 def test_in_the_image_an_unmounted_output_directory_is_refused(tmp_path):
     with pytest.raises(OutputDirectoryError, match="not on a mounted volume"):
         prepare_output_dir(tmp_path / "out", require_volume=True, mountinfo=MOUNTINFO)
+
+
+def test_host_mode_cli_tests_pass_with_the_image_toolchain_set(tmp_path):
+    path = tmp_path / "toolchain.json"
+    path.write_text(json.dumps(BAKED), encoding="utf-8")
+    env = {**os.environ, TOOLCHAIN_ENV: str(path)}
+    cp = subprocess.run(
+        [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", "--basetemp", str(tmp_path / "bt"),
+         "tests/test_cli.py", "tests/test_llm_planner_run.py"],
+        cwd=ROOT, env=env, capture_output=True, text=True, timeout=600,
+    )
+    assert cp.returncode == 0, cp.stdout[-4000:] + cp.stderr[-2000:]

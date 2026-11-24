@@ -6,6 +6,8 @@ under the guard it tests."""
 from __future__ import annotations
 
 import importlib.util
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -174,6 +176,22 @@ def test_a_clean_tree_passes(tmp_path):
     assert _scan(tmp_path, {"a.py": "print('ok')\n", "b.md": "# Title\n\nPlain words.\n"}) == []
 
 
+def _not_a_git_work_tree() -> str | None:
+    if shutil.which("git") is None:
+        return "git is not on PATH"
+    try:
+        cp = subprocess.run(["git", "rev-parse", "--is-inside-work-tree"], cwd=ROOT,
+                            capture_output=True, text=True, timeout=30)
+    except (OSError, subprocess.SubprocessError) as exc:
+        return f"git rev-parse could not run: {exc}"
+    if cp.returncode != 0 or cp.stdout.strip() != "true":
+        return f"{ROOT} is not a git work tree"
+    return None
+
+
 def test_the_repository_itself_is_clean():
+    reason = _not_a_git_work_tree()
+    if reason:
+        pytest.skip(f"needs the git work tree to list tracked files: {reason}")
     problems = hygiene.scan(ROOT, hygiene.tracked_files(ROOT))
     assert problems == [], "\n".join(map(str, problems))
