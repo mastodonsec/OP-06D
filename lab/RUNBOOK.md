@@ -160,11 +160,14 @@ PowerShell 7:
 New-Item -ItemType Directory -Force lab\captures | Out-Null; "created lab\captures"
 ```
 
-Expected output:
+bash / zsh:
 
+```bash
+mkdir -p lab/captures && echo "created lab/captures"
 ```
-created lab\captures
-```
+
+Expected output: PowerShell prints `created lab\captures`, bash / zsh prints
+`created lab/captures`.
 
 ## Step 1. Review before building
 
