@@ -460,13 +460,15 @@ networking.)
 PowerShell 7 or bash / zsh:
 
 ```bash
-docker compose -f lab/docker-compose.yml exec -T scanner python3 -m pytest -q -p no:cacheprovider /op06d/tests
+docker compose -f lab/docker-compose.yml exec -T scanner python3 -m pytest -q -p no:cacheprovider --basetemp /tmp/op06d-pytest /op06d/tests
 ```
 
 This proves the pinned Python packages and Python 3.11 run the existing suite.
-The repo is mounted read-only; pytest needs `-p no:cacheprovider` for that. The
-image's packages come from `uv.lock` (`docker/requirements*.txt`); if it fails on
-versions, regenerate those files with the commands in their headers and rebuild.
+The repo is mounted read-only at `/op06d`, so pytest needs `-p no:cacheprovider`
+and a `--basetemp` under `/tmp`; the command-line `--basetemp` overrides the
+repo-relative default in `pyproject.toml`. The image's packages come from
+`uv.lock` (`docker/requirements*.txt`); if it fails on versions, regenerate those
+files with the commands in their headers and rebuild.
 
 ## Step 7. Flag-name verification (nmap and nuclei wrappers)
 

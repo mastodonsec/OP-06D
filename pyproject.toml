@@ -44,7 +44,7 @@ op06d = ["nuclei_write_method_exclusions.json"]
 testpaths = ["tests"]
 pythonpath = ["src"]
 # --basetemp keeps pytest's scratch in the repo (git-ignored), not %TEMP% on C:.
-# A later --basetemp on the command line (e.g. /tmp/live-gate in the scanner) wins.
+# A later --basetemp on the command line (e.g. /tmp/op06d-pytest in the scanner) wins.
 addopts = "-m 'not lab' --basetemp .pytest-tmp"
 markers = [
     "lab: gated lab integration test - needs Docker/compose and OP06D_LAB=1; excluded by default",

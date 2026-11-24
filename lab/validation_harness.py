@@ -561,7 +561,8 @@ class Harness:
         return classify_versions(found, self.baseline["pins"], tpl_hash)
 
     def step6_pytest(self) -> StepResult:
-        cp = _exec("python3", "-m", "pytest", "-q", "-p", "no:cacheprovider", "/op06d/tests", timeout=900)
+        cp = _exec("python3", "-m", "pytest", "-q", "-p", "no:cacheprovider", "--basetemp", "/tmp/op06d-pytest",
+                   "/op06d/tests", timeout=900)
         self.capture("step06-pytest.txt", cp)
         return classify_pytest(cp.returncode, cp.stdout + cp.stderr)
 

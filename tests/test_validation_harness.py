@@ -99,6 +99,39 @@ def test_step4_runs_the_imported_gate_and_captures_its_output(monkeypatch, tmp_p
     assert "RESULT: FAIL" in (tmp_path / "step04-isolation.txt").read_text(encoding="utf-8")
 
 
+def _step6_argv(monkeypatch, tmp_path) -> list[str]:
+    seen: list[str] = []
+
+    def fake_exec(*args, **kw):
+        seen.extend(args)
+        return subprocess.CompletedProcess(list(args), 0, "1 passed\n", "")
+
+    monkeypatch.setattr(vh, "_exec", fake_exec)
+    vh.Harness(tmp_path, "/captures/x", BASELINE).step6_pytest()
+    return seen
+
+
+def _runbook_step6_argv() -> list[str]:
+    text = (ROOT / "lab" / "RUNBOOK.md").read_text(encoding="utf-8")
+    section = text.split("## Step 6.", 1)[1].split("\n## ", 1)[0]
+    block = section.split("```bash\n", 1)[1].split("```", 1)[0].strip()
+    prefix = "docker compose -f lab/docker-compose.yml exec -T scanner "
+    assert block.startswith(prefix), block
+    return block[len(prefix):].split()
+
+
+def test_step6_pytest_uses_a_writable_basetemp_outside_the_readonly_mount(monkeypatch, tmp_path):
+    argv = _step6_argv(monkeypatch, tmp_path)
+    assert "--basetemp" in argv
+    basetemp = argv[argv.index("--basetemp") + 1]
+    assert basetemp.startswith("/") and not pathlib.PurePosixPath(basetemp).is_relative_to("/op06d")
+    assert "no:cacheprovider" in argv
+
+
+def test_step6_pytest_matches_the_runbook_command(monkeypatch, tmp_path):
+    assert _step6_argv(monkeypatch, tmp_path) == _runbook_step6_argv()
+
+
 # -- overall result ----------------------------------------------------------
 
 def test_needs_review_does_not_become_a_clean_pass():

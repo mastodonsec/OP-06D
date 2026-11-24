@@ -24,12 +24,20 @@ from op06d.llm import AnthropicLLM, LLMRefused, LLMSettings, LLMUnavailable, Loc
 from op06d.orchestrator import RunLimits
 from op06d.redaction import clear_registered_secrets
 from op06d.sanitize import BLOCK_NAME
+from op06d.toolchain import TOOLCHAIN_ENV
 from op06d.tools import Outcome, Risk, ToolOutput
 
 ROOT = Path(__file__).resolve().parent.parent
 IN_SCOPE = "203.0.113.5"
 OUT_OF_SCOPE = "198.51.100.7"
 FAKE_KEY = "sk-ant-" + "api03-" + "Q" * 48
+
+
+@pytest.fixture(autouse=True)
+def _host_mode(monkeypatch):
+    """The CLI tests here run in host mode, also inside the scanner image,
+    which sets the toolchain variable."""
+    monkeypatch.delenv(TOOLCHAIN_ENV, raising=False)
 
 
 @pytest.fixture(autouse=True)
