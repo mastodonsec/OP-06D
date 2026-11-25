@@ -32,7 +32,9 @@ actions.
 from __future__ import annotations
 
 import json
+import shutil
 import sqlite3
+import tempfile
 import uuid
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -307,6 +309,36 @@ class EvidenceStore:
         """Context manager; creates the schema if absent (idempotent)."""
         store = cls(path)
         yield store
+
+    @classmethod
+    @contextmanager
+    def read_snapshot(cls, path: str | Path) -> Iterator["EvidenceStore"]:
+        """Read a finished store without writing to it or to its directory.
+
+        Every normal connection sets ``journal_mode=WAL`` and needs the
+        ``-wal``/``-shm`` files beside the database, so it fails on a store
+        the reader may not write (a lab capture the scanner wrote as root on
+        a native Linux bind mount). This copies ``evidence.db`` and its
+        ``-wal`` into a private temporary directory and opens the copy
+        normally, so committed rows still in the ``-wal`` are read, never
+        dropped. ``-shm`` is not copied: it is an index SQLite rebuilds from
+        the ``-wal``. The original is only read; the copy is removed on exit.
+        Meant for a store no process is still writing."""
+        src = Path(path)
+        if not src.is_file():
+            raise EvidenceError(f"no evidence store at {src}")
+        wal = src.with_name(src.name + "-wal")
+        with tempfile.TemporaryDirectory(prefix="op06d-evidence-") as tmp:
+            copy = Path(tmp) / src.name
+            try:
+                # The -wal first: a checkpoint between the two copies then leaves
+                # its pages in both, never in neither.
+                if wal.is_file():
+                    shutil.copyfile(wal, copy.with_name(copy.name + "-wal"))
+                shutil.copyfile(src, copy)
+            except OSError as exc:
+                raise EvidenceError(f"cannot read the evidence store {src}: {exc}") from None
+            yield cls(copy)
 
     # -- connection management -------------------------------------------
 

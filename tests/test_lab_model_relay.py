@@ -8,8 +8,10 @@ tests/integration/test_lab_relay_planner_run.py (-m lab).
 
 from __future__ import annotations
 
+import os
 import pathlib
 import re
+import stat
 import subprocess
 import sys
 import tomllib
@@ -473,6 +475,33 @@ def test_leak_scan_still_runs_without_a_secret_or_with_a_real_one(tmp_path):
     for secret in (None, FAKE_KEY):
         assert relay.verify_run("local", tmp_path / "run", None, secret=secret) == [
             f"no HTML report was produced under {tmp_path / 'run'}"]
+
+
+# --- the acceptance check reads a store the scanner wrote ------------------------------------
+
+def _tree(directory: pathlib.Path) -> dict[str, bytes]:
+    return {str(p.relative_to(directory)): p.read_bytes() for p in sorted(directory.rglob("*")) if p.is_file()}
+
+
+def test_verify_run_accepts_a_run_whose_store_it_cannot_write(tmp_path):
+    from test_llm_planner_run import DONE, _run, act
+
+    (tmp_path / "w").mkdir()
+    summary, _, _ = _run(tmp_path / "w", [act(profile="service"), DONE])
+    run_dir = summary.evidence_db_path.parent
+    db = summary.evidence_db_path
+    before = _tree(run_dir)
+    os.chmod(db, stat.S_IREAD)
+    posix = os.name != "nt" and hasattr(os, "geteuid") and os.geteuid() != 0
+    if posix:  # Windows cannot make a directory unwritable with chmod; root ignores it
+        os.chmod(run_dir, 0o555)
+    try:
+        assert relay.verify_run("local", run_dir, summary.report_html_path, secret=None) == []
+    finally:
+        if posix:
+            os.chmod(run_dir, 0o755)
+        os.chmod(db, stat.S_IREAD | stat.S_IWRITE)
+    assert _tree(run_dir) == before
 
 
 # --- captured subprocess output is decoded as UTF-8 ----------------------------------------------

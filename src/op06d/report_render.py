@@ -476,8 +476,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--format", choices=["html", "pdf", "both"], default="html")
     args = parser.parse_args(argv)
 
-    store = EvidenceStore(args.db)
-    reconstructed = store.reconstruct_run(args.run)
+    # Read a private copy: the store may belong to another user (a lab capture).
+    with EvidenceStore.read_snapshot(args.db) as store:
+        reconstructed = store.reconstruct_run(args.run)
     report = build_report(reconstructed)
 
     out_dir = Path(args.out)
