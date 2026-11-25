@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "op06d"
-version = "0.0.2"
+version = "0.0.3"
 description = "AI-driven security validation — the model proposes, the gate disposes."
 requires-python = ">=3.11"
 license = "AGPL-3.0-or-later"
