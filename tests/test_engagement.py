@@ -144,6 +144,27 @@ def test_destructive_defaults_false():
     assert parse(d).intensity.destructive is False
 
 
+def test_name_and_ip_defaults_to_once():
+    d = base()
+    assert "name_and_ip" not in d["intensity"]
+    assert parse(d).intensity.name_and_ip == "once"
+
+
+@pytest.mark.parametrize("mode", ["once", "both"])
+def test_name_and_ip_modes_accepted(mode):
+    d = base()
+    d["intensity"]["name_and_ip"] = mode
+    assert parse(d).intensity.name_and_ip == mode
+
+
+@pytest.mark.parametrize("bad", ["Both", "ONCE", "twice", "", None, True, 1, ["both"]])
+def test_name_and_ip_other_values_rejected(bad):
+    d = base()
+    d["intensity"]["name_and_ip"] = bad
+    with pytest.raises(EngagementError, match=r"intensity\.name_and_ip: .*must be 'once' or 'both'"):
+        parse(d)
+
+
 @pytest.mark.parametrize("field", ["client", "signed_scope_ref", "authorized_by"])
 def test_blank_authorization_fields(field):
     d = base()

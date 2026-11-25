@@ -4,7 +4,7 @@
 
 | `--planner` | What decides the next action |
 |---|---|
-| `fixed` (default) | `plan_recon()`: an nmap service scan and a nuclei default-tag scan per in-scope entry |
+| `fixed` (default) | `plan_recon()`: an nmap service scan once per in-scope address or range, and a nuclei default-tag scan per host by `intensity.name_and_ip` ([engagement-parser.md](engagement-parser.md#how-the-fixed-planner-uses-name_and_ip)) |
 | `llm` | the `Orchestrator` loop ([orchestrator.md](orchestrator.md)), driven by a model through an adapter in `op06d.llm` |
 
 Both planners use the same `GatedToolbox`, audit log, evidence store and report.
@@ -12,6 +12,11 @@ The model proposes one action at a time, and every proposal goes through
 `GatedToolbox.execute()` (validate, `Gate.check`, operator approval, run,
 sanitize, record). The model has no other way to reach a tool. Nothing it emits
 can widen scope, extend the window, raise the rate or skip approval.
+
+The model chooses its own targets from the in-scope list; `intensity.name_and_ip`
+applies to the fixed planner only. The model may propose the same address under
+its hostname and its IP, and the gate allows both, as each is in scope. The
+report's Scope section says so.
 
 ## Quick start
 

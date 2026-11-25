@@ -120,6 +120,29 @@ class Gate:
             )
         return decision
 
+    def preview(self, target: object) -> tuple[str, ...] | None:
+        """For planning only: what ``check`` would hand a tool for ``target``
+        now. ``None`` if the window or scope would refuse it; otherwise the
+        pinned addresses for a hostname, ``()`` for an IP or CIDR.
+
+        It uses the same resolve-once pin as ``check``, so a hostname resolved
+        here is the one every later check sees. It writes no gate decision,
+        takes no rate token and allows nothing: every action still goes
+        through ``check``. Never raises."""
+        try:
+            if self._config_error is not None or self._limiter is None:
+                return None
+            in_window, _ = evaluate_window(self._window, self._now())
+            if not in_window:
+                return None
+            scope = check_scope(
+                target, self._engagement.scope,
+                resolver=self._pinner.resolve, audit=lambda t, a, r: None,
+            )
+        except Exception:
+            return None
+        return scope.resolved_ips if scope.allowed else None
+
     def _decide(self, target: object) -> GateDecision:
         label = _label(target)
         if self._config_error is not None or self._limiter is None:

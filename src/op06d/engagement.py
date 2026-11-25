@@ -129,9 +129,22 @@ class Scope(_Frozen):
         return [normalize_target(item) for item in v]
 
 
+NAME_AND_IP_MODES = ("once", "both")
+
+
 class Intensity(_Frozen):
     max_rps: int = Field(gt=0, le=10_000)
     destructive: bool = False
+    # A host listed in scope by name and by address: "once" (default) runs nuclei
+    # on the name only; "both" also runs it on the address (its default virtual host).
+    name_and_ip: str = "once"
+
+    @field_validator("name_and_ip", mode="before")
+    @classmethod
+    def _check_name_and_ip(cls, v: object) -> object:
+        if v not in NAME_AND_IP_MODES:
+            raise ValueError(f"name_and_ip must be 'once' or 'both', got {v!r}")
+        return v
 
 
 LLM_PROVIDERS = ("anthropic", "local")

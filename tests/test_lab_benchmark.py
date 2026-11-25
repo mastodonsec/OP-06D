@@ -40,9 +40,9 @@ IN_SCOPE = "203.0.113.5"
 OUT_OF_SCOPE = "198.51.100.7"
 FAKE_KEY = "sk-ant-" + "api03-" + "B" * 48  # built in pieces: never a key-shaped literal in the tree
 DEFAULT_CONFIG = ROOT / "lab" / "benchmark.default.yaml"
-# Actions the --planner fixed baseline executes on the lab: nmap + nuclei on each of
-# the 4 in-scope targets (the first smoke run, default-20261111T235813Z).
-LAB_BASELINE_ACTIONS = 8
+# Actions the --planner fixed baseline executes on the lab: the scope lists both hosts by
+# name and by IP, so nmap runs once per address and nuclei once per hostname.
+LAB_BASELINE_ACTIONS = 4
 
 
 @pytest.fixture(autouse=True)
@@ -289,8 +289,8 @@ def test_the_default_config_is_the_shortlist():
     assert hosted[0].model == DEFAULT_ANTHROPIC_MODEL and hosted[0].runs < min(c.runs for c in local)
     assert cfg.budget_max_tokens and cfg.budget_max_cost_usd
     assert cfg.engagements == {"local": "lab/engagement.yaml", "anthropic": "lab/engagement-llm-hosted.yaml"}
-    # The relay acceptance limits, except the action cap: the lab's --planner fixed baseline
-    # executes 8 actions, and a lower cap would make coverage measure the cap.
+    # The relay acceptance limits, except the action cap: a cap below the lab's --planner fixed
+    # baseline would make coverage measure the cap.
     assert set(cfg.limits) == set(relay.ACCEPTANCE_LIMITS)
     assert cfg.limits["max_actions"] >= LAB_BASELINE_ACTIONS + 2
     assert cfg.limits["max_iterations"] > cfg.limits["max_actions"]

@@ -214,6 +214,9 @@ def _render_scope(scope: ScopeSection) -> str:
             return "<li>(none)</li>"
         return "".join(f"<li><code>{_e(x)}</code></li>" for x in items)
 
+    note = f"<p>{_e(scope.address_note)}</p>" if scope.address_note else ""
+    groups = "".join(f"<li>{_e(g.summary)}</li>" for g in scope.address_groups)
+    groups = f"<ul>{groups}</ul>" if groups else ""
     return f"""
 <div class="section">
   <h2>Scope</h2>
@@ -223,6 +226,9 @@ def _render_scope(scope: ScopeSection) -> str:
   <h3>Out of scope</h3>
   <ul>{_list(scope.out_of_scope)}</ul>
   <p class="statement">{_e(scope.statement)}</p>
+  <h3>Hosts listed by name and by address</h3>
+  <p><code>intensity.name_and_ip: {_e(scope.name_and_ip)}</code></p>
+  {note}{groups}
 </div>
 """.strip()
 
@@ -358,7 +364,7 @@ def _render_limitations(report: Report) -> str:
             f"<li><strong>{_e(i.kind)}:</strong> {_e(i.detail)}</li>" for i in section.issues
         )
         body = (
-            "<p>The following were observed during normalization and are disclosed for "
+            "<p>The following were recorded for this run and are disclosed for "
             f"completeness:</p><ul>{items}</ul>"
         )
     return f'<div class="section"><h2>Limitations &amp; Notes</h2>{body}</div>'

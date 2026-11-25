@@ -168,6 +168,8 @@ def test_llm_run_feeds_evidence_and_report_with_planner_metadata(tmp_path):
     assert "<h2>Planner</h2>" in html
     for text in ("llm", "local", "objective_met", "8192", "Context size (tokens)", "Termination reason"):
         assert text in html
+    assert "name_and_ip applies to the fixed planner only" in html
+    assert not [e for e in _log(summary) if e.event == "address_group"]
 
     events = [e.event for e in _log(summary)]
     assert EVENT_PLANNER_CONFIG in events

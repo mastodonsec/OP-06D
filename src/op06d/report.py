@@ -99,12 +99,26 @@ class ExecutiveSummary(_Frozen):
     severity_counts: list[SeverityCount] = Field(default_factory=list)
 
 
+class AddressGroupView(_Frozen):
+    """In-scope entries the fixed planner scanned as one address."""
+
+    entries: list[str]
+    address: str
+    nmap: str  # how nmap covered the address
+    nuclei_targets: list[str]
+    skipped_ips: list[str] = Field(default_factory=list)
+    summary: str
+
+
 class ScopeSection(_Frozen):
     in_scope: list[str]
     out_of_scope: list[str]
     window_start: str
     window_end: str
     statement: str
+    name_and_ip: str = "once"
+    address_note: str = ""
+    address_groups: list[AddressGroupView] = Field(default_factory=list)
 
 
 class MethodologySection(_Frozen):
@@ -257,6 +271,57 @@ def _executive_headline(total_findings: int, severity_counts: dict[str, int], as
     return headline
 
 
+def _address_group_view(g: dict[str, Any]) -> AddressGroupView:
+    entries = [str(e) for e in g.get("entries") or []]
+    address = str(g.get("address") or "")
+    covering = g.get("covering_range")
+    nmap_target = g.get("nmap_target")
+    nuclei = [str(e) for e in g.get("nuclei_targets") or []]
+    if covering:
+        nmap = f"scanned as part of {covering}"
+    elif nmap_target and nmap_target != address:
+        nmap = f"{address}, once (as {nmap_target})"
+    else:
+        nmap = f"{address}, once"
+    if "/" in address:
+        summary = f"{', '.join(entries)}: nmap {nmap}"
+    else:
+        summary = (f"{', '.join(entries)} share {address}: nmap {nmap}; nuclei "
+                   + (", ".join(nuclei) if nuclei else "none"))
+    return AddressGroupView(
+        entries=entries, address=address, nmap=nmap, nuclei_targets=nuclei,
+        skipped_ips=[str(e) for e in g.get("skipped_ips") or []], summary=summary,
+    )
+
+
+def _address_note(mode: str, run: ReconstructedRun, groups: list[AddressGroupView]) -> str:
+    if (run.planner or {}).get("planner") == "llm":
+        return ("The LLM planner chose its own targets; intensity.name_and_ip applies to the "
+                "fixed planner only.")
+    if run.address_plan is None:
+        return ""
+    if not groups:
+        return "No in-scope entries were merged by address; each entry had its own actions."
+    nuclei = ("each listed hostname, and a listed IP only when no listed hostname resolves to it"
+              if mode == "once" else "each listed hostname and each listed IP")
+    return (f"Entries that resolve to the same address were port-scanned once by nmap. With "
+            f"intensity.name_and_ip: {mode}, nuclei scanned {nuclei}.")
+
+
+def _skipped_vhost_issues(groups: list[AddressGroupView]) -> list[IssueView]:
+    issues = []
+    for g in groups:
+        hosts = [e for e in g.nuclei_targets if e not in g.skipped_ips]
+        for ip in g.skipped_ips:
+            issues.append(IssueView(
+                kind="nuclei_default_vhost_not_scanned",
+                detail=(f"{ip}: nuclei scanned {', '.join(hosts)} on this address, so the default "
+                        f"virtual host of {ip} was not assessed by nuclei. Setting "
+                        "intensity.name_and_ip: both in the engagement file covers it."),
+            ))
+    return issues
+
+
 def build_report(run: ReconstructedRun) -> Report:
     """Pure transform: ``ReconstructedRun`` -> ``Report``. No Markdown, no
     rendering decisions, no wall-clock reads."""
@@ -284,6 +349,11 @@ def build_report(run: ReconstructedRun) -> Report:
         ],
     )
 
+    name_and_ip = str((r.intensity or {}).get("name_and_ip") or "once")
+    address_groups = [
+        _address_group_view(g) for g in (run.address_plan or {}).get("groups") or []
+        if isinstance(g, dict)
+    ]
     in_scope = list(r.scope.get("in_scope") or [])
     out_of_scope = list(r.scope.get("out_of_scope") or [])
     scope = ScopeSection(
@@ -291,6 +361,8 @@ def build_report(run: ReconstructedRun) -> Report:
         window_start=r.window_start, window_end=r.window_end,
         statement="Only the assets explicitly listed as in-scope above were tested; "
                   "nothing outside that authorization was contacted.",
+        name_and_ip=name_and_ip, address_note=_address_note(name_and_ip, run, address_groups),
+        address_groups=address_groups,
     )
 
     methodology = MethodologySection(
@@ -353,7 +425,7 @@ def build_report(run: ReconstructedRun) -> Report:
         issues=[
             IssueView(kind=i.kind, detail=i.detail, raw=i.raw)
             for i in sorted(run.issues, key=lambda i: (i.kind, i.detail, i.issue_pk))
-        ],
+        ] + _skipped_vhost_issues(address_groups),
     )
 
     return Report(
@@ -467,6 +539,11 @@ def _render_scope(s: ScopeSection) -> list[str]:
     lines += ["", "**Out of scope:**", ""]
     lines += [f"- {_md_escape(x)}" for x in s.out_of_scope] if s.out_of_scope else ["- (none)"]
     lines += ["", s.statement, ""]
+    lines += [f"**Hosts listed by name and by address:** `intensity.name_and_ip: {s.name_and_ip}`", ""]
+    if s.address_note:
+        lines += [s.address_note, ""]
+    if s.address_groups:
+        lines += [f"- {_md_escape(g.summary)}" for g in s.address_groups] + [""]
     return lines
 
 
@@ -557,7 +634,7 @@ def _render_limitations(section: LimitationsSection) -> list[str]:
         lines += ["No normalization issues, off-target activity or coverage gaps were recorded "
                    "for this engagement.", ""]
         return lines
-    lines += ["The following were observed during normalization and are disclosed for completeness:", ""]
+    lines += ["The following were recorded for this run and are disclosed for completeness:", ""]
     for issue in section.issues:
         lines.append(f"- **{issue.kind}:** {_md_escape(issue.detail)}")
     lines.append("")

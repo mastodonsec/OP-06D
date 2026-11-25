@@ -129,6 +129,11 @@ CREATE TABLE IF NOT EXISTS run_planner (
     run_id        TEXT PRIMARY KEY REFERENCES runs(run_id) ON DELETE CASCADE,
     planner_json  TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS run_address_plan (
+    run_id     TEXT PRIMARY KEY REFERENCES runs(run_id) ON DELETE CASCADE,
+    plan_json  TEXT NOT NULL
+);
 """
 
 
@@ -235,6 +240,8 @@ class ReconstructedRun(_Frozen):
     findings: list[FindingRow]
     issues: list[IssueRow]
     planner: dict[str, Any] | None = None
+    # The fixed planner's address groups (op06d.targets.TargetPlan.as_dict()).
+    address_plan: dict[str, Any] | None = None
 
 
 def _run_row(row: sqlite3.Row) -> RunRow:
@@ -461,6 +468,26 @@ class EvidenceStore:
         value = _loads(row["planner_json"], None)
         return value if isinstance(value, dict) else None
 
+    def record_address_plan(self, run_id: str, plan: dict[str, Any]) -> None:
+        """Store (or replace) the fixed planner's address groups for a run."""
+        payload = json.dumps(scrub(plan), default=repr, sort_keys=True)
+        with self._write() as conn:
+            conn.execute(
+                "INSERT INTO run_address_plan (run_id, plan_json) VALUES (?, ?) "
+                "ON CONFLICT(run_id) DO UPDATE SET plan_json=excluded.plan_json",
+                (run_id, payload),
+            )
+
+    def get_address_plan(self, run_id: str) -> dict[str, Any] | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT plan_json FROM run_address_plan WHERE run_id=?", (run_id,)
+            ).fetchone()
+        if row is None:
+            return None
+        value = _loads(row["plan_json"], None)
+        return value if isinstance(value, dict) else None
+
     def finish_run(self, run_id: str, *, status: str, audit_log_sha256: str | None = None) -> None:
         ended_at = _iso(_utcnow())
         with self._write() as conn:
@@ -521,4 +548,5 @@ class EvidenceStore:
         return ReconstructedRun(
             run=run, actions=self.list_actions(run_id), findings=self.list_findings(run_id),
             issues=self.list_issues(run_id), planner=self.get_planner(run_id),
+            address_plan=self.get_address_plan(run_id),
         )
