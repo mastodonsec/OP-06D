@@ -249,10 +249,22 @@ def test_up_refuses_while_a_relay_stack_is_running(mode, running_mode):
     with pytest.raises(relay.RelayError) as exc:
         relay.up(mode, engagement, run=d, environ=env)
     assert str(exc.value) == (
-        f"a {running_mode} relay stack is already running. Tear it down first with "
+        f"the {running_mode} relay stack is already running. Tear it down first with "
         "`uv run python lab/model_relay.py down`, then run `up` again"
     )
     assert not d.started()
+
+
+@pytest.mark.parametrize("cmd, wording", [
+    (["anthropic"], "the anthropic relay stack is already running"),
+    (["local"], "the local relay stack is already running"),
+    ([], "the relay stack is already running"),
+])
+def test_the_relay_refusal_names_the_running_mode(cmd, wording):
+    d = LabRunning([*BASE_LAB, "model-relay"], relay_cmd=cmd)
+    with pytest.raises(relay.RelayError) as exc:
+        relay.up("local", None, run=d)
+    assert str(exc.value).startswith(wording + ". Tear it down first")
 
 
 def test_up_proceeds_when_nothing_of_the_lab_is_running():

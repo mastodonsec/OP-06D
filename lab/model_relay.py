@@ -230,7 +230,7 @@ def refuse_if_running(run: Runner) -> None:
     running = running_lab_services(run)
     if RELAY_SERVICE in running:
         mode = running_relay_mode(run)
-        which = f"a {mode} relay stack" if mode in MODES else "a relay stack"
+        which = f"the {mode} relay stack" if mode in MODES else "the relay stack"
         raise RelayError(
             f"{which} is already running. Tear it down first with "
             "`uv run python lab/model_relay.py down`, then run `up` again"

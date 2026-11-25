@@ -142,7 +142,7 @@ refused: the base lab is already running (dvwa, juice-shop, redirect, scanner). 
 Over a relay stack (here a local one) it prints:
 
 ```
-refused: a local relay stack is already running. Tear it down first with `uv run python lab/model_relay.py down`, then run `up` again
+refused: the local relay stack is already running. Tear it down first with `uv run python lab/model_relay.py down`, then run `up` again
 ```
 
 The `uv run ...` and `ollama ...` lines are the same in PowerShell 7 and
