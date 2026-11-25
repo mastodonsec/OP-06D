@@ -193,8 +193,10 @@ If a session outlasts the window, run it again.
 
 ## 6. Run OP-06D
 
-The fixed planner runs an nmap service scan and a nuclei default-tag scan for each
-in-scope host and IP, through the gate.
+The fixed planner runs, through the gate, an nmap service scan once per address and a
+nuclei default-tag scan per host. The lab scope lists each target by name and by IP, so
+each address gets one nmap scan, and nuclei scans the hostname: 4 actions. Before any
+action it prints which entries share an address and what it plans.
 
 PowerShell 7 or bash / zsh:
 
@@ -205,8 +207,11 @@ docker compose -f lab/docker-compose.yml exec -T scanner op06d run --engagement 
 **Expected output** (it takes a minute or two; your run id differs):
 
 ```
+scope: juice-shop.lab and 172.31.77.10 resolve to the same address; nmap scans it once, nuclei scans juice-shop.lab (172.31.77.10 default vhost not scanned; set name_and_ip: both to include it)
+scope: dvwa.lab and 172.31.77.11 resolve to the same address; nmap scans it once, nuclei scans dvwa.lab (172.31.77.11 default vhost not scanned; set name_and_ip: both to include it)
+plan: 2 nmap + 2 nuclei
 run_id: db5d11b6-df40-456a-b820-ab4b5aa46ec3
-actions: executed=8 denied=0 declined=0 tool_errors=0
+actions: executed=4 denied=0 declined=0 tool_errors=0
 findings by severity: info=8
 report (html): /captures/quickstart/rc-lab-2026-11-db5d11b6-df40-456a-b820-ab4b5aa46ec3.html
 evidence store: /captures/quickstart/evidence.db
@@ -223,8 +228,8 @@ audit log:      /captures/quickstart/audit/rc-lab-2026-11.audit.jsonl
   decision) and Limitations & Notes.
 - `audit/rc-lab-2026-11.audit.jsonl`: the audit log, one JSON entry per line. Look for
   `gate_decision` entries (each with `allowed` and a `reason`), the `action_executed`
-  entry that follows each allowed one, and the `dns_pinned` entries for the two
-  hostnames.
+  entry that follows each allowed one, the `dns_pinned` entries for the two
+  hostnames, and the `address_group` entry for each target listed by name and by IP.
 - `evidence.db`: the evidence store the report is rendered from.
 
 On Linux, the files the scanner writes under `lab/captures/` are owned by root. Take

@@ -52,7 +52,7 @@ Engagement  (frozen pydantic model)
   |- engagement: str
   |- authorization: Authorization   client, signed_scope_ref, authorized_by, window (UTC)
   |- scope: Scope                   in_scope, out_of_scope (normalized)
-  |- intensity: Intensity           max_rps, destructive
+  |- intensity: Intensity           max_rps, destructive, name_and_ip
   |- objective: str
   |- interactsh_server: str | None  optional self-hosted out-of-band server
   `- planner: PlannerPolicy | None  optional; allowed_providers for the LLM planner
@@ -94,6 +94,7 @@ eng.scope.in_scope                 # ['app.acme.com', '203.0.113.0/28']
 eng.scope.out_of_scope             # ['*.stripe.com', 'billing.acme.com']
 eng.authorization.window           # (datetime UTC start, datetime UTC end)
 eng.intensity.max_rps              # 20
+eng.intensity.name_and_ip          # 'once'
 ```
 
 Parse from a string (useful in tests): `parse_engagement(yaml_text)`.
@@ -133,6 +134,7 @@ scope:
 intensity:
   max_rps: 20                              # 1..10000
   destructive: false                       # default false
+  name_and_ip: once                        # once (default) or both
 objective: "External attack surface recon"
 # Optional fields (not in examples/engagement.yaml):
 interactsh_server: oast.lab.example-redteam.net   # self-hosted only; omit to keep out-of-band checks off
@@ -166,8 +168,39 @@ Do not put secrets in this file. Use references (e.g. a vault path).
 | Same entry in both `in_scope` and `out_of_scope` | Rejected |
 | `max_rps` | Integer, 1 to 10000 |
 | `destructive` | Boolean, defaults to `false` |
+| `name_and_ip` | `once` (default) or `both`; any other value is rejected. For a host listed by name and by IP, the fixed planner runs nmap once on the address either way. `once`: nuclei scans the hostname only, and the report's Limitations names the IP whose default virtual host it did not scan. `both`: nuclei also scans the IP. See [How the fixed planner uses it](#how-the-fixed-planner-uses-name_and_ip) |
 | `interactsh_server` | Optional. A plain hostname: public interactsh servers (`oast.pro`, `oast.live`, `oast.site`, `oast.online`, `oast.fun`, `oast.me`, `interact.sh`, `interactsh.com` and their subdomains), IP addresses, wildcards, URLs and paths are rejected. Lowercased, trailing dot removed |
 | `planner.allowed_providers` | Optional block; if present, a non-empty list of `local` and/or `anthropic` (duplicates removed) |
+
+## How the fixed planner uses `name_and_ip`
+
+`op06d.targets.plan_targets` builds the `--planner fixed` actions. It asks the
+gate (`Gate.preview`) what each in-scope entry would be scanned on: the
+hostname's resolve-once pin, the same address `Gate.check` later hands the
+tool. `Gate.preview` writes no gate decision and takes no rate token, and
+returns nothing for an entry the window or scope would refuse; such an entry gets
+its own nmap and nuclei actions and the gate refuses them.
+
+- Entries that resolve to the same address form one group. nmap scans the group
+  once, on its first entry.
+- A listed range is scanned by nmap as a range. An address inside it, and a
+  smaller listed range inside it, get no separate nmap.
+- nuclei scans each hostname in the group. A listed IP in the group is scanned
+  by nuclei with `both`, or with `once` when no listed hostname resolves to it.
+  Two hostnames on one address are two named virtual hosts and each gets its
+  own nuclei scan.
+
+Before any action, `op06d run` prints one line per group and the action
+totals, for example:
+
+```
+scope: juice-shop.lab and 172.31.77.10 resolve to the same address; nmap scans it once, nuclei scans juice-shop.lab (172.31.77.10 default vhost not scanned; set name_and_ip: both to include it)
+plan: 1 nmap + 1 nuclei
+```
+
+Each group is also written to the audit log as an `address_group` entry
+(entries, address, nmap target, nuclei targets, skipped IPs and the mode), and
+the report's Scope section lists the mode and every group.
 
 ## How the parser connects to the gate
 

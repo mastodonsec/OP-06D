@@ -323,14 +323,17 @@ docker run --rm \
 
 `--out` (required) is the directory for the HTML report, the evidence store and the
 audit log; in the container it must be the mounted `/out`, so the files land in your
-local `out` directory. The default **fixed planner** runs, per in-scope host or IP, an
-nmap service scan and a nuclei default-tag scan, and per in-scope CIDR an nmap service
-scan; nuclei uses the image's pinned template set. The example's window (2026-11-10,
+local `out` directory. The default **fixed planner** runs an nmap service scan once per
+in-scope address or CIDR, and a nuclei default-tag scan per in-scope host or IP;
+entries that resolve to the same address are scanned as one (see `name_and_ip` under
+[Engagement file](#engagement-file)). nuclei uses the image's pinned template set. Before
+any action it prints which entries share an address and what it plans. The example's window (2026-11-10,
 02:00 to 06:00 UTC) has passed, so this command scans nothing: every action is refused
 at the gate and the report records that. For a real engagement, write your own
 engagement file.
 
 ```
+plan: 2 nmap + 1 nuclei
 run_id: cb61ba8f-5d77-4809-8ebb-12660d989f94
 actions: executed=0 denied=3 declined=0 tool_errors=0
 findings: none
@@ -364,13 +367,30 @@ scope:
 intensity:
   max_rps: 20
   destructive: false      # destructive actions require this to be true
+  name_and_ip: once       # optional; once (default) or both, see below
 objective: "External attack surface recon"
 planner:                  # optional; without it only the local LLM provider may plan
   allowed_providers: [local]   # local and/or anthropic (hosted: findings leave the host)
 ```
 
-The `planner:` block is not in `examples/engagement.yaml`; `--planner fixed` ignores
-it. All fields are documented in [docs/engagement-parser.md](docs/engagement-parser.md).
+The `planner:` block and `name_and_ip` are not in `examples/engagement.yaml`;
+`--planner fixed` ignores the `planner:` block. All fields are documented in
+[docs/engagement-parser.md](docs/engagement-parser.md).
+
+A scope often lists one host by name and by IP. The fixed planner groups the in-scope
+entries that resolve to the same address (using the gate's resolve-once DNS pin) and
+runs nmap on that address once. A range is scanned as a range, so an address inside a
+listed range gets no separate nmap. `intensity.name_and_ip` decides nuclei:
+
+- `once` (default): nuclei scans each listed hostname, which reaches the named virtual
+  host. A listed IP that a listed hostname resolves to is not scanned by nuclei, and the
+  report's Limitations names it: its default virtual host was not assessed.
+- `both`: nuclei also scans that IP, for when its default virtual host differs from
+  the named one.
+
+Two hostnames on one address each get their own nuclei scan in both modes. The run
+prints one line per merged address before any action, writes an `address_group` audit
+entry for each, and the report's Scope section lists them.
 
 Scope rules worth knowing:
 

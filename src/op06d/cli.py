@@ -33,7 +33,7 @@ from pathlib import Path
 from typing import Callable, Iterable, Sequence
 
 from op06d.approval import ConsoleApprover
-from op06d.audit import EVENT_PLANNER_CONFIG, AuditLog
+from op06d.audit import EVENT_PLANNER_CONFIG, AuditError, AuditLog
 from op06d.engagement import Engagement, EngagementError, load_engagement
 from op06d.evidence import EvidenceStore
 from op06d.gate import Gate
@@ -50,6 +50,7 @@ from op06d.orchestrator import LLM, Orchestrator, RunLimits, CHARS_PER_TOKEN
 from op06d.redaction import scrub_text
 from op06d.report import build_report
 from op06d.resolve import Resolver, system_resolver
+from op06d.targets import Preview, TargetPlan, plan_targets
 from op06d.report_render import NoPdfBackendAvailable, render_html, render_pdf
 from op06d.toolchain import ToolchainError, load_toolchain, resolve_run_toolchain, version_text
 from op06d.tools import (
@@ -138,29 +139,18 @@ def prepare_output_dir(out_dir: Path, *, require_volume: bool = False, mountinfo
             )
 
 
-def plan_recon(engagement: Engagement) -> list[ToolAction]:
+def plan_recon(engagement: Engagement, preview: Preview | None = None) -> list[ToolAction]:
     """Deterministic recon plan, built from ``engagement.scope.in_scope``:
-    per in-scope hostname or IP, an nmap service scan then a nuclei
-    default-tag scan; per in-scope CIDR, an nmap service scan of the range
-    only - nuclei cannot target a range, so it is skipped for that entry.
-    A ``*.`` wildcard entry is a scope *pattern*, not a concrete host, so it
-    is not scanned.
+    an nmap service scan per address or range, and a nuclei default-tag scan
+    per host by ``intensity.name_and_ip`` (see ``op06d.targets``). Entries are
+    grouped by address only with ``preview`` (``Gate.preview``, the gate's
+    resolve-once pin); without it, every hostname and IP is planned on its own.
+    A ``*.`` wildcard entry is a scope *pattern*, not a concrete host, so it is
+    not scanned; nuclei cannot target a range.
 
-    Kept as a standalone pure function (engagement in, actions out) so a
-    future LLM planner can replace it without touching the run wiring
-    below."""
-    actions: list[ToolAction] = []
-    for entry in engagement.scope.in_scope:
-        if "/" in entry:
-            actions.append(ToolAction(
-                "nmap", entry, {"profile": "service"}, reason="recon: service scan of in-scope range",
-            ))
-            continue
-        if entry.startswith("*."):
-            continue
-        actions.append(ToolAction("nmap", entry, {"profile": "service"}, reason="recon: service scan"))
-        actions.append(ToolAction("nuclei", entry, {}, reason="recon: default-tag detection"))
-    return actions
+    Kept as a standalone function (engagement in, actions out) so the LLM
+    planner can replace it without touching the run wiring below."""
+    return list(plan_targets(engagement, preview).actions)
 
 
 @dataclass(frozen=True)
@@ -205,7 +195,7 @@ def run_engagement(
     approval_timeout: float = 120.0,
     tools: Iterable[Tool] | None = None,
     approver: ApprovalHook | None = None,
-    planner: Callable[[Engagement], list[ToolAction]] = plan_recon,
+    planner: Callable[[Engagement], list[ToolAction]] | None = None,
     clock: Callable[[], datetime] | None = None,
     resolver: Resolver | None = None,
     stdin_isatty: bool | None = None,
@@ -217,6 +207,7 @@ def run_engagement(
     max_iterations: int = DEFAULT_LLM_LIMITS["max_iterations"],
     orchestrator_options: dict | None = None,
     require_output_volume: bool = False,
+    notice: Callable[[str], None] | None = None,
 ) -> RunSummary:
     """One engagement file to a client report.
 
@@ -229,6 +220,12 @@ def run_engagement(
     behavior deterministic, and the tty overrides let a test exercise the
     interactive-vs-unattended selection without a real terminal. Production
     callers (the CLI) leave all of them ``None`` for the real wiring.
+
+    ``planner`` (fixed mode, tests only) replaces the fixed plan; left
+    ``None``, the run plans with ``op06d.targets.plan_targets`` against the
+    gate's pins and reports each merged address group before any action.
+    ``notice`` receives those start-up lines and the ``plan:`` line
+    (default: printed to stdout).
 
     The output directory must be writable (and, with ``require_output_volume``,
     on a mounted volume), or nothing runs (``OutputDirectoryError``).
@@ -315,7 +312,20 @@ def run_engagement(
 
     termination: str | None = None
     if settings is None:
-        for i, action in enumerate(planner(eng), start=1):
+        say = notice or (lambda line: print(line, flush=True))
+        if planner is None:
+            target_plan = plan_targets(eng, gate.preview)
+            store.record_address_plan(run_id, target_plan.as_dict())
+            for group in target_plan.groups:
+                say(group.notice())
+                try:
+                    log.record_address_group(group.as_dict(), mode=target_plan.mode, notice=group.notice())
+                except AuditError:
+                    pass  # the log is now unusable, so the gate refuses every action below
+        else:
+            target_plan = TargetPlan(eng.intensity.name_and_ip, tuple(planner(eng)), ())
+        say(target_plan.plan_line())
+        for i, action in enumerate(target_plan.actions, start=1):
             record(box.execute(action, iteration=i), i)
     else:
         assert llm is not None

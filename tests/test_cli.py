@@ -102,7 +102,8 @@ def _fake_resolver(host: str) -> list[str]:
     return ["203.0.113.5"]
 
 
-def _write_engagement(path: Path, *, in_scope: list[str], out_of_scope: list[str] | None = None) -> Path:
+def _write_engagement(path: Path, *, in_scope: list[str], out_of_scope: list[str] | None = None,
+                      name_and_ip: str | None = None) -> Path:
     now = datetime.now(timezone.utc)
     data = {
         "engagement": "cli-test-2026-11",
@@ -116,7 +117,8 @@ def _write_engagement(path: Path, *, in_scope: list[str], out_of_scope: list[str
             ],
         },
         "scope": {"in_scope": in_scope, "out_of_scope": out_of_scope or []},
-        "intensity": {"max_rps": 20, "destructive": False},
+        "intensity": {"max_rps": 20, "destructive": False,
+                      **({"name_and_ip": name_and_ip} if name_and_ip else {})},
         "objective": "CLI end-to-end test",
     }
     path.write_text(yaml.safe_dump(data), encoding="utf-8")
@@ -178,14 +180,19 @@ class MixedSeverityNucleiTool(FakeNucleiTool):
         return out
 
 
+def _every_entry_twice(eng):
+    """nmap and nuclei on every in-scope entry, so a host listed by name and by IP
+    is scanned twice and every finding is produced twice."""
+    return [ToolAction(tool, entry, {"profile": "service"} if tool == "nmap" else {}, reason="test")
+            for entry in eng.scope.in_scope for tool in ("nmap", "nuclei")]
+
+
 def test_the_same_finding_from_two_actions_counts_once(tmp_path):
-    # The hostname and its IP are both in scope, so nmap and nuclei each run
-    # twice against the same address and every finding is produced twice.
     eng_path = _write_engagement(tmp_path / "engagement.yaml", in_scope=["app.example.test", "203.0.113.5"])
 
     summary = run_engagement(
         eng_path, tmp_path / "out", tools=[FakeNmapTool(), FakeNucleiTool()],
-        resolver=_fake_resolver, non_interactive=True,
+        resolver=_fake_resolver, non_interactive=True, planner=_every_entry_twice,
     )
 
     assert summary.executed == 4
@@ -207,6 +214,81 @@ def test_summary_severity_counts_match_the_report(tmp_path):
     assert summary.severity_counts == report_counts
     assert sum(summary.severity_counts.values()) == report.executive_summary.total_findings
     assert set(summary.severity_counts) == {"info", "medium", "high"}
+
+
+def _name_and_ip_run(tmp_path, mode=None):
+    eng_path = _write_engagement(tmp_path / "engagement.yaml", in_scope=["app.example.test", "203.0.113.5"],
+                                 name_and_ip=mode)
+    nmap, nuclei = FakeNmapTool(), FakeNucleiTool()
+    lines: list[str] = []
+
+    def notice(line):
+        assert not nmap.calls and not nuclei.calls, "start-up lines come before any action"
+        lines.append(line)
+
+    summary = run_engagement(
+        eng_path, tmp_path / "out", tools=[nmap, nuclei], resolver=_fake_resolver,
+        non_interactive=True, notice=notice,
+    )
+    return summary, nmap, nuclei, lines
+
+
+def test_name_and_ip_once_scans_the_address_once_and_tells_the_operator(tmp_path):
+    summary, nmap, nuclei, lines = _name_and_ip_run(tmp_path)
+
+    assert [c[0] for c in nmap.calls] == ["203.0.113.5"]  # app.example.test, scanned on its pinned IP
+    assert [(c[0], c[2]) for c in nuclei.calls] == [("203.0.113.5", "app.example.test")]
+    assert summary.executed == 2 and summary.severity_counts == {"info": 2}
+    assert lines == [
+        "scope: app.example.test and 203.0.113.5 resolve to the same address; nmap scans it once, "
+        "nuclei scans app.example.test (203.0.113.5 default vhost not scanned; "
+        "set name_and_ip: both to include it)",
+        "plan: 1 nmap + 1 nuclei",
+    ]
+
+    entries = read_log(summary.audit_log_path)
+    [group] = [e for e in entries if e.event == "address_group"]
+    assert group.parameters["name_and_ip"] == "once"
+    assert group.parameters["entries"] == ["app.example.test", "203.0.113.5"]
+    assert group.parameters["nuclei_targets"] == ["app.example.test"]
+    assert group.parameters["skipped_ips"] == ["203.0.113.5"]
+    assert group.seq < min(e.seq for e in entries if e.event == "gate_decision")
+    assert entries[0].parameters["intensity"]["name_and_ip"] == "once"
+    verify_log(summary.audit_log_path)
+
+    with EvidenceStore.open(summary.evidence_db_path) as store:
+        report = build_report(store.reconstruct_run(summary.run_id))
+    assert report.scope.name_and_ip == "once"
+    [view] = report.scope.address_groups
+    assert view.address == "203.0.113.5" and view.nuclei_targets == ["app.example.test"]
+    [skip] = [i for i in report.limitations.issues if i.kind == "nuclei_default_vhost_not_scanned"]
+    assert "203.0.113.5" in skip.detail and "name_and_ip: both" in skip.detail
+    html = summary.report_html_path.read_text(encoding="utf-8")
+    assert "intensity.name_and_ip: once" in html and "default virtual host of 203.0.113.5" in html
+
+
+def test_name_and_ip_both_adds_nuclei_on_the_ip_and_no_skip_note(tmp_path):
+    summary, nmap, nuclei, lines = _name_and_ip_run(tmp_path, "both")
+
+    assert len(nmap.calls) == 1
+    assert [(c[0], c[2]) for c in nuclei.calls] == [("203.0.113.5", "app.example.test"), ("203.0.113.5", None)]
+    assert summary.executed == 3 and summary.severity_counts == {"info": 2}
+    assert lines[-1] == "plan: 1 nmap + 2 nuclei"
+    assert lines[0].endswith("nmap scans it once, nuclei scans both (2 nuclei runs for this address)")
+
+    with EvidenceStore.open(summary.evidence_db_path) as store:
+        report = build_report(store.reconstruct_run(summary.run_id))
+    assert report.scope.name_and_ip == "both"
+    assert not [i for i in report.limitations.issues if i.kind == "nuclei_default_vhost_not_scanned"]
+
+
+def test_a_scope_without_shared_addresses_prints_only_the_plan(tmp_path):
+    eng_path = _write_engagement(tmp_path / "engagement.yaml", in_scope=["app.example.test"])
+    lines: list[str] = []
+    summary = run_engagement(eng_path, tmp_path / "out", tools=[FakeNmapTool(), FakeNucleiTool()],
+                             resolver=_fake_resolver, non_interactive=True, notice=lines.append)
+    assert lines == ["plan: 1 nmap + 1 nuclei"]
+    assert not [e for e in read_log(summary.audit_log_path) if e.event == "address_group"]
 
 
 def test_audit_pin_fires_for_a_hostname_in_scope(tmp_path):

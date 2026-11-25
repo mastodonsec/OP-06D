@@ -52,6 +52,9 @@ EVENT_LOOP_END = "loop_terminated"  # why and when the loop stopped
 EVENT_DNS_PINNED = "dns_pinned"
 # The LLM planner's configuration for this run (provider, model, limits).
 EVENT_PLANNER_CONFIG = "planner_config"
+# The fixed planner's decision for scope entries that share one address: which
+# entry nmap scans, which entries nuclei scans, and the name_and_ip mode.
+EVENT_ADDRESS_GROUP = "address_group"
 # Events whose ``allowed`` flag is meaningful (an allow/deny or approve/decline).
 _ALLOWED_EVENTS = frozenset({EVENT_GATE_DECISION, EVENT_APPROVAL})
 EVENT_ACTION_EXECUTED = "action_executed"
@@ -264,6 +267,14 @@ class AuditLog:
         return self.record(
             EVENT_DNS_PINNED, target=hostname, parameters={"resolved_ips": ips},
             reason=f"pinned {hostname!r} -> {ips}",
+        )
+
+    def record_address_group(self, group: dict[str, Any], *, mode: str, notice: str) -> AuditEntry:
+        """Record one address group of the fixed plan (``op06d.targets``),
+        before any action runs. Raises ``AuditError`` on failure."""
+        return self.record(
+            EVENT_ADDRESS_GROUP, target=group.get("address"), tool="planner",
+            parameters={"name_and_ip": mode, **group}, reason=notice,
         )
 
     def record_execution(
