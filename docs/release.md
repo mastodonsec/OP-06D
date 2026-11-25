@@ -110,3 +110,22 @@ in [container.md](container.md#verify-the-image): `cosign verify` with the
 release workflow's identity, and the SBOM and provenance with
 `docker buildx imagetools inspect`. Then pull it on the target hosts and run
 `docker run --rm ghcr.io/mastodonsec/op06d@sha256:<digest> version`.
+
+## 6. Point the docs at the new digest
+
+On a ticket branch, after the image is verified, replace the previous release's
+digest with the new one in `README.md`, `docs/container.md`, `lab/README.md`
+and any other doc that names it. In the same pass, update the version they name:
+the README's Install line, the `--certificate-identity` tag
+(`…/release.yml@refs/tags/v<version>`) and the `version` sample. Find every
+occurrence of the old digest and version with:
+
+bash / zsh:
+
+```bash
+git grep -nE "<old-digest>|<old-version>"
+```
+
+Then re-check each sample output in those docs against the new image (run ids
+and times will differ) and correct any that do not match. Open a pull request
+and merge it.
