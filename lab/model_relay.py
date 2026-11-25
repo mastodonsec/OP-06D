@@ -588,11 +588,13 @@ def verify_run(mode: str, run_dir: pathlib.Path, report: pathlib.Path | None, *,
     db = run_dir / "evidence.db"
     if not db.is_file():
         return problems + ["no evidence store"]
-    store = EvidenceStore(db)
-    runs = store.list_runs()
-    if not runs:
+    # The scanner wrote the store, as root on a native Linux bind mount: read a
+    # private copy, so nothing is written to the capture or its directory.
+    with EvidenceStore.read_snapshot(db) as store:
+        runs = store.list_runs()
+        recon = store.reconstruct_run(runs[-1].run_id) if runs else None
+    if recon is None:
         return problems + ["the evidence store has no run"]
-    recon = store.reconstruct_run(runs[-1].run_id)
     planner = recon.planner or {}
     want_class = "local" if mode == "local" else "hosted"
     if planner.get("provider") != mode or planner.get("endpoint_class") != want_class:

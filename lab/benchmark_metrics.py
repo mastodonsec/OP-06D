@@ -293,11 +293,12 @@ def collect_run(run_dir: pathlib.Path, baseline_ids: Iterable[str] | None = None
     db = run_dir / "evidence.db"
     if not db.is_file():
         raise MetricsError(f"no evidence store in {run_dir}")
-    store = EvidenceStore(db)
-    runs = store.list_runs()
-    if not runs:
+    # Written inside the scanner (root-owned on a native Linux bind mount): read a copy.
+    with EvidenceStore.read_snapshot(db) as store:
+        runs = store.list_runs()
+        recon = store.reconstruct_run(runs[-1].run_id) if runs else None
+    if recon is None:
         raise MetricsError(f"the evidence store in {run_dir} has no run")
-    recon = store.reconstruct_run(runs[-1].run_id)
     if not recon.run.audit_log_path:
         raise MetricsError("the run record names no audit log")
     # The path was written inside the scanner (POSIX) or by a host run (either separator).
