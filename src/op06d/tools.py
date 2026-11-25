@@ -273,6 +273,17 @@ def run_subprocess(
     return ProcessResult(proc.returncode, proc.stdout or b"", proc.stderr or b"")
 
 
+def _coverage_detail(findings: object) -> str:
+    """`` templates_loaded=N`` (and `` coverage_warning``) for the audit entry of a
+    tool that reports its template coverage (nuclei); empty for any other tool."""
+    summary = findings.get("summary") if isinstance(findings, dict) else None
+    if not isinstance(summary, dict) or "templates_loaded" not in summary:
+        return ""
+    loaded = summary.get("templates_loaded")
+    shown = loaded if isinstance(loaded, int) and not isinstance(loaded, bool) else "unknown"
+    return f" templates_loaded={shown}" + (" coverage_warning" if findings.get("coverage_warning") else "")
+
+
 def _decision(target: object, reason: str, stage: str) -> GateDecision:
     label = target if isinstance(target, str) else f"<{type(target).__name__}>"
     return GateDecision(label, False, reason, stage)
@@ -449,6 +460,7 @@ class GatedToolbox:
                 detail=f"risk={risk.name} output={sanitized.original_length} chars "
                        f"sha256={sanitized.sha256} raw_sha256={sha256_of(raw)}"
                        + (f" scanned_ip={scan_target}" if hostname else "")
+                       + _coverage_detail(findings)
                        + (" flagged" if sanitized.flagged else ""),
             )
         except AuditError:

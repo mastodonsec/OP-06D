@@ -92,6 +92,7 @@ class Provenance(_Frozen):
     raw_sha256: str | None = None
     scanned_ip: str | None = None
     observed_at: str | None = None
+    target: str | None = None  # the action's target as proposed (hostname, IP or CIDR)
 
 
 class Finding(_Frozen):
@@ -421,6 +422,11 @@ def normalize_nuclei(
     if isinstance(unparsed, int) and unparsed > 0:
         issues.append(_malformed("nuclei_unparsed_lines", f"{unparsed} unparsed output line(s)", None))
 
+    if findings.get("coverage_warning"):
+        # The wrapper sets this when nuclei loaded no templates or the count could
+        # not be read. Without this issue such a scan reads as a clean one.
+        issues.append(_coverage_issue(findings, summary, provenance))
+
     raw_findings = findings.get("findings")
     if not isinstance(raw_findings, list):
         if "findings" in findings:
@@ -441,6 +447,26 @@ def normalize_nuclei(
 # --- dispatch -------------------------------------------------------------
 
 _NORMALIZERS = {"nmap": normalize_nmap, "nuclei": normalize_nuclei}
+
+
+def _coverage_issue(findings: dict, summary: dict, provenance: Provenance) -> NormalizationIssue:
+    loaded = summary.get("templates_loaded")
+    loaded = loaded if isinstance(loaded, int) and not isinstance(loaded, bool) else None
+    hostname = findings.get("target_hostname")
+    name = str(hostname or provenance.target or provenance.scanned_ip or "the target")
+    ip = provenance.scanned_ip
+    where = f"{name} ({ip})" if ip and ip != name else name
+    if loaded is None:
+        detail = (f"nuclei on {where}: the number of templates loaded could not be read, so it is "
+                  "not known what this scan checked. \"No findings\" from this action does not "
+                  "mean the target is clean.")
+    else:
+        detail = (f"nuclei on {where} loaded {loaded} template{'' if loaded == 1 else 's'}. "
+                  "\"No findings\" from this action does not mean the target is clean.")
+    return _malformed("nuclei_low_template_coverage", detail, {
+        "target": name, "scanned_ip": ip, "templates_loaded": loaded,
+        "coverage_warning": str(findings.get("coverage_warning")),
+    })
 
 
 def normalize(
@@ -501,10 +527,11 @@ def normalize_execution_result(
     resolved_ips = getattr(decision, "resolved_ips", ()) or ()
     scanned_ip = resolved_ips[0] if resolved_ips else None
 
+    target = getattr(getattr(result, "action", None), "target", None)
     provenance = Provenance(
         engagement=engagement, scanner=tool, scanner_version=scanner_version,
         templates_pin=templates_pin, raw_sha256=raw_sha256, scanned_ip=scanned_ip,
-        observed_at=observed_at,
+        observed_at=observed_at, target=target if isinstance(target, str) else None,
     )
 
     if not getattr(result, "executed", False):

@@ -312,11 +312,36 @@ If `templates_loaded` is `0` or `None`, the result also carries
 
 This exists so a scan that quietly loaded nothing (a bad `-tags`/`-exclude-tags`
 combination, a missing template directory for a given selection, a nuclei
-version mismatch) can never be read as "ran clean, found nothing" - a report
-consumer that ignores it does so in spite of an explicit signal, not for lack
-of one. It does not change `status`/`ToolOutput.status` on its own (a loaded-
-but-empty default scan is not itself a tool failure); `off_target_activity`
-and other existing error statuses still take precedence when they also apply.
+version mismatch) can never be read as "ran clean, found nothing". It does not
+change `status`/`ToolOutput.status` on its own (a loaded-but-empty default scan
+is not itself a tool failure); `off_target_activity` and other existing error
+statuses still take precedence when they also apply.
+
+The warning reaches the report the same way nmap's degradation does:
+
+1. `normalize_nuclei` turns `coverage_warning` into a
+   `nuclei_low_template_coverage` issue. Its raw data holds the target, the
+   scanned IP, `templates_loaded` (`null` when the count could not be read) and
+   the wrapper's warning text.
+2. The evidence store keeps it in the `issues` table with the action it came
+   from, so `op06d report --db` rebuilds it from the store alone.
+3. The report lists it under Limitations, for example:
+
+```
+nuclei_low_template_coverage: nuclei on dvwa.lab (172.31.77.11) loaded 0 templates. "No findings" from this action does not mean the target is clean.
+```
+
+When the count could not be read, the entry says the number of templates
+loaded could not be read, so it is not known what the scan checked.
+
+A selection that matches no template at all does not get this far: nuclei
+3.11.1 exits 1 (its stats report `"templates":"n/a"`), the wrapper returns
+`nuclei_failed`, the action counts as a tool error, and Limitations lists the
+`nuclei_failed` issue.
+
+The audit log's `action_executed` entry for every nuclei action carries the
+count in its reason, `templates_loaded=<N>` (`unknown` when it could not be
+read), followed by `coverage_warning` when the warning was set.
 
 ## Usage
 
