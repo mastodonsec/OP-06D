@@ -210,6 +210,39 @@ def running_relay_mode(run: Runner) -> str | None:
     return cmd[0] if cmd else "unknown"
 
 
+RELAY_SERVICE = "model-relay"
+
+
+def running_lab_services(run: Runner) -> list[str]:
+    """The services of the lab's compose project that Docker reports running, from
+    the containers' compose labels, so it covers the base lab and a relay stack alike."""
+    cp = run(["docker", "ps", "--filter", f"label=com.docker.compose.project={PROJECT}",
+              "--format", '{{.Label "com.docker.compose.service"}}'], 60)
+    if cp.returncode != 0:
+        raise RelayError(f"could not list the running lab containers (docker ps exit {cp.returncode}): "
+                         f"{(cp.stderr or cp.stdout).strip()[:300]}")
+    return sorted({line.strip() for line in cp.stdout.splitlines() if line.strip()})
+
+
+def refuse_if_running(run: Runner) -> None:
+    """``up`` starts its own copy of the lab. Over a running stack, compose would
+    recreate some containers and only restart others, so refuse instead."""
+    running = running_lab_services(run)
+    if RELAY_SERVICE in running:
+        mode = running_relay_mode(run)
+        which = f"a {mode} relay stack" if mode in MODES else "a relay stack"
+        raise RelayError(
+            f"{which} is already running. Tear it down first with "
+            "`uv run python lab/model_relay.py down`, then run `up` again"
+        )
+    if running:
+        raise RelayError(
+            f"the base lab is already running ({', '.join(running)}). The relay starts its own copy "
+            "of the lab: tear the base lab down first with `docker compose -f lab/docker-compose.yml down`, "
+            "then run `up` again"
+        )
+
+
 def build(mode: str, run: Runner = default_runner) -> None:
     _ok(run(["docker", "compose", "-f", str(COMPOSE_BASE), "build", "scanner"], 1800), "base scanner build")
     _ok(run(compose_argv(mode, "build", "model-relay"), 1800), "relay build")
@@ -219,12 +252,7 @@ def up(mode: str, engagement: str | None = None, run: Runner = default_runner, *
        environ: dict[str, str] | None = None) -> pathlib.Path:
     path, _ = check_policy(mode, engagement)
     require_key(mode, environ)
-    other = running_relay_mode(run)
-    if other is not None and other != mode:
-        raise RelayError(
-            f"a {other!r} relay is already running; one upstream per stack. Run "
-            "`uv run python lab/model_relay.py down` first"
-        )
+    refuse_if_running(run)
     _ok(run(compose_argv(mode, "up", "-d", "--remove-orphans"), 1800), "docker compose up")
     wait_for_targets(mode, run)
     return path

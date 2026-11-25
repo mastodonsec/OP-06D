@@ -73,6 +73,11 @@ services:
     image: vulnerables/web-dvwa@sha256:dae203fe11646a86937bf04db0079adef295f426da68a92b40e3b181f337daa7
     platform: linux/amd64     # the image has an amd64 build only
     restart: "no"
+    # The image's entrypoint is /main.sh, which starts MariaDB and then runs
+    # `service apache2 start`. A restarted container keeps Apache's PID file
+    # (/var/run/apache2/apache2.pid), and Apache refuses to start when the PID in it
+    # belongs to a live process. Remove it, then exec the image's own entrypoint.
+    entrypoint: ["/bin/bash", "-c", "rm -f /var/run/apache2/apache2.pid && exec /main.sh"]
     security_opt:
       - no-new-privileges:true
     mem_limit: 1g
