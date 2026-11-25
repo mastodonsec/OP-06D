@@ -295,7 +295,6 @@ def run_engagement(
     run_id = store.start_run(eng, audit_log_path=str(log.path), tool_versions=versions, clock=clock)
 
     executed = denied = declined = tool_errors = 0
-    severity_counts: dict[str, int] = {}
 
     def record(result, i: int) -> None:
         nonlocal executed, denied, declined, tool_errors
@@ -313,8 +312,6 @@ def run_engagement(
         if result.executed:
             normalized = normalize_execution_result(result, engagement=eng.engagement, scope=eng.scope)
             store.record_findings(run_id, action_id, normalized)
-            for f in normalized.findings:
-                severity_counts[f.severity.value] = severity_counts.get(f.severity.value, 0) + 1
 
     termination: str | None = None
     if settings is None:
@@ -363,6 +360,9 @@ def run_engagement(
     store.finish_run(run_id, status="completed", audit_log_sha256=audit_sha256)
 
     report = build_report(store.reconstruct_run(run_id))
+    # The store keeps one row per finding_id, so two actions that find the same
+    # thing count once: the summary shows the counts the report renders.
+    severity_counts = {c.severity: c.count for c in report.executive_summary.severity_counts if c.count}
     html_path = out_dir / f"{report.header.engagement}-{run_id}.html"
     html_path.write_text(render_html(report), encoding="utf-8")
 

@@ -207,7 +207,7 @@ docker compose -f lab/docker-compose.yml exec -T scanner op06d run --engagement 
 ```
 run_id: db5d11b6-df40-456a-b820-ab4b5aa46ec3
 actions: executed=8 denied=0 declined=0 tool_errors=0
-findings by severity: info=16
+findings by severity: info=8
 report (html): /captures/quickstart/rc-lab-2026-11-db5d11b6-df40-456a-b820-ab4b5aa46ec3.html
 evidence store: /captures/quickstart/evidence.db
 audit log:      /captures/quickstart/audit/rc-lab-2026-11.audit.jsonl
