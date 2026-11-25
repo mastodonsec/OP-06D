@@ -18,6 +18,7 @@ import yaml
 from op06d.audit import read_log, verify_log
 from op06d.cli import RunSummary, build_parser, main, run_engagement
 from op06d.evidence import EvidenceStore
+from op06d.report import build_report
 from op06d.toolchain import TOOLCHAIN_ENV
 from op06d.tools import Outcome, Risk, ToolAction, ToolOutput
 
@@ -160,6 +161,52 @@ def test_run_engagement_end_to_end_produces_report_evidence_and_valid_audit_log(
 
     assert summary.audit_log_path.exists()
     assert verify_log(summary.audit_log_path) > 0
+
+
+class MixedSeverityNucleiTool(FakeNucleiTool):
+    """Three findings at three severities, so the count comparison covers more than info."""
+
+    def run(self, target, parameters, *, hostname=None):
+        out = super().run(target, parameters, hostname=hostname)
+        base = out.findings["findings"][0]
+        out.findings["findings"] = [
+            base,
+            {**base, "template_id": "fake-exposed-panel", "name": "Fake Exposed Panel", "severity": "medium"},
+            {**base, "template_id": "fake-weak-config", "name": "Fake Weak Config", "severity": "high"},
+        ]
+        out.findings["summary"]["findings"] = 3
+        return out
+
+
+def test_the_same_finding_from_two_actions_counts_once(tmp_path):
+    # The hostname and its IP are both in scope, so nmap and nuclei each run
+    # twice against the same address and every finding is produced twice.
+    eng_path = _write_engagement(tmp_path / "engagement.yaml", in_scope=["app.example.test", "203.0.113.5"])
+
+    summary = run_engagement(
+        eng_path, tmp_path / "out", tools=[FakeNmapTool(), FakeNucleiTool()],
+        resolver=_fake_resolver, non_interactive=True,
+    )
+
+    assert summary.executed == 4
+    assert len(EvidenceStore(summary.evidence_db_path).list_findings(summary.run_id)) == 2
+    assert summary.severity_counts == {"info": 2}
+
+
+def test_summary_severity_counts_match_the_report(tmp_path):
+    eng_path = _write_engagement(tmp_path / "engagement.yaml", in_scope=["app.example.test", "203.0.113.5"])
+
+    summary = run_engagement(
+        eng_path, tmp_path / "out", tools=[FakeNmapTool(), MixedSeverityNucleiTool()],
+        resolver=_fake_resolver, non_interactive=True,
+    )
+
+    with EvidenceStore.open(summary.evidence_db_path) as store:
+        report = build_report(store.reconstruct_run(summary.run_id))
+    report_counts = {c.severity: c.count for c in report.executive_summary.severity_counts if c.count}
+    assert summary.severity_counts == report_counts
+    assert sum(summary.severity_counts.values()) == report.executive_summary.total_findings
+    assert set(summary.severity_counts) == {"info", "medium", "high"}
 
 
 def test_audit_pin_fires_for_a_hostname_in_scope(tmp_path):
