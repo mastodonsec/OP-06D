@@ -123,7 +123,7 @@ OP-06D from source needs more; see [For contributors](#for-contributors).
 
 ## Install
 
-The release image is `ghcr.io/mastodonsec/op06d`, version 0.0.2. Always use it by
+The release image is `ghcr.io/mastodonsec/op06d`, version 0.0.3. Always use it by
 digest, never by tag alone.
 
 1. Pull it.
@@ -131,13 +131,13 @@ digest, never by tag alone.
    PowerShell 7:
 
    ```powershell
-   docker pull ghcr.io/mastodonsec/op06d@sha256:af5fde2cb0de230bef5e5dc4a688f3d1191653563e1824cb63c1d374ced308f6
+   docker pull ghcr.io/mastodonsec/op06d@sha256:872be01c01dafbd7d489358730af4f7f0cfff0a46f5bc50db04366f21f221f55
    ```
 
    bash / zsh (Linux, Kali, macOS):
 
    ```bash
-   docker pull ghcr.io/mastodonsec/op06d@sha256:af5fde2cb0de230bef5e5dc4a688f3d1191653563e1824cb63c1d374ced308f6
+   docker pull ghcr.io/mastodonsec/op06d@sha256:872be01c01dafbd7d489358730af4f7f0cfff0a46f5bc50db04366f21f221f55
    ```
 
 2. Verify its signature with [cosign](https://github.com/sigstore/cosign). The image is
@@ -147,16 +147,16 @@ digest, never by tag alone.
    PowerShell 7 (install cosign with `winget install --id Sigstore.Cosign --exact`):
 
    ```powershell
-   cosign verify ghcr.io/mastodonsec/op06d@sha256:af5fde2cb0de230bef5e5dc4a688f3d1191653563e1824cb63c1d374ced308f6 `
-     --certificate-identity "https://github.com/mastodonsec/OP-06D/.github/workflows/release.yml@refs/tags/v0.0.2" `
+   cosign verify ghcr.io/mastodonsec/op06d@sha256:872be01c01dafbd7d489358730af4f7f0cfff0a46f5bc50db04366f21f221f55 `
+     --certificate-identity "https://github.com/mastodonsec/OP-06D/.github/workflows/release.yml@refs/tags/v0.0.3" `
      --certificate-oidc-issuer https://token.actions.githubusercontent.com
    ```
 
    bash / zsh:
 
    ```bash
-   cosign verify ghcr.io/mastodonsec/op06d@sha256:af5fde2cb0de230bef5e5dc4a688f3d1191653563e1824cb63c1d374ced308f6 \
-     --certificate-identity "https://github.com/mastodonsec/OP-06D/.github/workflows/release.yml@refs/tags/v0.0.2" \
+   cosign verify ghcr.io/mastodonsec/op06d@sha256:872be01c01dafbd7d489358730af4f7f0cfff0a46f5bc50db04366f21f221f55 \
+     --certificate-identity "https://github.com/mastodonsec/OP-06D/.github/workflows/release.yml@refs/tags/v0.0.3" \
      --certificate-oidc-issuer https://token.actions.githubusercontent.com
    ```
 
@@ -165,16 +165,16 @@ digest, never by tag alone.
    PowerShell 7:
 
    ```powershell
-   docker run --rm ghcr.io/sigstore/cosign/cosign:latest verify ghcr.io/mastodonsec/op06d@sha256:af5fde2cb0de230bef5e5dc4a688f3d1191653563e1824cb63c1d374ced308f6 `
-     --certificate-identity "https://github.com/mastodonsec/OP-06D/.github/workflows/release.yml@refs/tags/v0.0.2" `
+   docker run --rm ghcr.io/sigstore/cosign/cosign:latest verify ghcr.io/mastodonsec/op06d@sha256:872be01c01dafbd7d489358730af4f7f0cfff0a46f5bc50db04366f21f221f55 `
+     --certificate-identity "https://github.com/mastodonsec/OP-06D/.github/workflows/release.yml@refs/tags/v0.0.3" `
      --certificate-oidc-issuer https://token.actions.githubusercontent.com
    ```
 
    bash / zsh:
 
    ```bash
-   docker run --rm ghcr.io/sigstore/cosign/cosign:latest verify ghcr.io/mastodonsec/op06d@sha256:af5fde2cb0de230bef5e5dc4a688f3d1191653563e1824cb63c1d374ced308f6 \
-     --certificate-identity "https://github.com/mastodonsec/OP-06D/.github/workflows/release.yml@refs/tags/v0.0.2" \
+   docker run --rm ghcr.io/sigstore/cosign/cosign:latest verify ghcr.io/mastodonsec/op06d@sha256:872be01c01dafbd7d489358730af4f7f0cfff0a46f5bc50db04366f21f221f55 \
+     --certificate-identity "https://github.com/mastodonsec/OP-06D/.github/workflows/release.yml@refs/tags/v0.0.3" \
      --certificate-oidc-issuer https://token.actions.githubusercontent.com
    ```
 
@@ -183,19 +183,19 @@ digest, never by tag alone.
    PowerShell 7:
 
    ```powershell
-   docker run --rm ghcr.io/mastodonsec/op06d@sha256:af5fde2cb0de230bef5e5dc4a688f3d1191653563e1824cb63c1d374ced308f6 version
+   docker run --rm ghcr.io/mastodonsec/op06d@sha256:872be01c01dafbd7d489358730af4f7f0cfff0a46f5bc50db04366f21f221f55 version
    ```
 
    bash / zsh:
 
    ```bash
-   docker run --rm ghcr.io/mastodonsec/op06d@sha256:af5fde2cb0de230bef5e5dc4a688f3d1191653563e1824cb63c1d374ced308f6 version
+   docker run --rm ghcr.io/mastodonsec/op06d@sha256:872be01c01dafbd7d489358730af4f7f0cfff0a46f5bc50db04366f21f221f55 version
    ```
 
    **Expected output:**
 
    ```
-   op06d 0.0.2
+   op06d 0.0.3
    nmap 7.93
    nuclei 3.11.1
    nuclei-templates v10.5.1 (/opt/nuclei-templates, read-only)
@@ -277,7 +277,7 @@ docker run --rm \
   --user "$(id -u):$(id -g)" \
   -v "$PWD/engagement.yaml:/work/engagement.yaml:ro" \
   -v "$PWD/out:/out" \
-  ghcr.io/mastodonsec/op06d@sha256:af5fde2cb0de230bef5e5dc4a688f3d1191653563e1824cb63c1d374ced308f6 \
+  ghcr.io/mastodonsec/op06d@sha256:872be01c01dafbd7d489358730af4f7f0cfff0a46f5bc50db04366f21f221f55 \
   run --engagement engagement.yaml --out /out
 ```
 
@@ -307,7 +307,7 @@ PowerShell 7:
 docker run --rm `
   -v "${PWD}/engagement.yaml:/work/engagement.yaml:ro" `
   -v "${PWD}/out:/out" `
-  ghcr.io/mastodonsec/op06d@sha256:af5fde2cb0de230bef5e5dc4a688f3d1191653563e1824cb63c1d374ced308f6 `
+  ghcr.io/mastodonsec/op06d@sha256:872be01c01dafbd7d489358730af4f7f0cfff0a46f5bc50db04366f21f221f55 `
   run --engagement engagement.yaml --out /out
 ```
 
@@ -317,7 +317,7 @@ bash / zsh (macOS):
 docker run --rm \
   -v "$PWD/engagement.yaml:/work/engagement.yaml:ro" \
   -v "$PWD/out:/out" \
-  ghcr.io/mastodonsec/op06d@sha256:af5fde2cb0de230bef5e5dc4a688f3d1191653563e1824cb63c1d374ced308f6 \
+  ghcr.io/mastodonsec/op06d@sha256:872be01c01dafbd7d489358730af4f7f0cfff0a46f5bc50db04366f21f221f55 \
   run --engagement engagement.yaml --out /out
 ```
 
