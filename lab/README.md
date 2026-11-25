@@ -290,6 +290,13 @@ engagement it allows and the next command. `up` waits up to three minutes for bo
 targets to answer. If it prints `failed: ...` instead, run `down` (below) and start
 again.
 
+`up` asks Docker what is running and starts nothing over a running lab. If the lab from
+steps 3 to 7 is still up, it prints this and exits; run step 9, then `up` again:
+
+```
+refused: the base lab is already running (dvwa, juice-shop, redirect, scanner). The relay starts its own copy of the lab: tear the base lab down first with `docker compose -f lab/docker-compose.yml down`, then run `up` again
+```
+
 Check the isolation with the relay up. This can take several minutes.
 
 PowerShell 7 or bash / zsh:

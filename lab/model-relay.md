@@ -131,6 +131,20 @@ leave `OLLAMA_HOST` unset, keep Ollama on `127.0.0.1`, and confirm with
 
 ## Commands (repository root)
 
+Start from a torn-down lab. `up` brings up its own copy of the lab, asks Docker
+what is running first, and starts nothing over a running stack. Over the base
+lab it prints:
+
+```
+refused: the base lab is already running (dvwa, juice-shop, redirect, scanner). The relay starts its own copy of the lab: tear the base lab down first with `docker compose -f lab/docker-compose.yml down`, then run `up` again
+```
+
+Over a relay stack (here a local one) it prints:
+
+```
+refused: the local relay stack is already running. Tear it down first with `uv run python lab/model_relay.py down`, then run `up` again
+```
+
 The `uv run ...` and `ollama ...` lines are the same in PowerShell 7 and
 bash/zsh. The `$env:...`, `Read-Host` and `Remove-Item Env:...` lines, and
 the backtick line continuations, are PowerShell only. `check anthropic` and

@@ -46,6 +46,16 @@ def test_base_compose_has_no_relay_and_scanner_stays_on_labnet_only():
         assert "extra_hosts" not in svc and "ports" not in svc
 
 
+def test_dvwa_clears_the_stale_apache_pid_file_and_execs_the_images_entrypoint():
+    dvwa = _yaml(LAB / "docker-compose.yml")["services"]["dvwa"]
+    assert dvwa["entrypoint"] == ["/bin/bash", "-c", "rm -f /var/run/apache2/apache2.pid && exec /main.sh"]
+    assert "command" not in dvwa
+    assert dvwa["image"].startswith("vulnerables/web-dvwa@sha256:") and dvwa["platform"] == "linux/amd64"
+    assert "ports" not in dvwa and list(dvwa["networks"]) == ["labnet"]
+    for mode in MODES:
+        assert "dvwa" not in (_overlay(mode).get("services") or {}), f"model-relay.{mode}.yml overrides dvwa"
+
+
 def test_base_isolation_script_still_requires_exactly_one_interface():
     text = (LAB / "check_isolation.sh").read_text(encoding="utf-8")
     assert 'if [ "$iface_count" -eq 1 ]' in text and "relay" not in text.lower()
@@ -190,21 +200,106 @@ def test_engagement_outside_lab_is_refused(tmp_path):
         relay.check_policy("anthropic", other)
 
 
-def test_a_running_relay_of_the_other_mode_blocks_up():
-    class Running(NoDocker):
-        def __call__(self, argv, timeout):
-            self.calls.append(list(argv))
-            if argv[-3:] == ["ps", "-q", "model-relay"]:
-                return subprocess.CompletedProcess(argv, 0, "abc123\n", "")
-            if argv[:3] == ["docker", "container", "inspect"]:
-                return subprocess.CompletedProcess(
-                    argv, 0, '[{"State": {"Running": true}, "Config": {"Cmd": ["anthropic"]}}]', "")
-            return subprocess.CompletedProcess(argv, 0, "", "")
+class LabRunning(NoDocker):
+    """Docker reports ``services`` of the lab's compose project as running."""
 
-    d = Running()
-    with pytest.raises(relay.RelayError, match="one upstream per stack"):
+    def __init__(self, services, relay_cmd=("local",), ps_code=0):
+        super().__init__()
+        self.services, self.relay_cmd, self.ps_code = list(services), list(relay_cmd), ps_code
+
+    def __call__(self, argv, timeout):
+        self.calls.append(list(argv))
+        if argv[:2] == ["docker", "ps"]:
+            out = "".join(f"{s}\n" for s in self.services)
+            return subprocess.CompletedProcess(argv, self.ps_code, out, "" if self.ps_code == 0 else "daemon down")
+        if argv[-3:] == ["ps", "-q", "model-relay"]:
+            return subprocess.CompletedProcess(argv, 0, "abc123\n" if "model-relay" in self.services else "", "")
+        if argv[:3] == ["docker", "container", "inspect"]:
+            return subprocess.CompletedProcess(
+                argv, 0, json.dumps([{"State": {"Running": True}, "Config": {"Cmd": self.relay_cmd}}]), "")
+        return subprocess.CompletedProcess(argv, 0, "", "")
+
+    def started(self) -> bool:
+        return any(c[-3:] == ["up", "-d", "--remove-orphans"] for c in self.calls)
+
+
+BASE_LAB = ["dvwa", "juice-shop", "redirect", "scanner"]
+
+
+def test_up_refuses_while_the_base_lab_is_running():
+    d = LabRunning(BASE_LAB)
+    with pytest.raises(relay.RelayError) as exc:
         relay.up("local", None, run=d)
-    assert not any("up" in c for c in d.calls)
+    assert str(exc.value) == (
+        "the base lab is already running (dvwa, juice-shop, redirect, scanner). The relay starts its own "
+        "copy of the lab: tear the base lab down first with `docker compose -f lab/docker-compose.yml down`, "
+        "then run `up` again"
+    )
+    assert not d.started()
+    ps = next(c for c in d.calls if c[:2] == ["docker", "ps"])
+    assert "label=com.docker.compose.project=rc-lab" in ps
+
+
+@pytest.mark.parametrize("running_mode", MODES)
+@pytest.mark.parametrize("mode", MODES)
+def test_up_refuses_while_a_relay_stack_is_running(mode, running_mode):
+    d = LabRunning([*BASE_LAB, "model-relay"], relay_cmd=[running_mode])
+    env = {relay.KEY_ENV: FAKE_KEY}
+    engagement = "lab/engagement-llm-hosted.yaml" if mode == "anthropic" else None
+    with pytest.raises(relay.RelayError) as exc:
+        relay.up(mode, engagement, run=d, environ=env)
+    assert str(exc.value) == (
+        f"the {running_mode} relay stack is already running. Tear it down first with "
+        "`uv run python lab/model_relay.py down`, then run `up` again"
+    )
+    assert not d.started()
+
+
+@pytest.mark.parametrize("cmd, wording", [
+    (["anthropic"], "the anthropic relay stack is already running"),
+    (["local"], "the local relay stack is already running"),
+    ([], "the relay stack is already running"),
+])
+def test_the_relay_refusal_names_the_running_mode(cmd, wording):
+    d = LabRunning([*BASE_LAB, "model-relay"], relay_cmd=cmd)
+    with pytest.raises(relay.RelayError) as exc:
+        relay.up("local", None, run=d)
+    assert str(exc.value).startswith(wording + ". Tear it down first")
+
+
+def test_up_proceeds_when_nothing_of_the_lab_is_running():
+    d = LabRunning([])
+    relay.up("local", None, run=d)
+    assert d.started()
+
+
+def test_up_refuses_when_docker_cannot_say_what_is_running():
+    d = LabRunning([], ps_code=1)
+    with pytest.raises(relay.RelayError, match="could not list the running lab containers"):
+        relay.up("local", None, run=d)
+    assert not d.started()
+
+
+def test_cli_up_over_a_running_lab_is_refused_with_exit_2_and_starts_nothing(monkeypatch, capsys):
+    d = LabRunning(BASE_LAB)
+    real_up = relay.up
+    monkeypatch.setattr(relay, "up", lambda mode, engagement: real_up(mode, engagement, run=d))
+    assert relay.main(["up", "local"]) == 2
+    err = capsys.readouterr().err
+    assert err.startswith("refused: the base lab is already running")
+    assert "docker compose -f lab/docker-compose.yml down" in err
+    assert not d.started()
+
+
+@pytest.mark.parametrize("mode", MODES)
+def test_down_check_and_status_work_over_a_running_stack_as_before(mode):
+    topo = _topology(mode)
+    d = FakeDocker(topo)
+    assert relay.check(mode, run=d).exit_code == 0
+    relay.down(d)
+    assert relay.running_relay_mode(d) is not None
+    assert not any(c[:2] == ["docker", "ps"] for c in d.calls)
+    assert any(c[-2:] == ["down", "--remove-orphans"] for c in d.calls)
 
 
 # --- up waits for the lab targets ----------------------------------------------------------
