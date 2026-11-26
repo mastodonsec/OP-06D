@@ -24,6 +24,9 @@ against systems you own or have **explicit, written authorization** to test.
 - You are responsible for operating within your authorization. The guardrails reduce the
   chance of a mistake; they do not transfer that responsibility.
 
+The step-by-step procedure for a live engagement is the
+[operator runbook](docs/operator-runbook.md).
+
 To report a vulnerability in OP-06D itself, see [`SECURITY.md`](SECURITY.md).
 
 ---
@@ -247,7 +250,8 @@ outbound scanning.
 
 OP-06D is driven by a single declarative **engagement file** and one command. The
 engagement file *is* the authorization boundary — it names the authorized targets, the
-rate cap, and the window, and the gate enforces exactly what it says.
+rate cap, and the window, and the gate enforces exactly what it says. For a live
+engagement, follow the [operator runbook](docs/operator-runbook.md) from start to end.
 
 Run it from a directory holding your `engagement.yaml`. The engagement file is mounted
 read-only and a local `out` directory is mounted at `/out`. Create `out` before the run,
@@ -344,9 +348,12 @@ audit log:      /out/audit/acme-saas-external-2026-11.audit.jsonl
 
 To let a model propose the actions instead (through the same gate), add
 `--planner llm --llm-provider local` (or `anthropic`); see
-[docs/llm-planner.md](docs/llm-planner.md). In the container, pass the Anthropic API
-key with `--env-file`, and reach a local model as described in
-[docs/container.md](docs/container.md).
+[docs/llm-planner.md](docs/llm-planner.md). In the container, add `-it` to
+`docker run` so the run can prompt for approvals (without a terminal every action that
+needs approval is declined), pass the Anthropic API key with `--env-file`, and reach a
+local model as described in [docs/container.md](docs/container.md). The operator
+runbook's [Run and monitor](docs/operator-runbook.md#5-run-and-monitor) step has the
+full commands.
 
 ### Engagement file
 
@@ -530,7 +537,7 @@ On Windows, pointing `--basetemp` at a directory outside the repository (for exa
 
 The unit suite mocks all subprocesses — **no test starts a real scanner or touches a real
 host.** Real-tool behavior is validated separately in the isolated lab
-([`lab/RUNBOOK.md`](lab/RUNBOOK.md)). The lab-gated integration tests are deselected
+(the lab runbook, [`lab/RUNBOOK.md`](lab/RUNBOOK.md)). The lab-gated integration tests are deselected
 by default (they need `-m lab`, `OP06D_LAB=1` and the lab), and the live-model test
 is skipped unless `OP06D_LIVE_MODEL=1`.
 
@@ -559,8 +566,9 @@ It has two jobs:
 
 Run it once after installing, before your first authorized engagement, to confirm your
 setup works and to see real output. Start with the quick start,
-[`lab/README.md`](lab/README.md). [`lab/RUNBOOK.md`](lab/RUNBOOK.md) is the step-by-step
-procedure for proving a setup.
+[`lab/README.md`](lab/README.md). The lab runbook, [`lab/RUNBOOK.md`](lab/RUNBOOK.md), is
+the step-by-step procedure for proving a setup; the
+[operator runbook](docs/operator-runbook.md) is the procedure for a live engagement.
 
 ## Project layout
 
@@ -604,11 +612,12 @@ docker/                  hash-pinned image requirements, generated from uv.lock
   dependabot.yml         dependency update configuration
 docs/                    design notes per component, plus:
   container.md           running the image: capabilities, mounts, verification
+  operator-runbook.md    the operator runbook: a live engagement from authorization to record
   release.md             releasing the image
 tests/                   unit suite; tests/integration/ holds the lab-gated tests
 lab/                     isolated Docker lab for live validation:
                          - README.md: the lab quick start
-                         - RUNBOOK.md: the maintainer's validation reference
+                         - RUNBOOK.md: the lab runbook, the maintainer's validation reference
                          - hosts.md: host setup per platform (Windows, Kali / Linux, macOS, ARM)
                          - model-relay.md: the opt-in model relay for --planner llm runs
                          - benchmark.md: the opt-in planner model benchmark

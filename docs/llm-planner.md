@@ -20,6 +20,12 @@ report's Scope section says so.
 
 ## Quick start
 
+These commands run OP-06D from a source checkout (see the README's
+[For contributors](../README.md#for-contributors)) with its virtual environment
+active. The container image already includes the hosted provider; the `docker run`
+commands for both providers are in the
+[operator runbook](operator-runbook.md#5-run-and-monitor).
+
 Hosted (Anthropic). The engagement file must allow it explicitly (see
 [Engagement policy](#engagement-policy)). Install the extra and put the key in
 the environment. There is no flag or config field for the key.
@@ -27,7 +33,7 @@ the environment. There is no flag or config field for the key.
 bash / zsh:
 
 ```bash
-pip install 'op06d[llm-anthropic]'
+uv sync --extra llm-anthropic
 ```
 
 bash / zsh:
@@ -211,8 +217,11 @@ audit log, no evidence.
 
 ### Where op06d actually runs
 
-- **Operator host (product deployment):** op06d, nmap and nuclei run on the
-  host. The modes behave as described above.
+- **Operator host (product deployment):** op06d, nmap and nuclei run together
+  in the container image on the operator's host (or, from a source checkout,
+  directly on it). The modes behave as described above; from the image, the
+  local endpoint must be reachable from the container (see
+  [container.md](container.md)), and approval prompts need `docker run -it`.
 - **The sealed lab:** op06d and the tools run *inside* the scanner container on
   `labnet`. That network is `internal: true`, with no route to the host or the
   internet, so on its own a lab LLM run can reach neither host Ollama nor

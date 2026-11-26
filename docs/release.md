@@ -114,8 +114,8 @@ release workflow's identity, and the SBOM and provenance with
 ## 6. Point the docs at the new digest
 
 On a ticket branch, after the image is verified, replace the previous release's
-digest with the new one in `README.md`, `docs/container.md`, `lab/README.md`
-and any other doc that names it. In the same pass, update the version they name:
+digest with the new one in `README.md`, `docs/container.md`,
+`docs/operator-runbook.md`, `lab/README.md` and any other doc that names it. In the same pass, update the version they name:
 the README's Install line, the `--certificate-identity` tag
 (`…/release.yml@refs/tags/v<version>`) and the `version` sample. Find every
 occurrence of the old digest and version with:

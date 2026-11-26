@@ -11,8 +11,8 @@ in the isolated lab:
 | Python dependencies | hash-pinned from `uv.lock`, including the hosted LLM provider (`llm-anthropic`) and PDF reports (weasyprint) |
 
 It is built for `linux/amd64` and `linux/arm64` from the repository
-`Dockerfile`; the lab's scanner is the same image plus test tools (see
-[lab/RUNBOOK.md](../lab/RUNBOOK.md)). It fetches nothing at run time: nuclei's
+`Dockerfile`; the lab's scanner is the same image plus test tools (see the lab
+runbook, [lab/RUNBOOK.md](../lab/RUNBOOK.md)). It fetches nothing at run time: nuclei's
 update check is off and the template set is read-only.
 
 Tags: `<version>` and `<version>-nmap7.93-nuclei3.11.1-tpl10.5.1`. Pin by digest
@@ -47,6 +47,11 @@ runs as; if Docker creates it, it is owned by root and the run is refused.
 Secrets are passed only at run time, never baked into the image: put
 `ANTHROPIC_API_KEY=...` in a file readable only by you and add
 `--env-file <that file>` for `--planner llm --llm-provider anthropic`.
+
+A `--planner llm` run can stop for operator approval, and the prompt needs a
+terminal on both stdin and stdout: add `-it` to `docker run`. Without it, every
+action that needs approval is declined without a prompt. The full commands are in
+the [operator runbook](operator-runbook.md#5-run-and-monitor).
 
 ## Linux (engagements)
 
