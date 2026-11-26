@@ -368,8 +368,17 @@ docker run --rm -it \
   run --engagement engagement.yaml --out /out --planner llm --llm-provider anthropic
 ```
 
-A local model (Ollama) keeps findings on the host. On Linux, with host networking,
-the default endpoint reaches an Ollama listening on 127.0.0.1:
+A local model (Ollama) keeps findings on the host. On Linux, check where Ollama
+listens first:
+
+bash (Linux):
+
+```bash
+ss -ltn | grep 11434
+```
+
+With host networking, the default endpoint reaches an Ollama listening on
+127.0.0.1:11434:
 
 bash (Linux):
 
@@ -382,6 +391,27 @@ docker run --rm -it \
   -v "$PWD/out:/out" \
   ghcr.io/mastodonsec/op06d@sha256:872be01c01dafbd7d489358730af4f7f0cfff0a46f5bc50db04366f21f221f55 \
   run --engagement engagement.yaml --out /out --planner llm --llm-provider local
+```
+
+On a Linux host set up for the lab's local model relay, Ollama is bound to the
+`docker0` bridge address, not loopback (see
+[lab/model-relay.md](../lab/model-relay.md#ollama-on-the-host-native-linux-eg-kali),
+"Ollama on the host (native Linux, e.g. Kali)"), so `ss` shows that address, normally
+`172.17.0.1:11434`. The run must name that address as the endpoint and allow it as a
+private IP:
+
+bash (Linux):
+
+```bash
+docker run --rm -it \
+  --network host \
+  --cap-add NET_RAW --cap-add NET_ADMIN \
+  --user "$(id -u):$(id -g)" \
+  -v "$PWD/engagement.yaml:/work/engagement.yaml:ro" \
+  -v "$PWD/out:/out" \
+  ghcr.io/mastodonsec/op06d@sha256:872be01c01dafbd7d489358730af4f7f0cfff0a46f5bc50db04366f21f221f55 \
+  run --engagement engagement.yaml --out /out --planner llm --llm-provider local \
+  --llm-endpoint http://172.17.0.1:11434 --llm-allow-private 172.17.0.1
 ```
 
 On Docker Desktop the host is `host.docker.internal`, 192.168.65.254 on current
@@ -458,19 +488,34 @@ Approve? [y/N] (times out after <seconds>s and denies):
 Every gate decision, approval and executed action is written to the audit log as one
 JSON line and synced to disk before the run goes on, so the audit log is how you watch
 a run. The file appears when the run opens it, just before the `scope:` and `plan:`
-lines. Follow it from a second terminal in the working directory, with your
-engagement ID in the file name:
+lines. Its name is your engagement ID followed by `.audit.jsonl`, and with one `out`
+directory per run it is the only file in `out/audit`. Once it is there, open a second
+terminal in the working directory and set its name in a variable:
 
 PowerShell 7:
 
 ```powershell
-Get-Content out/audit/<engagement>.audit.jsonl -Wait
+$AUDIT = (Get-Item out/audit/*.audit.jsonl).Name
 ```
 
 bash / zsh:
 
 ```bash
-tail -F out/audit/<engagement>.audit.jsonl
+AUDIT=$(cd out/audit && ls *.audit.jsonl)
+```
+
+Then follow it:
+
+PowerShell 7:
+
+```powershell
+Get-Content "out/audit/$AUDIT" -Wait
+```
+
+bash / zsh:
+
+```bash
+tail -F "out/audit/$AUDIT"
 ```
 
 The events, in the order a run writes them:
@@ -546,8 +591,39 @@ check that `docker ps` does not list it. What is left in `out`:
   With the fixed planner it holds every action that finished before the stop; with
   the LLM planner it holds no actions, because those are stored when the loop ends.
 
-To render a report of a stopped fixed-planner run, read the `run_id` from the
-evidence store (the image's Python reads it):
+To render a report of a stopped fixed-planner run, take its `run_id` from the
+evidence store (the image's Python reads it). With one `out` directory per run, the
+store holds that run alone; this sets `RUN` to the most recently started run:
+
+bash (Linux):
+
+```bash
+RUN=$(docker run --rm --user "$(id -u):$(id -g)" --entrypoint python3 \
+  -v "$PWD/out:/out" \
+  ghcr.io/mastodonsec/op06d@sha256:872be01c01dafbd7d489358730af4f7f0cfff0a46f5bc50db04366f21f221f55 \
+  -c "import sqlite3; print(sqlite3.connect('/out/evidence.db').execute('SELECT run_id FROM runs ORDER BY started_at DESC LIMIT 1').fetchone()[0])")
+```
+
+PowerShell 7:
+
+```powershell
+$RUN = docker run --rm --entrypoint python3 `
+  -v "${PWD}/out:/out" `
+  ghcr.io/mastodonsec/op06d@sha256:872be01c01dafbd7d489358730af4f7f0cfff0a46f5bc50db04366f21f221f55 `
+  -c "import sqlite3; print(sqlite3.connect('/out/evidence.db').execute('SELECT run_id FROM runs ORDER BY started_at DESC LIMIT 1').fetchone()[0])"
+```
+
+bash / zsh (macOS):
+
+```bash
+RUN=$(docker run --rm --entrypoint python3 \
+  -v "$PWD/out:/out" \
+  ghcr.io/mastodonsec/op06d@sha256:872be01c01dafbd7d489358730af4f7f0cfff0a46f5bc50db04366f21f221f55 \
+  -c "import sqlite3; print(sqlite3.connect('/out/evidence.db').execute('SELECT run_id FROM runs ORDER BY started_at DESC LIMIT 1').fetchone()[0])")
+```
+
+If the store holds more than one run, list them all with their status and start time
+to choose between them, and set `RUN` to the one you choose:
 
 bash (Linux):
 
@@ -578,7 +654,7 @@ docker run --rm --entrypoint python3 \
 
 It prints one line per run, for example
 `baac167e-8d86-48b8-9efe-7a86379cfe90 running 2026-11-26T00:05:24.147111+00:00`.
-Then render that run:
+Then render the run in `RUN`:
 
 bash (Linux):
 
@@ -586,7 +662,7 @@ bash (Linux):
 docker run --rm --user "$(id -u):$(id -g)" \
   -v "$PWD/out:/out" \
   ghcr.io/mastodonsec/op06d@sha256:872be01c01dafbd7d489358730af4f7f0cfff0a46f5bc50db04366f21f221f55 \
-  report --db /out/evidence.db --run <run_id> --out /out
+  report --db /out/evidence.db --run "$RUN" --out /out
 ```
 
 PowerShell 7:
@@ -595,7 +671,7 @@ PowerShell 7:
 docker run --rm `
   -v "${PWD}/out:/out" `
   ghcr.io/mastodonsec/op06d@sha256:872be01c01dafbd7d489358730af4f7f0cfff0a46f5bc50db04366f21f221f55 `
-  report --db /out/evidence.db --run <run_id> --out /out
+  report --db /out/evidence.db --run $RUN --out /out
 ```
 
 bash / zsh (macOS):
@@ -604,7 +680,7 @@ bash / zsh (macOS):
 docker run --rm \
   -v "$PWD/out:/out" \
   ghcr.io/mastodonsec/op06d@sha256:872be01c01dafbd7d489358730af4f7f0cfff0a46f5bc50db04366f21f221f55 \
-  report --db /out/evidence.db --run <run_id> --out /out
+  report --db /out/evidence.db --run "$RUN" --out /out
 ```
 
 It prints `wrote /out/<engagement>-<run_id>.html`. That report covers the actions that
@@ -637,25 +713,27 @@ evidence store, and the report shows it in **Assessment Activity**:
 Audit log: /out/audit/acme-saas-external-2026-11.audit.jsonl (sha256 cec2fe83c44188181074a737e6f9b6ebc8cbda838ce54c2f1159766749d00034)
 ```
 
-There is no verify command. Check it by hand, in two parts. First, hash the file and
-compare with the report's value; they must match exactly.
+There is no verify command. Check it by hand, in two parts, with the audit log's
+file name in `AUDIT` (set it as in [Follow the audit log](#follow-the-audit-log) if
+this terminal does not have it). First, hash the file and compare with the report's
+value; they must match exactly.
 
 PowerShell 7:
 
 ```powershell
-(Get-FileHash out/audit/<engagement>.audit.jsonl -Algorithm SHA256).Hash.ToLower()
+(Get-FileHash "out/audit/$AUDIT" -Algorithm SHA256).Hash.ToLower()
 ```
 
 bash (Linux):
 
 ```bash
-sha256sum out/audit/<engagement>.audit.jsonl
+sha256sum "out/audit/$AUDIT"
 ```
 
 bash / zsh (macOS):
 
 ```bash
-shasum -a 256 out/audit/<engagement>.audit.jsonl
+shasum -a 256 "out/audit/$AUDIT"
 ```
 
 Second, check the hash chain inside the file (each entry's hash, the link to the entry
@@ -667,7 +745,7 @@ bash (Linux):
 docker run --rm --user "$(id -u):$(id -g)" --entrypoint python3 \
   -v "$PWD/out:/out:ro" \
   ghcr.io/mastodonsec/op06d@sha256:872be01c01dafbd7d489358730af4f7f0cfff0a46f5bc50db04366f21f221f55 \
-  -c "from op06d.audit import verify_log; print('audit entries verified:', verify_log('/out/audit/<engagement>.audit.jsonl'))"
+  -c "from op06d.audit import verify_log; print('audit entries verified:', verify_log('/out/audit/$AUDIT'))"
 ```
 
 PowerShell 7:
@@ -676,7 +754,7 @@ PowerShell 7:
 docker run --rm --entrypoint python3 `
   -v "${PWD}/out:/out:ro" `
   ghcr.io/mastodonsec/op06d@sha256:872be01c01dafbd7d489358730af4f7f0cfff0a46f5bc50db04366f21f221f55 `
-  -c "from op06d.audit import verify_log; print('audit entries verified:', verify_log('/out/audit/<engagement>.audit.jsonl'))"
+  -c "from op06d.audit import verify_log; print('audit entries verified:', verify_log('/out/audit/$AUDIT'))"
 ```
 
 bash / zsh (macOS):
@@ -685,7 +763,7 @@ bash / zsh (macOS):
 docker run --rm --entrypoint python3 \
   -v "$PWD/out:/out:ro" \
   ghcr.io/mastodonsec/op06d@sha256:872be01c01dafbd7d489358730af4f7f0cfff0a46f5bc50db04366f21f221f55 \
-  -c "from op06d.audit import verify_log; print('audit entries verified:', verify_log('/out/audit/<engagement>.audit.jsonl'))"
+  -c "from op06d.audit import verify_log; print('audit entries verified:', verify_log('/out/audit/$AUDIT'))"
 ```
 
 **Expected output:** `audit entries verified: <n>`. An edited, reordered or truncated
