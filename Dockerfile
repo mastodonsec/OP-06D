@@ -23,7 +23,7 @@
 ARG BASE_IMAGE=debian:bookworm-slim@sha256:734a72b3d6142a71993b4bc580ca01d8ca687f77a2c422d96a961d3376b179bc
 
 # --- fetch: nuclei and the template set, checksum verified -------------------
-FROM debian:bookworm-slim@sha256:734a72b3d6142a71993b4bc580ca01d8ca687f77a2c422d96a961d3376b179bc AS fetch
+FROM debian:bookworm-slim@sha256:e67eeead736ff7bbe258ef088bff683635c561b1fcfefad0806c1df4ab49ce0e AS fetch
 ARG TARGETARCH
 ARG NUCLEI_VERSION=3.11.1
 # From nuclei_3.11.1_checksums.txt on the v3.11.1 GitHub release.
@@ -55,7 +55,7 @@ RUN curl -fsSL -o /tmp/templates.tgz \
  && chmod -R a-w /out/nuclei-templates
 
 # --- build: OP-06D and its dependencies in a venv ---------------------------
-FROM debian:bookworm-slim@sha256:734a72b3d6142a71993b4bc580ca01d8ca687f77a2c422d96a961d3376b179bc AS build
+FROM debian:bookworm-slim@sha256:e67eeead736ff7bbe258ef088bff683635c561b1fcfefad0806c1df4ab49ce0e AS build
 RUN apt-get update \
  && apt-get install -y --no-install-recommends python3 python3-venv \
  && rm -rf /var/lib/apt/lists/*
@@ -73,7 +73,7 @@ RUN /opt/build/bin/pip wheel --no-cache-dir --no-deps --no-build-isolation -w /t
  && /opt/op06d/bin/pip check
 
 # --- product: what users pull and run ----------------------------------------
-FROM debian:bookworm-slim@sha256:734a72b3d6142a71993b4bc580ca01d8ca687f77a2c422d96a961d3376b179bc AS product
+FROM debian:bookworm-slim@sha256:e67eeead736ff7bbe258ef088bff683635c561b1fcfefad0806c1df4ab49ce0e AS product
 ARG BASE_IMAGE
 ARG NMAP_VERSION=7.93
 ARG NMAP_PACKAGE=7.93+dfsg1-1
